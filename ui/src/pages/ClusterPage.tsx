@@ -33,6 +33,11 @@ import { RelativeTime } from "../ui/RelativeTime";
 import { Segmented } from "../ui/Segmented";
 import { formatBytes } from "../format";
 import { NodeName, NodeNicknameButton } from "../components/NodeNickname";
+import {
+  AgentTunnelSetup,
+  CLOUDFLARE_AGENT_PREFIX,
+  tunnelHost,
+} from "../components/AgentTunnelSetup";
 
 const INSTALL_CMD =
   "curl -fsSL https://raw.githubusercontent.com/ASPEC-RACING-PTY-LTD/ndl-ce/main/packaging/bootstrap/get-nodal.sh | sudo sh";
@@ -46,12 +51,18 @@ function canPromote(roles: string[] | undefined): boolean {
 }
 
 function message(err: unknown, fallback: string): string {
-  return err instanceof ApiError ? err.message : err instanceof Error ? err.message : fallback;
+  return err instanceof ApiError
+    ? err.message
+    : err instanceof Error
+      ? err.message
+      : fallback;
 }
 
 /** shellQuote wraps a value for a POSIX shell when it needs it. */
 function shellQuote(v: string): string {
-  return /^[A-Za-z0-9_./:@%+=,-]+$/.test(v) ? v : `'${v.replace(/'/g, `'\\''`)}'`;
+  return /^[A-Za-z0-9_./:@%+=,-]+$/.test(v)
+    ? v
+    : `'${v.replace(/'/g, `'\\''`)}'`;
 }
 
 /** joinCommand is the one line an admin runs on the new machine. */
@@ -62,7 +73,11 @@ export function joinCommand(
   advertise?: string,
   access?: { id?: string; secret?: string },
 ): string {
-  const parts = ["sudo nodalctl cluster join", `--url ${shellQuote(url.trim())}`, `--token ${token}`];
+  const parts = [
+    "sudo nodalctl cluster join",
+    `--url ${shellQuote(url.trim())}`,
+    `--token ${token}`,
+  ];
   if (fingerprint) {
     parts.push(`--fingerprint ${fingerprint}`);
   }
@@ -70,7 +85,10 @@ export function joinCommand(
     parts.push(`--advertise ${shellQuote(advertise.trim())}`);
   }
   if (access?.id && access.secret) {
-    parts.push(`--access-client-id ${shellQuote(access.id)}`, `--access-client-secret ${shellQuote(access.secret)}`);
+    parts.push(
+      `--access-client-id ${shellQuote(access.id)}`,
+      `--access-client-secret ${shellQuote(access.secret)}`,
+    );
   }
   return parts.join(" ");
 }
@@ -110,7 +128,11 @@ function JoinSettingsSection() {
       const next = await putJoinSettings(
         clear
           ? { join_url: url.trim(), clear_access: true }
-          : { join_url: url.trim(), access_client_id: clientId.trim(), access_client_secret: secret.trim() },
+          : {
+              join_url: url.trim(),
+              access_client_id: clientId.trim(),
+              access_client_secret: secret.trim(),
+            },
       );
       apply(next);
       setSaved(true);
@@ -125,9 +147,10 @@ function JoinSettingsSection() {
     <section className="section-block" aria-labelledby="cluster-join-heading">
       <h2 id="cluster-join-heading">Join settings</h2>
       <p className="lede">
-        How new nodes reach this control node. Behind Cloudflare Access, create a service token in Zero Trust (Access,
-        Service Auth), add a Service Auth policy for it to this application, and save it here. Add node then puts it in
-        the join command.
+        How new nodes reach this control node. Behind Cloudflare Access, create
+        a service token in Zero Trust (Access, Service Auth), add a Service Auth
+        policy for it to this application, and save it here. Add node then puts
+        it in the join command.
       </p>
       {error ? <ErrorNotice error={error} /> : null}
       {settings === null && !error ? (
@@ -156,17 +179,31 @@ function JoinSettingsSection() {
               label="Cloudflare Access client secret"
               type="password"
               autoComplete="new-password"
-              hint={settings?.access_secret_set ? "Saved. Leave blank to keep it." : undefined}
+              hint={
+                settings?.access_secret_set
+                  ? "Saved. Leave blank to keep it."
+                  : undefined
+              }
               value={secret}
               onChange={(e) => setSecret(e.target.value)}
             />
           </div>
           <div className="btn-row">
-            <button className="btn btn-primary" type="button" disabled={busy} onClick={() => void save()}>
+            <button
+              className="btn btn-primary"
+              type="button"
+              disabled={busy}
+              onClick={() => void save()}
+            >
               Save join settings
             </button>
             {settings?.access_secret_set ? (
-              <button className="btn btn-ghost" type="button" disabled={busy} onClick={() => void save(true)}>
+              <button
+                className="btn btn-ghost"
+                type="button"
+                disabled={busy}
+                onClick={() => void save(true)}
+              >
                 Remove service token
               </button>
             ) : null}
@@ -193,7 +230,9 @@ function linkTone(n: NodeSummary): { status: string; label: string } {
   if (!n.agent?.listen_addr) {
     return { status: "warning", label: "No address" };
   }
-  return n.agent.status === "Ready" ? { status: "ok", label: "Connected" } : { status: "failed", label: "Not reachable" };
+  return n.agent.status === "Ready"
+    ? { status: "ok", label: "Connected" }
+    : { status: "failed", label: "Not reachable" };
 }
 
 function hostSummary(n: NodeSummary): string {
@@ -220,7 +259,9 @@ function CopyLine({ label, text }: { label: string; text: string }) {
           type="button"
           className="btn btn-ghost btn-sm"
           onClick={() => {
-            void navigator.clipboard?.writeText(text).then(() => setCopied(true));
+            void navigator.clipboard
+              ?.writeText(text)
+              .then(() => setCopied(true));
           }}
         >
           {copied ? "Copied" : "Copy"}
@@ -233,7 +274,7 @@ function CopyLine({ label, text }: { label: string; text: string }) {
   );
 }
 
-type Where = "lan" | "internet";
+type Where = "lan" | "internet" | "tunnel";
 
 /**
  * AddNodeDialog walks an admin through adding a machine: install No-DAL on
@@ -284,7 +325,9 @@ function AddNodeDialog({
     const timer = window.setInterval(() => {
       void onChanged()
         .then((nodes) => {
-          const fresh = nodes.find((n) => isWorker(n) && !knownAtOpen.current.has(n.id));
+          const fresh = nodes.find(
+            (n) => isWorker(n) && !knownAtOpen.current.has(n.id),
+          );
           if (fresh) {
             setJoined(fresh);
           }
@@ -324,7 +367,12 @@ function AddNodeDialog({
       footer={
         <div className="btn-row is-flush">
           {token ? null : (
-            <button className="btn btn-primary" type="button" disabled={busy} onClick={() => void onGenerate()}>
+            <button
+              className="btn btn-primary"
+              type="button"
+              disabled={busy}
+              onClick={() => void onGenerate()}
+            >
               Create join command
             </button>
           )}
@@ -335,9 +383,10 @@ function AddNodeDialog({
       }
     >
       <p className="lede">
-        Any Debian 13 amd64 machine can join: a spare box on your network or a VPS anywhere. It becomes a worker that
-        runs workloads, managed from here. The link to its agent is mutual TLS with this cluster&apos;s certificates, so
-        no VPN or tunnel is needed.
+        Any Debian 13 amd64 machine can join: a spare box on your network or a
+        VPS anywhere. It becomes a worker that runs workloads, managed from
+        here. The link to its agent is mutual TLS with this cluster&apos;s
+        certificates, so no VPN or tunnel is needed.
       </p>
       {error ? <ErrorNotice error={error} /> : null}
       <div className="field">
@@ -348,6 +397,7 @@ function AddNodeDialog({
           options={[
             { id: "internet", label: "Over the internet (VPS)" },
             { id: "lan", label: "On this network" },
+            { id: "tunnel", label: "Behind NAT (Cloudflare tunnel)" },
           ]}
           onChange={setWhere}
         />
@@ -363,18 +413,35 @@ function AddNodeDialog({
         value={joinUrl}
         onChange={(e) => setUrl(e.target.value)}
       />
-      <Field
-        id="join-advertise"
-        label={where === "internet" ? "Node's public IP or hostname (optional)" : "Node's LAN address (optional)"}
-        hint={`This control node dials the node's agent on TCP ${port}. Leave blank to use the address the join comes from.`}
-        placeholder={where === "internet" ? "203.0.113.10" : "192.168.1.50"}
-        value={advertise}
-        onChange={(e) => setAdvertise(e.target.value)}
-      />
-      {where === "internet" && plainHttp ? (
+      {where === "tunnel" ? (
+        <AgentTunnelSetup
+          hostname={tunnelHost(advertise) ?? ""}
+          onHostname={(h) =>
+            setAdvertise(
+              h.trim() ? `${CLOUDFLARE_AGENT_PREFIX}${h.trim()}` : "",
+            )
+          }
+          onCreated={(t) => setAdvertise(t.address)}
+        />
+      ) : (
+        <Field
+          id="join-advertise"
+          label={
+            where === "internet"
+              ? "Node's public IP or hostname (optional)"
+              : "Node's LAN address (optional)"
+          }
+          hint={`This control node dials the node's agent on TCP ${port}. Leave blank to use the address the join comes from.`}
+          placeholder={where === "internet" ? "203.0.113.10" : "192.168.1.50"}
+          value={advertise}
+          onChange={(e) => setAdvertise(e.target.value)}
+        />
+      )}
+      {where !== "lan" && plainHttp ? (
         <p className="banner banner-error">
-          This address is plain HTTP. The join token would cross the internet unencrypted, so nodalctl refuses it for a
-          public address. Use this control node&apos;s HTTPS address.
+          This address is plain HTTP. The join token would cross the internet
+          unencrypted, so nodalctl refuses it for a public address. Use this
+          control node&apos;s HTTPS address.
         </p>
       ) : null}
 
@@ -387,27 +454,56 @@ function AddNodeDialog({
           <h3>Join it to this cluster</h3>
           {token ? (
             <>
-              <CopyLine label="On the new machine" text={joinCommand(joinUrl, token.token, token.control_fingerprint, advertise, {
-                  id: token.access_client_id,
-                  secret: token.access_client_secret,
-                })} />
+              <CopyLine
+                label="On the new machine"
+                text={joinCommand(
+                  joinUrl,
+                  token.token,
+                  token.control_fingerprint,
+                  advertise,
+                  {
+                    id: token.access_client_id,
+                    secret: token.access_client_secret,
+                  },
+                )}
+              />
               <p className="muted">
-                Single use, shown once. Expires <RelativeTime value={token.expires_at} />.
-                {token.control_fingerprint ? " The fingerprint pins this control node's certificate." : ""}
-                {token.access_client_id ? " It includes your Cloudflare Access service token, so keep it private." : ""}
+                Single use, shown once. Expires{" "}
+                <RelativeTime value={token.expires_at} />.
+                {token.control_fingerprint
+                  ? " The fingerprint pins this control node's certificate."
+                  : ""}
+                {token.access_client_id
+                  ? " It includes your Cloudflare Access service token, so keep it private."
+                  : ""}
               </p>
             </>
           ) : (
-            <p className="muted">Create the join command, then run it on the new machine.</p>
+            <p className="muted">
+              Create the join command, then run it on the new machine.
+            </p>
           )}
         </li>
         <li>
           <h3>Let this control node reach the agent</h3>
-          <p>
-            Allow inbound TCP <code>{port}</code> on the new machine from this control node
-            {where === "internet" ? " in the VPS provider's firewall or security group" : ""}. Only this cluster&apos;s
-            control certificate is accepted on that port.
-          </p>
+          {where === "tunnel" ? (
+            <p>
+              Nothing to open: the node&apos;s connector dials out to
+              Cloudflare. Run the connector command above on the node if No-dal
+              made the tunnel, otherwise give your tunnel a TCP route to{" "}
+              <code>localhost:{port}</code>.
+            </p>
+          ) : (
+            <p>
+              Allow inbound TCP <code>{port}</code> on the new machine from this
+              control node
+              {where === "internet"
+                ? " in the VPS provider's firewall or security group"
+                : ""}
+              . Only this cluster&apos;s control certificate is accepted on that
+              port.
+            </p>
+          )}
         </li>
       </ol>
 
@@ -416,19 +512,22 @@ function AddNodeDialog({
           {joined ? (
             ready ? (
               <p>
-                <StatusBadge status="ok" label="Connected" /> <strong>{joined.name}</strong> joined
+                <StatusBadge status="ok" label="Connected" />{" "}
+                <strong>{joined.name}</strong> joined
                 {hostSummary(joined) ? `: ${hostSummary(joined)}` : ""}.
               </p>
             ) : (
               <p>
-                <StatusBadge status="pending" label="Joined" /> <strong>{joined.name}</strong> joined. Waiting for its
-                agent at <code>{joined.agent?.listen_addr || "an address you set"}</code>
+                <StatusBadge status="pending" label="Joined" />{" "}
+                <strong>{joined.name}</strong> joined. Waiting for its agent at{" "}
+                <code>{joined.agent?.listen_addr || "an address you set"}</code>
                 {joined.agent?.reason ? `: ${joined.agent.reason}` : ""}.
               </p>
             )
           ) : (
             <p>
-              <StatusBadge status="pending" label="Waiting" /> Waiting for the node to join.
+              <StatusBadge status="pending" label="Waiting" /> Waiting for the
+              node to join.
             </p>
           )}
         </div>
@@ -446,28 +545,44 @@ function AddressDialog({
   onClose: () => void;
   onSaved: (id: string) => Promise<void>;
 }) {
+  const [via, setVia] = useState<"direct" | "tunnel">("direct");
   const [addr, setAddr] = useState("");
+  const [host, setHost] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    setAddr(node?.agent?.listen_addr ?? "");
+    const cur = node?.agent?.listen_addr ?? "";
+    const tunneled = tunnelHost(cur);
+    setVia(tunneled !== null ? "tunnel" : "direct");
+    setHost(tunneled ?? "");
+    setAddr(tunneled !== null ? "" : cur);
     setError(null);
   }, [node]);
 
-  async function save() {
+  async function save(close = true, value?: string) {
     if (!node) {
       return;
     }
-    let value = addr.trim();
-    if (value && !/:\d+$/.test(value)) {
-      value = value.includes(":") && !value.startsWith("[") ? `[${value}]:9444` : `${value}:9444`;
+    if (value === undefined) {
+      value =
+        via === "tunnel"
+          ? `${CLOUDFLARE_AGENT_PREFIX}${host.trim()}`
+          : addr.trim();
+      if (via === "direct" && value && !/:\d+$/.test(value)) {
+        value =
+          value.includes(":") && !value.startsWith("[")
+            ? `[${value}]:9444`
+            : `${value}:9444`;
+      }
     }
     setBusy(true);
     setError(null);
     try {
       await setNodeAgentAddress(node.id, value);
       await onSaved(node.id);
-      onClose();
+      if (close) {
+        onClose();
+      }
     } catch (err) {
       setError(message(err, "Could not save the address"));
     } finally {
@@ -475,14 +590,21 @@ function AddressDialog({
     }
   }
 
+  const ready = via === "tunnel" ? host.trim() !== "" : addr.trim() !== "";
   return (
     <Dialog
       open={node !== null}
       title={`Agent address for ${node?.name ?? "node"}`}
+      wide={via === "tunnel"}
       onClose={onClose}
       footer={
         <div className="btn-row is-flush">
-          <button className="btn btn-primary" type="button" disabled={busy || !addr.trim()} onClick={() => void save()}>
+          <button
+            className="btn btn-primary"
+            type="button"
+            disabled={busy || !ready}
+            onClick={() => void save()}
+          >
             Save and check
           </button>
           <button className="btn" type="button" onClick={onClose}>
@@ -492,14 +614,36 @@ function AddressDialog({
       }
     >
       {error ? <ErrorNotice error={error} /> : null}
-      <Field
-        id="agent-addr"
-        label="Host and port"
-        hint="Where this control node dials the node's agent. The port defaults to 9444."
-        placeholder="203.0.113.10:9444"
-        value={addr}
-        onChange={(e) => setAddr(e.target.value)}
-      />
+      <div className="field">
+        <span className="field-label">
+          How this control node reaches the agent
+        </span>
+        <Segmented<"direct" | "tunnel">
+          value={via}
+          ariaLabel="How the agent is reached"
+          options={[
+            { id: "direct", label: "Direct address" },
+            { id: "tunnel", label: "Cloudflare tunnel" },
+          ]}
+          onChange={setVia}
+        />
+      </div>
+      {via === "direct" ? (
+        <Field
+          id="agent-addr"
+          label="Host and port"
+          hint="Where this control node dials the node's agent. The port defaults to 9444."
+          placeholder="203.0.113.10:9444"
+          value={addr}
+          onChange={(e) => setAddr(e.target.value)}
+        />
+      ) : (
+        <AgentTunnelSetup
+          hostname={host}
+          onHostname={setHost}
+          onCreated={(t) => void save(false, t.address)}
+        />
+      )}
     </Dialog>
   );
 }
@@ -516,7 +660,9 @@ export function ClusterPage() {
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<NodeSummary | null>(null);
-  const [checks, setChecks] = useState<Record<string, WorkerLinkCheck | "checking">>({});
+  const [checks, setChecks] = useState<
+    Record<string, WorkerLinkCheck | "checking">
+  >({});
 
   const reloadNodes = useCallback(async () => {
     const next = await listNodes();
@@ -525,7 +671,11 @@ export function ClusterPage() {
   }, []);
 
   const reload = useCallback(async () => {
-    const [, status, plan] = await Promise.all([reloadNodes(), getClusterHA(), getClusterUpdate()]);
+    const [, status, plan] = await Promise.all([
+      reloadNodes(),
+      getClusterHA(),
+      getClusterUpdate(),
+    ]);
     setHa(status);
     setRolling(plan);
   }, [reloadNodes]);
@@ -538,7 +688,10 @@ export function ClusterPage() {
       }
     });
     // Worker links are checked by the control node every 15 seconds.
-    const timer = window.setInterval(() => void reloadNodes().catch(() => undefined), 15000);
+    const timer = window.setInterval(
+      () => void reloadNodes().catch(() => undefined),
+      15000,
+    );
     return () => {
       cancelled = true;
       window.clearInterval(timer);
@@ -554,7 +707,12 @@ export function ClusterPage() {
     } catch (err) {
       setChecks((c) => ({
         ...c,
-        [id]: { reachable: false, listen_addr: "", checked_at: "", error: message(err, "Check failed") },
+        [id]: {
+          reachable: false,
+          listen_addr: "",
+          checked_at: "",
+          error: message(err, "Check failed"),
+        },
       }));
     }
   }
@@ -580,7 +738,11 @@ export function ClusterPage() {
   }
 
   async function onFence() {
-    if (!confirmAction("Fence records that the old writer is isolated. STONITH is not implemented.")) {
+    if (
+      !confirmAction(
+        "Fence records that the old writer is isolated. STONITH is not implemented.",
+      )
+    ) {
       return;
     }
     setBusy(true);
@@ -596,7 +758,11 @@ export function ClusterPage() {
   }
 
   async function onPromote() {
-    if (!confirmAction("Promote this process to the single writer after fence or lease expiry?")) {
+    if (
+      !confirmAction(
+        "Promote this process to the single writer after fence or lease expiry?",
+      )
+    ) {
       return;
     }
     setBusy(true);
@@ -634,7 +800,8 @@ export function ClusterPage() {
   const list = nodes ?? [];
   const workers = list.filter(isWorker);
   const connected = workers.filter((n) => n.agent?.status === "Ready").length;
-  const replicaLabel = ha?.replica_status === "unavailable" ? "Unavailable" : "Not configured";
+  const replicaLabel =
+    ha?.replica_status === "unavailable" ? "Unavailable" : "Not configured";
 
   return (
     <section className="page page-wide" aria-labelledby="cluster-heading">
@@ -649,7 +816,11 @@ export function ClusterPage() {
         actions={
           mutate ? (
             <div className="btn-row is-flush">
-              <button className="btn btn-primary" type="button" onClick={() => setAdding(true)}>
+              <button
+                className="btn btn-primary"
+                type="button"
+                onClick={() => setAdding(true)}
+              >
                 Add node
               </button>
             </div>
@@ -658,12 +829,17 @@ export function ClusterPage() {
       />
       {error ? <ErrorNotice error={error} /> : null}
 
-      <section className="section-block" aria-labelledby="cluster-nodes-heading">
+      <section
+        className="section-block"
+        aria-labelledby="cluster-nodes-heading"
+      >
         <h2 id="cluster-nodes-heading">Nodes</h2>
         {nodes === null ? (
           <p className="muted">Loading</p>
         ) : list.length === 0 ? (
-          <EmptyState title="No nodes yet">This host appears here once setup has finished.</EmptyState>
+          <EmptyState title="No nodes yet">
+            This host appears here once setup has finished.
+          </EmptyState>
         ) : (
           <div className="table-wrap">
             <table aria-label="Cluster nodes">
@@ -701,16 +877,24 @@ export function ClusterPage() {
                             <code>{n.agent.listen_addr}</code>
                           </div>
                         ) : null}
-                        {isWorker(n) && n.agent?.status !== "Ready" && n.agent?.reason ? (
+                        {isWorker(n) &&
+                        n.agent?.status !== "Ready" &&
+                        n.agent?.reason ? (
                           <div className="muted">{n.agent.reason}</div>
                         ) : null}
                         {check && check !== "checking" ? (
                           <div className="muted" role="status">
-                            {check.reachable ? `Reached agent ${check.agent_version ?? ""}`.trim() : check.error}
+                            {check.reachable
+                              ? `Reached agent ${check.agent_version ?? ""}`.trim()
+                              : check.error}
                           </div>
                         ) : null}
                       </td>
-                      <td>{hostSummary(n) || <span className="muted">Not observed yet</span>}</td>
+                      <td>
+                        {hostSummary(n) || (
+                          <span className="muted">Not observed yet</span>
+                        )}
+                      </td>
                       <td>
                         {isWorker(n) ? (
                           n.agent?.last_seen_at ? (
@@ -735,7 +919,11 @@ export function ClusterPage() {
                             </button>
                             {mutate ? (
                               <>
-                                <button className="btn btn-ghost btn-sm" type="button" onClick={() => setEditing(n)}>
+                                <button
+                                  className="btn btn-ghost btn-sm"
+                                  type="button"
+                                  onClick={() => setEditing(n)}
+                                >
                                   Address
                                 </button>
                                 <button
@@ -770,12 +958,14 @@ export function ClusterPage() {
       <section className="section-block" aria-labelledby="cluster-ha-heading">
         <h2 id="cluster-ha-heading">High availability</h2>
         <p className="lede">
-          One writer holds the lease. Fence records that the old writer is isolated, then promote takes the lease.
-          Guests keep running when the control plane moves.
+          One writer holds the lease. Fence records that the old writer is
+          isolated, then promote takes the lease. Guests keep running when the
+          control plane moves.
         </p>
         {ha ? (
           <p>
-            Mode {ha.mode}. Writer {ha.writer ? "yes" : "no"}. Replica {replicaLabel}. Fencing {ha.fencing_mode}.
+            Mode {ha.mode}. Writer {ha.writer ? "yes" : "no"}. Replica{" "}
+            {replicaLabel}. Fencing {ha.fencing_mode}.
             {ha.lease_holder ? ` Lease ${ha.lease_holder}.` : ""}
           </p>
         ) : (
@@ -783,19 +973,35 @@ export function ClusterPage() {
         )}
         {promote ? (
           <div className="btn-row">
-            <button className="btn" type="button" disabled={busy} onClick={() => void onFence()}>
+            <button
+              className="btn"
+              type="button"
+              disabled={busy}
+              onClick={() => void onFence()}
+            >
               Fence old writer
             </button>
-            <button className="btn btn-primary" type="button" disabled={busy} onClick={() => void onPromote()}>
+            <button
+              className="btn btn-primary"
+              type="button"
+              disabled={busy}
+              onClick={() => void onPromote()}
+            >
               Promote this writer
             </button>
           </div>
         ) : null}
       </section>
 
-      <section className="section-block" aria-labelledby="cluster-rolling-heading">
+      <section
+        className="section-block"
+        aria-labelledby="cluster-rolling-heading"
+      >
         <h2 id="cluster-rolling-heading">Rolling update</h2>
-        <p className="lede">Drain one node, apply the package update, then the next. Guests are not stopped.</p>
+        <p className="lede">
+          Drain one node, apply the package update, then the next. Guests are
+          not stopped.
+        </p>
         {rolling?.preview && rolling.preview.length > 0 ? (
           <ol>
             {rolling.preview.map((step) => (
@@ -809,7 +1015,12 @@ export function ClusterPage() {
           <p className="muted">No nodes in the rolling preview yet.</p>
         )}
         {mutate ? (
-          <button className="btn" type="button" disabled={busy} onClick={() => void onRolling()}>
+          <button
+            className="btn"
+            type="button"
+            disabled={busy}
+            onClick={() => void onRolling()}
+          >
             Run rolling update
           </button>
         ) : null}
@@ -825,7 +1036,11 @@ export function ClusterPage() {
         onClose={() => setAdding(false)}
         onChanged={reloadNodes}
       />
-      <AddressDialog node={editing} onClose={() => setEditing(null)} onSaved={onCheck} />
+      <AddressDialog
+        node={editing}
+        onClose={() => setEditing(null)}
+        onSaved={onCheck}
+      />
     </section>
   );
 }

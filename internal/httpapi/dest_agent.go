@@ -75,6 +75,9 @@ func (s *Server) destAgentClient(ctx context.Context, dest *appdb.Node) (agentrp
 // presents its cluster certificate and accepts only that node's
 // certificate, so the link is safe over the internet without a tunnel.
 func (s *Server) workerAgent(nodeID, listen string) agentrpc.Client {
+	if _, viaCF := ndnet.CloudflareAgentHost(listen); viaCF {
+		s.agentAccessOnce.Do(func() { agentrpc.CloudflareAccess = s.agentTunnelAccess })
+	}
 	ca := s.ClusterCA
 	return agentrpc.Client{
 		TCPAddr: listen,

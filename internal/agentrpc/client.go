@@ -778,11 +778,25 @@ func newAgentH2(network, addr string, secure func() (*tls.Config, error), readId
 				if err != nil {
 					return nil, err
 				}
+				if _, ok := ndnet.CloudflareAgentHost(addr); ok {
+					raw, err := dialAgent(ctx, network, addr)
+					if err != nil {
+						return nil, err
+					}
+					conn := tls.Client(raw, cfg)
+					if err := conn.HandshakeContext(ctx); err != nil {
+						_ = raw.Close()
+						if cf, ok := raw.(*cfConn); ok {
+							return nil, cf.explain(err)
+						}
+						return nil, err
+					}
+					return conn, nil
+				}
 				d := tls.Dialer{Config: cfg}
 				return d.DialContext(ctx, network, addr)
 			}
-			var d net.Dialer
-			return d.DialContext(ctx, network, addr)
+			return dialAgent(ctx, network, addr)
 		},
 	}
 	if readIdle > 0 {

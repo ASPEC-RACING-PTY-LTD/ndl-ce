@@ -847,6 +847,46 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SearchSettingsView"
+  /cluster/agent-tunnels:
+    post:
+      operationId: createAgentTunnel
+      summary: Make or reuse a Cloudflare tunnel that routes a hostname to a worker's agent port (tcp://localhost:9444), with its DNS record. Returns the agent address cloudflare:<hostname> and a one-time install command for the worker (cloudflare.manage and node.update or cluster.join).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [account_id, hostname]
+              properties:
+                account_id:
+                  type: string
+                hostname:
+                  type: string
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentTunnel"
+  /agent-tunnel-install/{ticket}:
+    get:
+      operationId: agentTunnelInstall
+      summary: One-time shell script that installs a worker's tunnel connector. The ticket from createAgentTunnel is the credential; it expires after 30 minutes.
+      parameters:
+        - name: ticket
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Shell script
+          content:
+            text/x-shellscript:
+              schema:
+                type: string
   /node-nicknames:
     get:
       operationId: getNodeNicknames
@@ -14448,6 +14488,29 @@ components:
           type: integer
         can_set_profile_limit:
           type: boolean
+    AgentTunnel:
+      type: object
+      required: [address, hostname, tunnel_id, tunnel_name, install_command, expires_at]
+      properties:
+        address:
+          type: string
+        hostname:
+          type: string
+        tunnel_id:
+          type: string
+        tunnel_name:
+          type: string
+        dns_action:
+          type: string
+        warnings:
+          type: array
+          items:
+            type: string
+        install_command:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
     NodeNicknames:
       type: object
       required: [nicknames, can_edit]

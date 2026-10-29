@@ -327,6 +327,17 @@ export interface Appearance {
   can_set_profile_limit?: boolean;
 }
 
+export interface AgentTunnel {
+  address?: string;
+  hostname?: string;
+  tunnel_id?: string;
+  tunnel_name?: string;
+  dns_action?: string;
+  warnings?: string[];
+  install_command?: string;
+  expires_at?: string;
+}
+
 export interface NodeNicknames {
   nicknames?: Record<string, unknown>;
   can_edit?: boolean;
@@ -4281,6 +4292,10 @@ export type StartSearchIndexPath = "/api/v1/search/index";
 export type CancelSearchIndexPath = "/api/v1/search/index/cancel";
 
 export type ClearDeepSearchIndexPath = "/api/v1/search/index/deep";
+
+export type CreateAgentTunnelPath = "/api/v1/cluster/agent-tunnels";
+
+export type AgentTunnelInstallPath = "/api/v1/agent-tunnel-install/{ticket}";
 
 export type GetNodeNicknamesPath = "/api/v1/node-nicknames";
 

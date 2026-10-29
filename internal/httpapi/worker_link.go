@@ -47,6 +47,9 @@ func (s *Server) checkWorkerLink(ctx context.Context, node appdb.Node) workerLin
 	version, err := agent.AgentVersion(cctx)
 	if err != nil {
 		out.Error = linkError(err)
+		if _, viaCF := ndnet.CloudflareAgentHost(remote.ListenAddr); viaCF {
+			out.Error = cloudflareLinkError(err)
+		}
 		remote.Status = ndnet.NodeNotReady
 		remote.Reason = out.Error
 		_ = s.Store.UpdateRemoteNodeSession(ctx, *remote)
@@ -89,6 +92,23 @@ func linkError(err error) string {
 		return "TLS handshake failed: the node does not hold this cluster's certificate (" + msg + ")"
 	}
 	return msg
+}
+
+// cloudflareLinkError explains a failed link through a Cloudflare tunnel.
+func cloudflareLinkError(err error) string {
+	msg := err.Error()
+	low := strings.ToLower(msg)
+	switch {
+	case strings.Contains(low, "not installed"):
+		return msg
+	case strings.Contains(low, "revoked"):
+		return "the node's certificate is revoked"
+	case strings.Contains(low, "certificate"):
+		return "TLS handshake failed: the node does not hold this cluster's certificate (" + msg + ")"
+	case strings.Contains(low, "eof"), strings.Contains(low, "reset"), strings.Contains(low, "broken pipe"), strings.Contains(low, "deadline exceeded"), strings.Contains(low, "timeout"):
+		return "the Cloudflare tunnel did not reach the agent: check cloudflared runs on the node and its route sends this hostname to tcp://localhost:" + defaultWorkerAgentPort + " (" + msg + ")"
+	}
+	return "through Cloudflare: " + msg
 }
 
 // ObserveWorkers checks every joined worker's agent link. The control

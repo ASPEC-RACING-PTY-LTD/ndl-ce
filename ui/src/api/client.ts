@@ -290,6 +290,24 @@ export async function checkNode(id: string): Promise<WorkerLinkCheck> {
   return readJson(await request(`/nodes/${encodeURIComponent(id)}/check`, { method: "POST", body: JSON.stringify({}) }));
 }
 
+export type AgentTunnel = {
+  /** The agent address to save: cloudflare:<hostname>. */
+  address: string;
+  hostname: string;
+  tunnel_id: string;
+  tunnel_name: string;
+  dns_action?: string;
+  warnings?: string[];
+  /** One-time command for the worker that installs its connector. */
+  install_command: string;
+  expires_at: string;
+};
+
+/** createAgentTunnel makes or reuses a tunnel that routes hostname to a worker's agent port. */
+export async function createAgentTunnel(accountId: string, hostname: string): Promise<AgentTunnel> {
+  return readJson(await request("/cluster/agent-tunnels", { method: "POST", body: JSON.stringify({ account_id: accountId, hostname }) }));
+}
+
 /** setNodeAgentAddress records where this control node dials a worker's agent. */
 export async function setNodeAgentAddress(id: string, listenAddr: string): Promise<unknown> {
   return readJson(

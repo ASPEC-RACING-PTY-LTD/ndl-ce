@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -342,9 +343,32 @@ func ValidWGEndpoint(endpoint string) error {
 	return validHostPort(endpoint, "peer endpoint")
 }
 
-// ValidListenAddr reports a remote listen host:port without userinfo.
+// ValidListenAddr reports a remote listen host:port without userinfo, or a
+// Cloudflare tunnel address (see CloudflareAgentHost).
 func ValidListenAddr(addr string) error {
+	if host, ok := CloudflareAgentHost(addr); ok {
+		if !cloudflareHostRe.MatchString(host) {
+			return fmt.Errorf("listen address: %q is not a hostname", host)
+		}
+		return nil
+	}
 	return validHostPort(addr, "listen address")
+}
+
+// CloudflareAgentPrefix marks an agent address reached through a Cloudflare
+// tunnel: "cloudflare:agent.example.com" is dialed with cloudflared access
+// on the control node, to a TCP route that ends at the worker's agent port.
+const CloudflareAgentPrefix = "cloudflare:"
+
+var cloudflareHostRe = regexp.MustCompile(`^(?i)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$`)
+
+// CloudflareAgentHost returns the tunnel hostname of a Cloudflare agent address.
+func CloudflareAgentHost(addr string) (string, bool) {
+	addr = strings.TrimSpace(addr)
+	if len(addr) <= len(CloudflareAgentPrefix) || !strings.EqualFold(addr[:len(CloudflareAgentPrefix)], CloudflareAgentPrefix) {
+		return "", false
+	}
+	return strings.ToLower(strings.TrimSpace(addr[len(CloudflareAgentPrefix):])), true
 }
 
 // ValidReplicaEndpoint reports a replica host:port. It is not a DSN.

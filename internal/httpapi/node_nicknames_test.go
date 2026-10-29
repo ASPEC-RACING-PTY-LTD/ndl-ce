@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/no-dal/ndl-ce/internal/rbac"
@@ -42,5 +43,19 @@ func TestNodeNicknamesAreSharedAndGuarded(t *testing.T) {
 	_, got = a.call("GET", "/api/v1/node-nicknames", "", nil)
 	if names, _ = got["nicknames"].(map[string]any); names["n1"] != nil {
 		t.Fatalf("nickname not cleared: %v", got["_raw"])
+	}
+}
+
+func TestAgentTunnelInstallLinkIsOneTime(t *testing.T) {
+	a := newAutoTest(t)
+	if code, _ := a.call("GET", "/api/v1/agent-tunnel-install/nope", "", nil); code != http.StatusNotFound {
+		t.Fatalf("unknown ticket: %d", code)
+	}
+	script := agentTunnelScript("eyJhIjoiYiJ9eyJhIjoiYiJ9", "agent.example.com")
+	if !strings.Contains(script, "TUNNEL_TOKEN=eyJhIjoiYiJ9eyJhIjoiYiJ9") || !strings.Contains(script, "cloudflared-ndl-agent.service") {
+		t.Fatalf("install script: %s", script)
+	}
+	if agentTunnelName("agent.example.com") != "ndl-agent-agent-example-com" {
+		t.Fatal(agentTunnelName("agent.example.com"))
 	}
 }

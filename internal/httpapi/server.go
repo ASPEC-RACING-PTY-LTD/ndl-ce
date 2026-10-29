@@ -60,6 +60,10 @@ type LogsRPC interface {
 
 // Server is the northbound HTTP API plus static UI.
 type Server struct {
+	// agentAccessOnce wires the Access service token into agent tunnels.
+	agentAccessOnce sync.Once
+	// agentTunnelTickets are one-time worker install links (ticket -> agentTunnelTicket).
+	agentTunnelTickets sync.Map
 	// tokenUseSeen throttles API token usage writes (token|ip -> last write).
 	tokenUseSeen sync.Map
 	// trusted caches the trusted proxies used to read client addresses.
@@ -298,6 +302,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/v1/iam/groups/{id}", s.iamSaveGroup)
 	mux.HandleFunc("GET /api/v1/nodes", s.listNodes)
 	mux.HandleFunc("POST /api/v1/placement/preview", s.previewPlacement)
+	mux.HandleFunc("POST /api/v1/cluster/agent-tunnels", s.createAgentTunnel)
+	mux.HandleFunc("GET /api/v1/agent-tunnel-install/{ticket}", s.agentTunnelInstall)
 	mux.HandleFunc("GET /api/v1/node-nicknames", s.getNodeNicknames)
 	mux.HandleFunc("PUT /api/v1/node-nicknames", s.putNodeNickname)
 	mux.HandleFunc("GET /api/v1/node-groups", s.listNodeGroups)
