@@ -160,12 +160,14 @@ func builtinRoleDefaults(name string) (int, bool, bool, string) {
 	switch name {
 	case "superadmin":
 		return 0, true, true, "SuperAdmin"
+	case "iam-manager":
+		return 1, true, true, "IAM Manager"
 	case "admin":
-		return 1, true, true, "Admin"
+		return 2, true, true, "Admin"
 	case "automation":
-		return 2, true, false, "Automation"
+		return 3, true, false, "Automation"
 	case "user":
-		return 3, true, true, "User"
+		return 4, true, true, "User"
 	}
 	return 100, false, true, name
 }

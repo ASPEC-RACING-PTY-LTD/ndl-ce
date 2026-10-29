@@ -277,6 +277,7 @@ export function UserDetailDialog({
             <option value="none">No role (item access only)</option>
             <option value="user">User</option>
             <option value="admin">Admin</option>
+            <option value="iam-manager">IAM Manager</option>
             <option value="superadmin">SuperAdmin</option>
           </select>
           <p className="field-hint">

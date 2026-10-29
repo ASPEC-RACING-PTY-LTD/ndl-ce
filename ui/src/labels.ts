@@ -37,6 +37,8 @@ export function roleLabel(role: string): string {
   switch (role) {
     case "superadmin":
       return "SuperAdmin";
+    case "iam-manager":
+      return "IAM Manager";
     case "admin":
       return "Admin";
     case "user":

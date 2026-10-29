@@ -6,6 +6,10 @@ import "strings"
 // highest role, Admin runs the appliance, User reads it.
 const (
 	SuperAdmin = "superadmin"
+	// IAMManager ranks between SuperAdmin and Admin: Admin's permissions
+	// plus managing the people, groups and roles ranked below it, and
+	// assigning the permissions it holds to them.
+	IAMManager = "iam-manager"
 	Admin      = "admin"
 	User       = "user"
 	// Automation labels the identity flows run as. It is not a login role.
@@ -192,6 +196,11 @@ func (Catalog) PermissionsForRole(role string) []string {
 			CloudflareRead, CloudflareManage, SearchManage,
 			DDoSRead, DDoSManage,
 		}
+	case IAMManager:
+		return append(Catalog{}.PermissionsForRole(Admin),
+			UsersRead, UsersCreate, UsersUpdate, UsersDelete, UsersRolesManage, UsersSessionsRevoke,
+			RolesManage, PermissionsAssign, AuditRead,
+		)
 	case User:
 		return []string{IdentityRead, IdentityMFA, ClusterRead, NodeRead, EventsRead, MetricsRead, AlertRead, StorageRead, NetworkRead, ComputeRead, FilesRead, SettingsTLSRead, BackupRead, FeatureRead, StoreRead, PolicyRead, AIAsk, SettingsLicenseRead, MigrationRead, GameServerRead, CloudflareRead, DDoSRead}
 	case Automation:
@@ -237,6 +246,7 @@ func SeedRoles() map[string][]string {
 	c := New()
 	return map[string][]string{
 		SuperAdmin: c.PermissionsForRole(SuperAdmin),
+		IAMManager: c.PermissionsForRole(IAMManager),
 		Admin:      c.PermissionsForRole(Admin),
 		User:       c.PermissionsForRole(User),
 		Automation: c.PermissionsForRole(Automation),
@@ -271,6 +281,13 @@ func BuiltInRoles() []RoleMeta {
 			Immutable: true,
 		},
 		{
+			Name:      IAMManager,
+			Title:     "IAM Manager",
+			Summary:   "Everything Admin can do, plus managing the users, groups and roles ranked below it and assigning them the permissions it holds.",
+			Login:     true,
+			Immutable: true,
+		},
+		{
 			Name:      SuperAdmin,
 			Title:     "SuperAdmin",
 			Summary:   "The highest role. Full control including users, roles, license, audit, and security policy. The last SuperAdmin cannot be removed, disabled, or demoted.",
@@ -289,13 +306,13 @@ func BuiltInRoles() []RoleMeta {
 
 // LoginRoles are the roles a person account may be assigned.
 func LoginRoles() []string {
-	return []string{User, Admin, SuperAdmin}
+	return []string{User, Admin, IAMManager, SuperAdmin}
 }
 
 // IsLoginRole reports whether name is a person sign-in role.
 func IsLoginRole(name string) bool {
 	switch name {
-	case User, Admin, SuperAdmin:
+	case User, Admin, IAMManager, SuperAdmin:
 		return true
 	default:
 		return false

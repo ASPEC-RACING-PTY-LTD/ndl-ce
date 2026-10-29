@@ -239,6 +239,7 @@ export function UsersPage() {
             <option value="none">No role (item access only)</option>
             <option value="user">User</option>
             <option value="admin">Admin</option>
+            {canRoles ? <option value="iam-manager">IAM Manager</option> : null}
             {canRoles ? <option value="superadmin">SuperAdmin</option> : null}
           </SelectField>
         </form>
@@ -289,6 +290,7 @@ export function UsersPage() {
             <select className="field-input" value={role} onChange={(e) => setRole(e.target.value)}>
               <option value="">All roles</option>
               <option value="superadmin">SuperAdmin</option>
+              <option value="iam-manager">IAM Manager</option>
               <option value="admin">Admin</option>
               <option value="user">User</option>
             </select>

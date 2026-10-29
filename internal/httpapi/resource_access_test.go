@@ -312,6 +312,38 @@ func TestAssignPermissionRules(t *testing.T) {
 	}
 }
 
+// TestIAMManagerAssignsBelowOnly checks the built-in IAM Manager role: it may
+// assign to Admins and roles below it, but not to SuperAdmins, and not the
+// override.
+func TestIAMManagerAssignsBelowOnly(t *testing.T) {
+	a := newAutoTest(t)
+	mgr := loginRole(t, a.ts, a.mem, "iam", rbac.IAMManager)
+	loginRole(t, a.ts, a.mem, "ops", rbac.Admin)
+	loginRole(t, a.ts, a.mem, "boss", rbac.SuperAdmin)
+	ids := map[string]string{}
+	users, _ := a.mem.ListUsers(context.Background(), a.cluster)
+	for _, u := range users {
+		ids[u.Username] = u.ID
+	}
+	grant := func(subject, perms string) string {
+		return `{"subject_kind":"user","subject_id":"` + subject + `","resource_kind":"cluster","permissions":[` + perms + `]}`
+	}
+	for name, tc := range map[string]struct {
+		body string
+		want int
+	}{
+		"an Admin":              {grant(ids["ops"], `"storage.read","users.read"`), http.StatusOK},
+		"the Admin role":        {`{"subject_kind":"role","subject_id":"admin","resource_kind":"cluster","permissions":["audit.read"]}`, http.StatusOK},
+		"a SuperAdmin":          {grant(ids["boss"], `"storage.read"`), http.StatusForbidden},
+		"the override":          {grant(ids["ops"], `"permissions.assign.override"`), http.StatusForbidden},
+		"a permission it lacks": {grant(ids["ops"], `"compute.privileged"`), http.StatusForbidden},
+	} {
+		if code, body := a.as(mgr, "PUT", "/api/v1/iam/resource-access", tc.body); code != tc.want {
+			t.Fatalf("IAM Manager assigning to %s: %d %s", name, code, body)
+		}
+	}
+}
+
 // relogin signs a user in again so a new session picks up changed grants.
 func relogin(t *testing.T, a *autoTest, username string) string {
 	t.Helper()

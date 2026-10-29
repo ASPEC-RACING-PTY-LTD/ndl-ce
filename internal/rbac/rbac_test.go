@@ -167,7 +167,7 @@ func TestAuthorizeMatrix(t *testing.T) {
 
 func TestRoleIdsMatchTheirNames(t *testing.T) {
 	for _, r := range BuiltInRoles() {
-		if r.Name != strings.ToLower(r.Title) {
+		if r.Name != strings.ReplaceAll(strings.ToLower(r.Title), " ", "-") {
 			t.Fatalf("role %q is shown as %q", r.Name, r.Title)
 		}
 	}
