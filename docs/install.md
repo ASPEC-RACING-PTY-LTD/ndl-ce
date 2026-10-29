@@ -107,7 +107,9 @@ or `dpkg -i` of locally built packages). Later updates can use the Updates page.
 
 A release is cut by a commit on `main` whose message starts with `DEPLOY:`
 (for example `DEPLOY: patch`), with an `UNRELEASED` entry at the top of
-`packaging/debian/changelog`. The Alpha Release workflow builds and tests
-the packages, stamps the version, tags `vX.Y.Z`, publishes a GitHub release
+`packaging/debian/changelog`. Run `bash scripts/check.sh` before pushing:
+it runs the full Go and UI test suites, which GitHub CI does not. Once CI
+passes, the Alpha Release workflow builds the packages, stamps the
+version, tags `vX.Y.Z`, publishes a GitHub release
 with the `.deb` files, and updates the signed APT repository at
 `packages.no-dal.com`, which is what the Updates page installs from.

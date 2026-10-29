@@ -371,6 +371,11 @@ func (m *Manager) finish(r *run, exit int, err error) {
 		}
 		r.logf("\n\x1b[31m# %s\x1b[0m\n", msg)
 	}
+	// Keep the final size: snapshot cannot stat the log once it is closed,
+	// and the run stays listed for a moment after that.
+	if info, err := r.log.Stat(); err == nil {
+		r.st.LogBytes = info.Size()
+	}
 	r.save()
 	r.mu.Unlock()
 	_ = r.log.Close()

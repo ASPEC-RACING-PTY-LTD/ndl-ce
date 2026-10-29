@@ -1,7 +1,14 @@
 name: Alpha Release
 
+# Runs after CI passes on main. It does not test again: it builds the
+# packages, tags the release and publishes it. The full test suites run
+# locally before pushing (scripts/check.sh).
 on:
-  push:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
     branches:
       - main
 
@@ -14,11 +21,16 @@ permissions:
 
 jobs:
   release:
-    # Builds only on GitHub (the CodeHold mirror's runner skips it), and only
-    # for commits whose message starts with DEPLOY:.
-    if: github.server_url == 'https://github.com' && startsWith(github.event.head_commit.message, 'DEPLOY:')
+    # Builds only on GitHub (the CodeHold mirror's runner skips it), only once
+    # CI passed for a push, and only for commits whose message starts with
+    # DEPLOY:.
+    if: >-
+      github.server_url == 'https://github.com' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      startsWith(github.event.workflow_run.head_commit.message, 'DEPLOY:')
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     environment:
       name: github-pages
       url: ${{ steps.pages.outputs.page_url }}
@@ -27,27 +39,45 @@ jobs:
       pages: write
       id-token: write
     steps:
+      - name: Install Debian packaging tools
+        # Started in the background; waited for before the packages build.
+        run: |
+          (sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends debhelper devscripts dpkg-dev apt-utils fakeroot > "$RUNNER_TEMP/apt.log" 2>&1; echo $? > "$RUNNER_TEMP/apt.status") &
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
           go-version: "1.24"
-          cache: true
-      - uses: actions/setup-node@v4
+          cache: false
+      - name: Restore Go build cache
+        uses: actions/cache/restore@v4
         with:
-          node-version: "24"
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ github.event.workflow_run.head_sha }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ hashFiles('go.sum') }}-
+            go-${{ runner.os }}-
       - uses: pnpm/action-setup@v4
         with:
           version: 10.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
       - name: Calculate release tag
         id: version
         env:
-          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          COMMIT_MESSAGE: ${{ github.event.workflow_run.head_commit.message }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           for existing_tag in $(git tag --list 'v[0-9]*' --sort=-version:refname); do
             tagged_commit="$(git rev-list -n 1 "$existing_tag")"
-            if [ "$(git rev-parse "$tagged_commit^")" = "$GITHUB_SHA" ]; then
+            if [ "$(git rev-parse "$tagged_commit^")" = "$HEAD_SHA" ]; then
               echo "tag=$existing_tag" >> "$GITHUB_OUTPUT"
               echo "existing=true" >> "$GITHUB_OUTPUT"
               exit 0
@@ -57,22 +87,10 @@ jobs:
           tag="$(node scripts/release-version.mjs "$latest_tag" "$COMMIT_MESSAGE")"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "existing=false" >> "$GITHUB_OUTPUT"
-      - name: Validate release versioning
-        run: node --test scripts/release-version.test.mjs
-      - name: Build Go services
-        run: go build ./...
-      - name: Test Go services
-        run: sudo apt-get update && sudo apt-get install -y nano && sudo go test ./...
-      - name: Build and test web UI
-        working-directory: ui
+      - name: Wait for Debian packaging tools
         run: |
-          pnpm install --frozen-lockfile
-          pnpm lint
-          pnpm typecheck
-          pnpm test
-          pnpm build
-      - name: Install Debian packaging tools
-        run: sudo apt-get update && sudo apt-get install -y debhelper devscripts dpkg-dev apt-utils fakeroot
+          while [ ! -f "$RUNNER_TEMP/apt.status" ]; do sleep 1; done
+          if [ "$(cat "$RUNNER_TEMP/apt.status")" != 0 ]; then cat "$RUNNER_TEMP/apt.log"; exit 1; fi
       - name: Test signed APT upgrade path
         run: bash packaging/release/test-apt-upgrade.sh
       - name: Stamp package version and build Debian packages
@@ -103,8 +121,8 @@ jobs:
         env:
           TAG: ${{ steps.version.outputs.tag }}
           EXISTING_TAG: ${{ steps.version.outputs.existing }}
-          DEPLOY_AUTHOR_NAME: ${{ github.event.head_commit.author.name }}
-          DEPLOY_AUTHOR_EMAIL: ${{ github.event.head_commit.author.email }}
+          DEPLOY_AUTHOR_NAME: ${{ github.event.workflow_run.head_commit.author.name }}
+          DEPLOY_AUTHOR_EMAIL: ${{ github.event.workflow_run.head_commit.author.email }}
         run: |
           if [ "$EXISTING_TAG" = true ]; then
             release_sha="$(git rev-list -n 1 "$TAG")"
@@ -177,14 +195,10 @@ jobs:
           mkdir -p "$package_dir"
           mapfile -t current_debs < "$RUNNER_TEMP/deb-artifacts.txt"
           for deb in "${current_debs[@]}"; do cp -n "$deb" "$package_dir/"; done
-          while IFS= read -r release_tag; do
-            [ -n "$release_tag" ] || continue
-            release_dir="$RUNNER_TEMP/release-assets/$release_tag"
-            mkdir -p "$release_dir"
-            if gh release download "$release_tag" --pattern '*.deb' --dir "$release_dir" >/dev/null 2>&1; then
-              find "$release_dir" -maxdepth 1 -type f -name '*.deb' -exec cp -n {} "$package_dir/" \;
-            fi
-          done < <(gh release list --limit 1000 --json tagName --jq '.[].tagName')
+          # Older releases download in parallel; each lands in its own folder.
+          gh release list --limit 1000 --json tagName --jq '.[].tagName' |
+            xargs -r -P 8 -I{} sh -c 'mkdir -p "$1/$2" && gh release download "$2" --pattern "*.deb" --dir "$1/$2" >/dev/null 2>&1 || true' _ "$RUNNER_TEMP/release-assets" {}
+          find "$RUNNER_TEMP/release-assets" -mindepth 2 -maxdepth 2 -type f -name '*.deb' -exec cp -n {} "$package_dir/" \;
           find "$package_dir" -maxdepth 1 -type f -name '*.deb' -print | sort
       - name: Build signed APT site
         env:

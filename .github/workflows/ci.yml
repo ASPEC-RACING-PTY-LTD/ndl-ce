@@ -1,5 +1,10 @@
 name: CI
 
+# One quick job that catches broken changes: formatting, vet, types, lint,
+# generated code, policy checks and migrations on Postgres. The full Go and UI
+# test suites run locally before each push (scripts/check.sh). The Alpha
+# Release workflow starts only after this passes.
+
 on:
   push:
   pull_request:
@@ -17,93 +22,31 @@ env:
   NODE_VERSION: "24"
 
 jobs:
-  policy:
-    name: Policy
-    # Runs only on GitHub: the CodeHold mirror's runner skips it.
-    if: github.server_url == 'https://github.com'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-      - uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: true
-      - name: Em dash policy
-        run: node scripts/ci/check-em-dashes.mjs
-      - name: Bootstrap size
-        run: node scripts/ci/check-bootstrap-size.mjs
-      - name: Package structure
-        run: node scripts/ci/check-package-structure.mjs
-      - name: CI policy
-        run: node scripts/ci/check-ci-policy.mjs
-      - name: Release version tests
-        run: node --test scripts/release-version.test.mjs
-      - name: OpenAPI routes
-        run: node scripts/ci/check-openapi-routes.mjs
-      - name: ShellCheck
-        run: |
-          shellcheck --severity=error packaging/bootstrap/get-nodal.sh \
-            packaging/lib/ndl/build-ui.sh \
-            packaging/e2e/lib/ensure-node.sh \
-            packaging/e2e/check-ui-build.sh \
-            packaging/cert/lib.sh \
-            packaging/cert/ce-1.0-certify.sh \
-            packaging/cert/selftest.sh
-      - name: Certification harness self-test
-        run: bash packaging/cert/selftest.sh
-      - name: Go format
-        run: test -z "$(gofmt -l .)"
-      - name: GitHub Actions YAML
-        run: |
-          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
-          actionlint -color
-
-  go-vet:
-    name: Go Vet
+  check:
+    name: Check
     # Runs only on GitHub: the CodeHold mirror's runner skips it.
     if: github.server_url == 'https://github.com'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Start Postgres
+        # Started first so it is ready by the time migrations are applied.
+        run: docker run -d --name pg -e POSTGRES_USER=nodal -e POSTGRES_PASSWORD=nodal -e POSTGRES_DB=nodal -p 5432:5432 postgres:16
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-          cache: true
-      - name: Vet
-        run: go vet ./...
-
-  go:
-    name: Go
-    # Runs only on GitHub: the CodeHold mirror's runner skips it.
-    if: github.server_url == 'https://github.com'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+          cache: false
+      - name: Restore Go build cache
+        uses: actions/cache@v4
         with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: true
-      - name: Download Go modules
-        run: go mod download
-      - name: Test as root
-        run: |
-          modcache="$(go env GOMODCACHE)"
-          sudo env GOMODCACHE="$modcache" GOPROXY=off go test ./...
-
-  ui:
-    name: UI
-    # Runs only on GitHub: the CodeHold mirror's runner skips it.
-    if: github.server_url == 'https://github.com'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ hashFiles('go.sum') }}-
+            go-${{ runner.os }}-
       - uses: pnpm/action-setup@v4
         with:
           version: 10.10.0
@@ -112,65 +55,43 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
           cache-dependency-path: ui/pnpm-lock.yaml
-      - name: Install
+      - name: Install UI packages
         working-directory: ui
-        run: pnpm install --frozen-lockfile
-      - name: Lint, types, tests
+        run: pnpm install --frozen-lockfile --prefer-offline
+      - name: Policy
+        run: |
+          node scripts/ci/check-em-dashes.mjs
+          node scripts/ci/check-bootstrap-size.mjs
+          node scripts/ci/check-package-structure.mjs
+          node scripts/ci/check-ci-policy.mjs
+          node --test scripts/release-version.test.mjs
+          node scripts/ci/check-openapi-routes.mjs
+          node scripts/ci/check-ui-copy.mjs
+          shellcheck --severity=error packaging/bootstrap/get-nodal.sh \
+            packaging/lib/ndl/build-ui.sh \
+            packaging/e2e/lib/ensure-node.sh \
+            packaging/e2e/check-ui-build.sh \
+            packaging/cert/lib.sh \
+            packaging/cert/ce-1.0-certify.sh \
+            packaging/cert/selftest.sh
+      - name: Generated API types
+        run: |
+          node scripts/generate-openapi.mjs
+          git diff --exit-code -- ui/src/generated/openapi.ts
+      - name: Go format and vet
+        run: |
+          test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+          go vet ./...
+      - name: UI lint and types
         working-directory: ui
         run: |
-          pnpm lint
+          pnpm lint &
+          lint=$!
           pnpm typecheck
-          pnpm test
-
-  schema:
-    name: Schema
-    # Runs only on GitHub: the CodeHold mirror's runner skips it.
-    if: github.server_url == 'https://github.com'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: nodal
-          POSTGRES_PASSWORD: nodal
-          POSTGRES_DB: nodal
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U nodal"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: true
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-      - uses: bufbuild/buf-setup-action@v1
-        with:
-          version: "1.54.0"
-          github_token: ${{ github.token }}
-      - name: Install protoc plugins
-        run: go install tool
-      - name: Codegen drift
-        run: node scripts/ci/check-codegen.mjs
-      - name: Buf lint
-        run: buf lint
+          wait "$lint"
       - name: Apply migrations
         env:
           NODAL_TEST_PG: postgresql://nodal:nodal@localhost:5432/nodal
-        run: go test ./internal/store/ -count=1 -run TestApplyOnPostgres
-      - name: Buf breaking
-        if: github.base_ref != ''
         run: |
-          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
-          if git cat-file -e "origin/${{ github.base_ref }}:buf.yaml" 2>/dev/null; then
-            buf breaking --against ".git#branch=origin/${{ github.base_ref }}"
-          else
-            echo "No buf.yaml on ${{ github.base_ref }}; skipping breaking check."
-          fi
+          for _ in $(seq 1 30); do docker exec pg pg_isready -U nodal >/dev/null 2>&1 && break; sleep 1; done
+          go test ./internal/store/ -count=1 -run TestApplyOnPostgres

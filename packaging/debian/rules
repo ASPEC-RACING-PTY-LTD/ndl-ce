@@ -35,17 +35,14 @@ override_dh_auto_clean:
 
 override_dh_auto_build:
 	mkdir -p build
-	$(GO_CD) go build -ldflags "$(LDFLAGS)" -o $(GO_OUT)build/ndl-control ./cmd/ndl-control
-	$(GO_CD) go build -ldflags "$(LDFLAGS)" -o $(GO_OUT)build/ndl-agent ./cmd/ndl-agent
-	$(GO_CD) go build -ldflags "$(LDFLAGS)" -o $(GO_OUT)build/ndl-live ./cmd/ndl-live
-	$(GO_CD) go build -o $(GO_OUT)build/nodalctl ./cmd/nodalctl
-	$(GO_CD) go build -o $(GO_OUT)build/ndl-network-rollback ./cmd/ndl-network-rollback
-	$(GO_CD) go build -o $(GO_OUT)build/ndl-ct-prepare ./cmd/ndl-ct-prepare
-	$(GO_CD) go build -o $(GO_OUT)build/ndl-lxc-nesting-apparmor ./cmd/ndl-lxc-nesting-apparmor
-	$(GO_CD) go build -o $(GO_OUT)build/ndl-qemu-launch ./cmd/ndl-qemu-launch
-	$(GO_CD) go build -o $(GO_OUT)build/ndl-oci-launch ./cmd/ndl-oci-launch
-	$(GO_CD) go build -o $(GO_OUT)build/ndl-guest ./cmd/ndl-guest
-	sh $(MODROOT)/packaging/lib/ndl/build-ui.sh $(MODROOT)/ui
+	# One go build per flag set builds its binaries in parallel; the UI
+	# builds alongside them.
+	sh $(MODROOT)/packaging/lib/ndl/build-ui.sh $(MODROOT)/ui > build/ui.log 2>&1 & ui=$$!; \
+	$(GO_CD) go build -ldflags "$(LDFLAGS)" -o $(GO_OUT)build/ ./cmd/ndl-control ./cmd/ndl-agent ./cmd/ndl-live && \
+	$(GO_CD) go build -o $(GO_OUT)build/ ./cmd/nodalctl ./cmd/ndl-network-rollback ./cmd/ndl-ct-prepare \
+		./cmd/ndl-lxc-nesting-apparmor ./cmd/ndl-qemu-launch ./cmd/ndl-oci-launch ./cmd/ndl-guest; \
+	go=$$?; wait $$ui; status=$$?; cat build/ui.log; \
+	test $$go -eq 0 && test $$status -eq 0
 
 override_dh_auto_test:
 	true
@@ -104,6 +101,10 @@ override_dh_install:
 	dh_install
 	test -f debian/ndl-ui/usr/share/ndl/ui/index.html
 	test -d debian/ndl-ui/usr/share/ndl/ui/assets
+
+# gzip packs the large Go binaries far faster than the default xz.
+override_dh_builddeb:
+	dh_builddeb -- -Zgzip
 
 override_dh_dwz:
 	true
