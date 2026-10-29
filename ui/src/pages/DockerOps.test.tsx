@@ -147,7 +147,7 @@ afterEach(() => {
 });
 
 describe("Docker bulk tools", () => {
-  it("fixes unhealthy containers as a job, shows tunnels, and tests a JSON script", async () => {
+  it("fixes unhealthy containers as a job, leaves tunnels to Cloudflare, and tests a JSON script", async () => {
     const posted: Record<string, string> = {};
     let polls = 0;
     mockApi({
@@ -190,20 +190,19 @@ describe("Docker bulk tools", () => {
         };
       },
     });
-    localStorage.setItem("ndl-docker-expand-pref", "expanded");
     window.history.replaceState({}, "", "/docker");
     render(<App />);
-    const tunnels = await screen.findByRole("region", { name: /cloudflare tunnels/i });
-    const card = within(tunnels).getByRole("article", { name: /tunnel cloudflared.service on apps/i });
-    expect(within(card).getAllByText(/shop\.example\.com/).length).toBeGreaterThan(0);
-    expect(within(card).getByText(/routes to containers that are down/i)).toBeVisible();
+    await screen.findByRole("row", { name: /container shop-web-1/i });
+    // Tunnels belong to the Cloudflare page.
+    expect(screen.queryByText(/cloudflared\.service|cloudflare tunnels|shop\.example\.com/i)).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: /^fix unhealthy$/i }));
     await waitFor(() => expect(posted.bulk).toContain('"action":"fix"'));
     expect(await screen.findByText(/start shop-web-1 on apps/i)).toBeVisible();
     await waitFor(() => expect(screen.getByRole("article", { name: /fix unhealthy progress/i })).toHaveTextContent(/done/i));
 
-    fireEvent.click(screen.getByRole("button", { name: /^run json$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /more docker actions/i }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /^run json script$/i }));
     const dialog = await screen.findByRole("dialog", { name: /run a docker script/i });
     fireEvent.click(within(dialog).getByRole("button", { name: /^test$/i }));
     expect(await within(dialog).findByText(/would restart shop-db-1/i)).toBeVisible();

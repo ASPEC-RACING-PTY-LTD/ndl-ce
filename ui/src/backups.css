@@ -1,7 +1,7 @@
 /*
- * Backups page. Every block is full width or one of two equal-height
- * columns, so edges line up; lists scroll inside their box instead of
- * stretching the page.
+ * Backups page: a small summary of targets and backup states, then one
+ * table of workloads. Everything else opens in a window from the page
+ * header, so boxes stay the size of what they hold.
  */
 
 .page.bk {
@@ -71,19 +71,6 @@
   gap: var(--space-3);
   min-width: 0;
   padding: var(--space-3) var(--space-4);
-}
-
-.bk-row {
-  display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
-  gap: var(--space-3);
-  align-items: stretch;
-}
-
-@media (max-width: 1100px) {
-  .bk-row {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }
 
 .bk-head {
@@ -371,65 +358,9 @@
 
 /* Collapsible sections ------------------------------------------------ */
 
-.bk-collapse {
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  background: var(--bg-surface);
-  box-shadow: var(--shadow-1);
-}
-
-.bk-collapse.is-warn {
-  border-color: var(--warn);
-}
-
-.bk-collapse > summary {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-1) var(--space-3);
-  min-height: 2.6rem;
-  padding: var(--space-2) var(--space-4);
-  cursor: pointer;
-  list-style: none;
-}
-
-.bk-collapse > summary::-webkit-details-marker {
-  display: none;
-}
-
-.bk-collapse > summary::before {
-  content: "";
-  width: 0.45rem;
-  height: 0.45rem;
-  border-right: 2px solid var(--fg-tertiary);
-  border-bottom: 2px solid var(--fg-tertiary);
-  transform: rotate(-45deg);
-  transition: transform var(--ease);
-}
-
-.bk-collapse[open] > summary::before {
-  transform: rotate(45deg);
-}
-
-.bk-collapse > summary:hover {
-  background: var(--bg-hover);
-  border-radius: var(--radius-lg);
-}
-
-.bk-summary-title {
-  font-weight: 650;
-}
-
 .bk-summary-meta {
   color: var(--fg-secondary);
   font-size: 0.8125rem;
-}
-
-.bk-collapse-body {
-  display: grid;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  border-top: 1px solid var(--line-soft);
 }
 
 .bk-toggle {
@@ -453,37 +384,6 @@
 .bk-toggle .btn.is-selected {
   background: var(--accent-soft);
   color: var(--accent);
-}
-
-/* Free tier meter ----------------------------------------------------- */
-
-.bk-meter-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2) var(--space-3);
-}
-
-.bk-meter {
-  flex: 1 1 12rem;
-  height: 0.5rem;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--bg-elevated);
-}
-
-.bk-meter > span {
-  display: block;
-  height: 100%;
-  background: var(--ok);
-}
-
-.bk-meter.is-warn > span {
-  background: var(--warn);
-}
-
-.bk-meter.is-danger > span {
-  background: var(--danger);
 }
 
 /* Targets and row actions ----------------------------------------------- */
@@ -542,207 +442,6 @@
   gap: var(--space-3);
 }
 
-/* Page bar: minimized boxes on the left, Create + and Settings right ---- */
-
-.bk-bar {
-  position: sticky;
-  top: 0;
-  z-index: 5;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: 2.75rem;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  background: color-mix(in oklch, var(--bg-surface) 92%, transparent);
-  backdrop-filter: blur(6px);
-  box-shadow: var(--shadow-1);
-}
-
-.bk-bar-actions {
-  display: flex;
-  gap: var(--space-2);
-  margin-left: auto;
-}
-
-.bk-dock {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.bk-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  min-height: 1.8rem;
-  padding: 0.2rem 0.7rem;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--bg-elevated);
-  color: var(--fg-primary);
-  font: inherit;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  white-space: nowrap;
-  cursor: pointer;
-  animation: bk-chip-in 160ms ease-out;
-}
-
-.bk-chip:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-@keyframes bk-chip-in {
-  from {
-    transform: scale(0.7);
-    opacity: 0;
-  }
-  to {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
-/* The button that flies from a minimized box to the bar. */
-.bk-ghost {
-  position: fixed;
-  top: 0;
-  left: 0;
-  z-index: 1000;
-  pointer-events: none;
-  will-change: transform, opacity;
-  animation: none;
-  box-shadow: var(--shadow-pop);
-  border-color: var(--accent);
-}
-
-.bk-menu {
-  position: relative;
-}
-
-.bk-menu-list {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  z-index: 10;
-  display: grid;
-  min-width: 10rem;
-  padding: 0.25rem;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--bg-elevated);
-  box-shadow: var(--shadow-pop);
-}
-
-.bk-menu-list button {
-  padding: 0.45rem 0.7rem;
-  border: 0;
-  border-radius: calc(var(--radius) - 2px);
-  background: none;
-  color: var(--fg-primary);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.bk-menu-list button:hover,
-.bk-menu-list button:focus-visible {
-  background: var(--bg-hover);
-}
-
-/* Boxes ------------------------------------------------------------------ */
-
-.bk-box {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  transform-origin: top center;
-}
-
-.bk-box > * {
-  flex: 1 1 auto;
-}
-
-.bk-box > .bk-min {
-  position: absolute;
-  top: 0.7rem;
-  right: 0.7rem;
-  z-index: 2;
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.6rem;
-  height: 1.6rem;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: var(--radius);
-  background: none;
-  color: var(--fg-tertiary);
-  cursor: pointer;
-}
-
-.bk-box > .bk-min:hover {
-  border-color: var(--line);
-  color: var(--fg-primary);
-}
-
-/* Room for the minimize control in every box header. */
-.bk-box > .panel > .bk-head:first-child {
-  padding-right: 2rem;
-}
-
-.bk-box.is-entering {
-  animation: bk-box-in 220ms ease-out;
-}
-
-@keyframes bk-box-in {
-  from {
-    transform: scale(0.97);
-    opacity: 0;
-  }
-  to {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .bk-box.is-entering,
-  .bk-chip {
-    animation: none;
-  }
-}
-
-/* A box whose content has nothing to show takes no space. */
-.bk-box:not(:has(> :not(.bk-min))) {
-  display: none;
-}
-
-/* Pairs: a box alone in its row takes the whole row. */
-.bk-row > :only-child {
-  grid-column: 1 / -1;
-}
-
-.bk-row.is-even {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.bk-row.is-tall .bk-scroll {
-  min-height: 26rem;
-}
-
-@media (max-width: 1100px) {
-  .bk-row.is-even {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
 /* A body that fills its box, with a list that scrolls inside it. */
 .bk-fill {
   display: flex;
@@ -795,62 +494,6 @@
   white-space: nowrap;
 }
 
-/* New layout: Management and Backup Status ------------------------------ */
-
-/*
- * Management uses one layout: what a row is on the left, every button for
- * it in one right-hand column that starts where Run now does. Buttons
- * flow in rows inside that column.
- */
-.bk-manage {
-  --bk-mcol: minmax(22rem, 44%);
-}
-
-.bk-manage .bk-mrow,
-.bk-manage .bk-item,
-.bk-manage .bk-target {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--bk-mcol);
-  gap: var(--space-2) var(--space-4);
-  align-items: start;
-}
-
-.bk-manage .bk-mrow h2 {
-  margin: 0;
-}
-
-.bk-manage .bk-item > .bk-actions,
-.bk-manage .bk-mcol .bk-actions {
-  justify-content: flex-start;
-  flex-wrap: wrap;
-}
-
-.bk-manage .bk-target > :not(.bk-actions) {
-  grid-column: 1;
-}
-
-.bk-manage .bk-target > .bk-actions {
-  grid-column: 2;
-  grid-row: 1 / span 2;
-}
-
-.bk-mcol {
-  display: grid;
-  gap: var(--space-2);
-}
-
-.bk-subhead {
-  margin: 0;
-  font-size: 1rem;
-}
-
-.bk-manage-targets {
-  display: grid;
-  gap: var(--space-2);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--line-soft);
-}
-
 .bk-history {
   display: grid;
   gap: var(--space-3);
@@ -869,29 +512,6 @@
   max-width: 22rem;
 }
 
-/* Boxes inside a box drop their own frame. */
-.bk-manage .panel,
-.bk-status .panel {
-  padding: 0;
-  border: 0;
-  background: none;
-  box-shadow: none;
-}
-
-.bk-status-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: var(--space-4);
-  align-items: start;
-}
-
-.bk-status-sizes,
-.bk-status-runs {
-  display: grid;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
 .bk-table.is-compact th,
 .bk-table.is-compact td {
   padding-block: 0.3rem;
@@ -905,21 +525,48 @@
   min-width: 0;
 }
 
-.bk-status > .bk-storage-part {
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--line-soft);
+/* Summary and the workload table ----------------------------------------- */
+
+.bk-summary {
+  justify-self: start;
+  max-width: 100%;
+  gap: var(--space-2);
 }
 
-@media (max-width: 1100px) {
-  .bk-status-grid,
-  .bk-manage .bk-mrow,
-  .bk-manage .bk-item,
-  .bk-manage .bk-target {
-    grid-template-columns: minmax(0, 1fr);
-  }
+.bk-target-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
 
-  .bk-manage .bk-target > .bk-actions {
-    grid-column: 1;
-    grid-row: auto;
-  }
+.bk-target-chip {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+}
+
+.bk-main {
+  justify-self: start;
+  max-width: 100%;
+}
+
+.bk-wtable table {
+  width: auto;
+}
+
+.bk-wtable td {
+  vertical-align: top;
+}
+
+.bk-wtable tr.is-selected td {
+  background: var(--accent-soft);
+}
+
+.bk-bulk {
+  justify-content: flex-start;
+  align-items: center;
 }

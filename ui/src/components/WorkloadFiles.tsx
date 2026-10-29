@@ -52,9 +52,20 @@ export function effectiveRule(p: string, skip: string[], keep: string[]): Rule {
  * paths always kept. The rules are saved inside the workload, at
  * /.ndl-backup/rules.json, and every backup of it follows them.
  */
-export function WorkloadFiles({ workloads, mutate, onBackupsDeleted }: { workloads: Workload[]; mutate: boolean; onBackupsDeleted?: () => void }) {
+export function WorkloadFiles({
+  workloads,
+  mutate,
+  onBackupsDeleted,
+  initialWorkloadId = "",
+}: {
+  workloads: Workload[];
+  mutate: boolean;
+  onBackupsDeleted?: () => void;
+  /** initialWorkloadId opens on that workload's files. */
+  initialWorkloadId?: string;
+}) {
   const containers = useMemo(() => workloads.filter((w) => w.kind === "system-container").sort((a, b) => a.name.localeCompare(b.name)), [workloads]);
-  const [workloadId, setWorkloadId] = useState("");
+  const [workloadId, setWorkloadId] = useState(initialWorkloadId);
   const [dir, setDir] = useState("/");
   const [entries, setEntries] = useState<WorkloadFileEntry[] | null>(null);
   const [sort, setSort] = useState<Sort>("name");

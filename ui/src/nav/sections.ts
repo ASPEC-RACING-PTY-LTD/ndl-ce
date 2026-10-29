@@ -29,17 +29,33 @@ export type Section = Gate & {
 const exact = (...paths: string[]) => (p: string) => paths.includes(p);
 const under = (...bases: string[]) => (p: string) => bases.some((b) => p === b || p.startsWith(b + "/"));
 
+/** The pages under System, in dropdown and sub-bar order. */
+export const SYSTEM_PAGES: SectionChild[] = [
+  { id: "features", label: "Add Features", href: "/settings/features", permission: "feature.manage" },
+  { id: "kubernetes", label: "Kubernetes", href: "/settings/kubernetes", capability: "kubernetes", permission: "feature.manage" },
+  { id: "updates", label: "Updates", href: "/settings/updates", permission: "updates.manage" },
+  { id: "appearance", label: "Appearance", href: "/admin/theme", permission: "settings.appearance.manage" },
+  { id: "search", label: "Search", href: "/admin/search", permission: "search.manage" },
+  { id: "certificates", label: "Certificates", href: "/settings/certificates", permission: "settings.tls.manage", capability: "integrations" },
+  { id: "license", label: "License", href: "/settings/license", permission: "settings.license.manage" },
+  { id: "store", label: "Store", href: "/store", capability: "integrations" },
+  { id: "docs", label: "Docs", href: "/docs" },
+  // Without audit.read the Audit log shows tasks only, so everyone may open it.
+  { id: "audit", label: "Audit log", href: "/audit", match: exact("/audit", "/tasks") },
+];
+
 export const ADMIN_SECTIONS: Section[] = [
   {
     id: "iam",
     label: "IAM",
     href: "/iam",
     icon: "shield",
-    description: "Users, roles, groups, API access, approvals and the audit log.",
+    description: "Users and approvals, roles, groups and API access.",
     anyPermission: IAM_PERMISSIONS,
-    match: (p) => isIAMPath(p) || p === "/audit" || p === "/tasks",
+    match: (p) => isIAMPath(p),
     children: [
-      { id: "users", label: "Users", href: "/users", permission: "users.read" },
+      // Approvals are part of the Users page.
+      { id: "users", label: "Users", href: "/users", anyPermission: ["users.read", "approvals.view"], match: exact("/users", "/iam/approvals") },
       {
         id: "access",
         label: "Access control",
@@ -47,8 +63,6 @@ export const ADMIN_SECTIONS: Section[] = [
         anyPermission: ["roles.manage", "identity.group.manage", "api_access.manage", "identity.token.create"],
         match: exact("/iam/access", "/api-access"),
       },
-      { id: "approvals", label: "Approvals", href: "/iam/approvals", permission: "approvals.view" },
-      { id: "audit", label: "Audit log", href: "/audit", match: exact("/audit", "/tasks") },
     ],
   },
   {
@@ -56,25 +70,22 @@ export const ADMIN_SECTIONS: Section[] = [
     label: "Infrastructure",
     href: "/node",
     icon: "node",
-    description: "This node, storage, networking, the cluster, Docker, CodeHold and the Claude Agent.",
+    description: "This node, storage, networking and the cluster, Docker, CodeHold and the Claude Agent.",
     match: (p) =>
       p === "/node" ||
       p.startsWith("/node/") ||
-      under("/storage", "/network", "/docker")(p) ||
+      under("/storage", "/network", "/docker", "/codehold")(p) ||
       p === "/cloudflare" ||
       p === "/uptime" ||
       p === "/settings/cluster" ||
-      p === "/codehold" ||
-      p === "/codehold/cli" ||
       p === "/claude-agent",
     children: [
       { id: "node", label: "Node", href: "/node", match: (p) => p === "/node" || p.startsWith("/node/") },
       { id: "storage", label: "Storage", href: "/storage", match: under("/storage") },
-      { id: "network", label: "Network", href: "/network", match: (p) => under("/network")(p) || p === "/cloudflare" },
-      { id: "cluster", label: "Cluster", href: "/settings/cluster", capability: "clustering" },
+      // Network holds Edge forwarding, DDoS Protection, Cluster, Cloudflare, Caddy and Nginx.
+      { id: "network", label: "Network", href: "/network", match: (p) => under("/network")(p) || p === "/cloudflare" || p === "/settings/cluster" },
       { id: "docker", label: "Docker", href: "/docker", capability: "docker", match: (p) => under("/docker")(p) || p === "/uptime" },
-      { id: "codehold", label: "CodeHold runners", href: "/codehold", capability: "codehold", match: exact("/codehold") },
-      { id: "codehold-cli", label: "CodeHold CLI", href: "/codehold/cli", capability: "codehold" },
+      { id: "codehold", label: "CodeHold", href: "/codehold", capability: "codehold", match: under("/codehold") },
       { id: "claude-agent", label: "Claude Agent", href: "/claude-agent", capability: "claude_agent" },
     ],
   },
@@ -94,50 +105,14 @@ export const ADMIN_SECTIONS: Section[] = [
     ],
   },
   {
-    id: "features",
-    label: "Add Features",
+    id: "system",
+    label: "System",
     href: "/settings/features",
     icon: "settings",
-    description: "Turn optional features on and off.",
+    description: "Features, updates, appearance, search, security, the catalog and the audit log.",
     permission: "feature.manage",
-    children: [{ id: "kubernetes", label: "Kubernetes", href: "/settings/kubernetes", capability: "kubernetes", permission: "feature.manage" }],
-  },
-  {
-    id: "updates",
-    label: "Updates",
-    href: "/settings/updates",
-    icon: "restart",
-    description: "Check for, apply and roll back platform updates.",
-    permission: "updates.manage",
-  },
-  {
-    id: "appearance",
-    label: "Appearance",
-    href: "/admin/theme",
-    icon: "palette",
-    description: "Global theme, themes per role and group, default layouts.",
-    permission: "settings.appearance.manage",
-  },
-  {
-    id: "search",
-    label: "Search",
-    href: "/admin/search",
-    icon: "search",
-    description: "What search indexes, custom filters and indexing runs.",
-    permission: "search.manage",
-  },
-  {
-    id: "security",
-    label: "Security",
-    href: "/settings/certificates",
-    icon: "lock",
-    description: "Certificates and the license.",
-    anyPermission: ["settings.tls.manage", "settings.license.manage"],
-    match: exact("/settings/certificates", "/settings/license"),
-    children: [
-      { id: "certificates", label: "Certificates", href: "/settings/certificates", permission: "settings.tls.manage", capability: "integrations" },
-      { id: "license", label: "License", href: "/settings/license", permission: "settings.license.manage" },
-    ],
+    match: (p) => SYSTEM_PAGES.some((c) => (c.match ? c.match(p) : p === c.href)),
+    children: SYSTEM_PAGES,
   },
   {
     id: "intelligence",
@@ -150,18 +125,6 @@ export const ADMIN_SECTIONS: Section[] = [
     children: [
       { id: "ask", label: "Ask", href: "/ask" },
       { id: "plans", label: "Plans", href: "/plans" },
-    ],
-  },
-  {
-    id: "catalog",
-    label: "Catalog",
-    href: "/docs",
-    icon: "files",
-    description: "The Store and the documentation.",
-    match: exact("/store", "/docs"),
-    children: [
-      { id: "store", label: "Store", href: "/store", capability: "integrations" },
-      { id: "docs", label: "Docs", href: "/docs" },
     ],
   },
 ];

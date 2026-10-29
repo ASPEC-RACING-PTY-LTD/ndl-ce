@@ -11,7 +11,7 @@ import { createEntries } from "./nav/AreaFrames";
 import { ADMIN_SECTIONS, createScope, INSTANCE_SECTIONS, isAdminPath, isInstancePath, visibleSections } from "./nav/sections";
 import { featureState, popularityRank } from "./pages/FeaturesPage";
 import { filterInstances, parseWidgets } from "./pages/InstanceHomePage";
-import { nodeTab, parseLayout, seriesStats } from "./pages/NodePage";
+import { nodeElsewhere, nodeTab, parseLayout, seriesStats } from "./pages/NodePage";
 import { validAvatarURL } from "./pages/ProfilePage";
 import { groupExtras } from "./workloadExtras";
 
@@ -39,9 +39,15 @@ describe("navigation model", () => {
     expect(visibleSections(ADMIN_SECTIONS, plain, () => true).map((s) => s.id)).not.toContain("updates");
     const inst = visibleSections(INSTANCE_SECTIONS, superadmin, (id) => id === "gameservers").map((s) => s.id);
     expect(inst).toEqual(["workloads", "vms", "game-servers", "templates", "registries"]);
-    // Docker and CodeHold live under Infrastructure.
+    // Docker and CodeHold (runners and CLI on one page) live under Infrastructure; Cluster is part of Network.
     const infra = visibleSections(ADMIN_SECTIONS, superadmin, () => true).find((s) => s.id === "infrastructure");
-    expect(infra?.children?.map((c) => c.id)).toEqual(expect.arrayContaining(["docker", "codehold", "codehold-cli"]));
+    expect(infra?.children?.map((c) => c.id)).toEqual(["node", "storage", "network", "docker", "codehold", "claude-agent"]);
+    // Settings-like pages and the Audit log live under System.
+    const system = visibleSections(ADMIN_SECTIONS, superadmin, () => true).find((s) => s.id === "system");
+    expect(system?.children?.map((c) => c.id)).toEqual(expect.arrayContaining(["features", "updates", "appearance", "search", "certificates", "license", "store", "docs", "audit"]));
+    expect(all).not.toEqual(expect.arrayContaining(["features", "updates", "appearance", "search", "security", "catalog"]));
+    const iam = visibleSections(ADMIN_SECTIONS, superadmin, () => true).find((s) => s.id === "iam");
+    expect(iam?.children?.map((c) => c.id)).toEqual(["users", "access"]);
     expect(visibleSections(ADMIN_SECTIONS, superadmin, () => false).find((s) => s.id === "infrastructure")?.children?.map((c) => c.id)).not.toContain("docker");
   });
 
@@ -148,10 +154,16 @@ describe("instance overview", () => {
 
 describe("node page", () => {
   it("sends old addresses to their new sections", () => {
-    expect(nodeTab("/node/gpu")).toBe("hardware");
-    expect(nodeTab("/node/events")).toBe("activity");
-    expect(nodeTab("/node/logs")).toBe("activity");
+    // Hardware is part of Summary; metrics, events and logs share one tab.
+    expect(nodeTab("/node/gpu")).toBe("summary");
+    expect(nodeTab("/node/hardware")).toBe("summary");
+    expect(nodeTab("/node/events")).toBe("metrics");
+    expect(nodeTab("/node/logs")).toBe("metrics");
+    expect(nodeTab("/node/activity")).toBe("metrics");
     expect(nodeTab("/node")).toBe("summary");
+    expect(nodeElsewhere("/node/terminal")).toBe("/terminal");
+    expect(nodeElsewhere("/node/files")).toBe("/files");
+    expect(nodeElsewhere("/node")).toBeNull();
   });
 
   it("summarises a metric series", () => {

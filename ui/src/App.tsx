@@ -4,8 +4,9 @@ import { Shell } from "./components/Shell";
 import { RequireGrant } from "./components/RequireGrant";
 import { FeatureGate } from "./components/FeatureGate";
 import { AccessControlArea } from "./iam/AccessControlArea";
-import { UsersPage } from "./pages/UsersPage";
 import { IAMLayout, iamSections } from "./iam/IAMLayout";
+import { SystemLayout } from "./nav/SystemLayout";
+import { SYSTEM_PAGES } from "./nav/sections";
 import { ForbiddenPage } from "./pages/ForbiddenPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { EventsPage } from "./pages/EventsPage";
@@ -15,7 +16,7 @@ import { NodePage } from "./pages/NodePage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { SetupPage } from "./pages/SetupPage";
 import { RecoverPage } from "./pages/RecoverPage";
-import { NetworkHubPage, type NetworkTab } from "./pages/NetworkHubPage";
+import { NetworkHubPage, networkRoute } from "./pages/NetworkHubPage";
 import { FilesPage } from "./pages/FilesPage";
 import { HostOperatePage } from "./pages/HostOperatePage";
 import { TerminalPage } from "./pages/TerminalPage";
@@ -34,12 +35,11 @@ import { ImportVMPage } from "./pages/ImportVMPage";
 import { ImportExportPage } from "./pages/ImportExportPage";
 import { ConsolePage } from "./pages/ConsolePage";
 import { CertificatePage } from "./pages/CertificatePage";
-import { ClusterPage } from "./pages/ClusterPage";
 import { FeaturesPage } from "./pages/FeaturesPage";
 import { KubernetesPage } from "./pages/KubernetesPage";
 import { StorePage } from "./pages/StorePage";
 import { AutomationPage } from "./pages/AutomationPage";
-import { ApprovalsPage } from "./iam/ApprovalsPage";
+import { UsersArea } from "./iam/UsersArea";
 import { AutomationHome } from "./pages/automation/AutomationHome";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { FlowEditorPage } from "./pages/automation/FlowEditorPage";
@@ -83,9 +83,8 @@ import { ThemeManagementPage } from "./pages/admin/ThemeManagementPage";
 import { SearchManagementPage } from "./pages/admin/SearchManagementPage";
 import { InstanceHomePage } from "./pages/InstanceHomePage";
 import { ComponentsPage } from "./pages/ComponentsPage";
-import { CodeholdCLIDialog } from "./components/CodeholdCLIDialog";
 import { ProfilePage, PublicProfilePage } from "./pages/ProfilePage";
-import { canMutate } from "./rbac";
+import { ensureNodeNicknames } from "./api/client";
 
 function GateNotice({ children }: { children: string }) {
   return (
@@ -121,9 +120,14 @@ function WorkloadsRoute() {
   return <WorkloadsPage fixedKind={layout === "instance" ? "system-container" : undefined} />;
 }
 
+/** CodeholdCLIRoute keeps /codehold/cli working: the CLI is a section of the CodeHold page. */
 function CodeholdCLIRoute() {
-  const session = useSession();
-  return <CodeholdCLIDialog open asPage canChange={canMutate(session.status === "ready" ? session.user?.roles : undefined)} onClose={() => undefined} />;
+  useEffect(() => {
+    window.history.replaceState({}, "", "/codehold");
+    const timer = setTimeout(() => document.getElementById("codehold-cli")?.scrollIntoView({ block: "start" }), 500);
+    return () => clearTimeout(timer);
+  }, []);
+  return <CodeholdPage />;
 }
 
 function matchPage(path: string) {
@@ -181,8 +185,13 @@ function matchPage(path: string) {
   if (path === "/storage" || path === "/storage/manage") {
     return <StorageHubPage tab={path === "/storage/manage" ? "manage" : "storage"} />;
   }
-  if (path === "/network" || path === "/network/edge" || path === "/network/ddos" || path === "/network/cloudflare" || path === "/network/caddy" || path === "/network/nginx") {
-    return <NetworkHubPage tab={(path.split("/")[2] as NetworkTab | undefined) ?? "network"} />;
+  const network = networkRoute(path);
+  if (network) {
+    if (path === "/settings/cluster") {
+      // Cluster moved under Network; the old address still lands there.
+      window.history.replaceState({}, "", "/network/cluster");
+    }
+    return <NetworkHubPage tab={network.tab} section={network.section} />;
   }
   if (path === "/workloads/new/system-container") {
     return <WorkloadCreatePage />;
@@ -310,9 +319,6 @@ function matchPage(path: string) {
   if (path === "/node" || path.startsWith("/node/")) {
     return <NodePage />;
   }
-  if (path === "/settings/cluster") {
-    return <ClusterPage />;
-  }
   if (path === "/settings/features") {
     return (
       <RequireGrant permission="feature.manage">
@@ -391,10 +397,12 @@ function matchPage(path: string) {
     );
   }
   if (path === "/iam/approvals") {
+    // Approvals are part of the Users page; the old address scrolls to them.
+    window.history.replaceState({}, "", "/users");
     return (
       <IAMLayout>
         <RequireGrant permission="approvals.view">
-          <ApprovalsPage />
+          <UsersArea focus="approvals" />
         </RequireGrant>
       </IAMLayout>
     );
@@ -412,8 +420,8 @@ function matchPage(path: string) {
   if (path === "/users") {
     return (
       <IAMLayout>
-        <RequireGrant permission="users.read">
-          <UsersPage />
+        <RequireGrant anyPermission={["users.read", "approvals.view"]}>
+          <UsersArea />
         </RequireGrant>
       </IAMLayout>
     );
@@ -435,8 +443,11 @@ function matchPage(path: string) {
   return <NotFoundPage />;
 }
 
-/** Workload pages carry the workload's own tab bar. */
+/** Workload pages carry the workload's own tab bar; System pages share the System sub-bar. */
 function withFrame(path: string, page: ReactNode): ReactNode {
+  if (SYSTEM_PAGES.some((c) => (c.match ? c.match(path) : path === c.href))) {
+    return <SystemLayout>{page}</SystemLayout>;
+  }
   const selected = selectedTargetFromPath(path);
   if (selected?.kind !== "workload" || isGameServersContext(path)) {
     return page;
@@ -513,6 +524,8 @@ function PrefsBinder() {
     }
     if (user) {
       bindPrefsUser(user.user_id, user.ui_prefs);
+      // Node nicknames show on every page, including ones that never list nodes.
+      void ensureNodeNicknames(true);
     } else {
       unbindPrefs();
     }

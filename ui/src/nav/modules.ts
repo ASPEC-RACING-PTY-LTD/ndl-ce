@@ -20,6 +20,7 @@ export const IAM_PERMISSIONS = [
   "api_access.manage",
   "settings.security.manage",
   "identity.group.manage",
+  "approvals.view",
 ];
 
 /** Paths that belong to IAM (Identity and Access Management). */
@@ -90,7 +91,7 @@ export const NAV_MODULES: NavModule[] = [
   {
     id: "codehold",
     href: "/codehold",
-    label: "CodeHold Runners",
+    label: "CodeHold",
     group: "Infrastructure",
     match: (p) => p === "/codehold" || p === "/codehold/cli",
     capability: "codehold",
@@ -125,14 +126,14 @@ export const NAV_MODULES: NavModule[] = [
     label: "Network",
     group: "Infrastructure",
     // Cloudflare, Caddy and Nginx live under Network.
-    match: (p) => p === "/network" || p.startsWith("/network/") || p === "/cloudflare",
+    match: (p) => (p === "/network" || p.startsWith("/network/") || p === "/cloudflare") && p !== "/network/cluster",
   },
   {
     id: "cluster",
-    href: "/settings/cluster",
+    href: "/network/cluster",
     label: "Cluster",
     group: "Infrastructure",
-    match: (p) => p === "/settings/cluster",
+    match: (p) => p === "/network/cluster" || p === "/settings/cluster",
     capability: "clustering",
   },
   {

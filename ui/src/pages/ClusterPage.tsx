@@ -32,6 +32,7 @@ import { Dialog } from "../ui/Dialog";
 import { RelativeTime } from "../ui/RelativeTime";
 import { Segmented } from "../ui/Segmented";
 import { formatBytes } from "../format";
+import { NodeName, NodeNicknameButton } from "../components/NodeNickname";
 
 const INSTALL_CMD =
   "curl -fsSL https://raw.githubusercontent.com/ASPEC-RACING-PTY-LTD/ndl-ce/main/packaging/bootstrap/get-nodal.sh | sudo sh";
@@ -684,8 +685,14 @@ export function ClusterPage() {
                   return (
                     <tr key={n.id}>
                       <td>
-                        <strong>{n.name}</strong>
-                        <div className="muted">{isWorker(n) ? "Worker" : "Control"}</div>
+                        <strong>
+                          <NodeName node={n} />
+                        </strong>{" "}
+                        <NodeNicknameButton node={n} />
+                        <div className="muted">
+                          {isWorker(n) ? "Worker" : "Control"}
+                          {n.real_name ? ` · ${n.real_name}` : ""}
+                        </div>
                       </td>
                       <td>
                         <StatusBadge status={link.status} label={link.label} />

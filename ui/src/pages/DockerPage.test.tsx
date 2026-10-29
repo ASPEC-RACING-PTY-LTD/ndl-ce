@@ -1,7 +1,4 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
 import type { MeResponse } from "../api/types";
@@ -239,24 +236,30 @@ describe("Docker page", () => {
       },
     });
     vi.spyOn(window, "prompt").mockReturnValue("noisy healthcheck");
-    localStorage.setItem("ndl-docker-expand-pref", "expanded");
     window.history.replaceState({}, "", "/docker");
     render(<App />);
     expect(await screen.findByRole("heading", { name: /^docker$/i })).toBeVisible();
-    const attention = await screen.findByRole("region", { name: /needs attention/i });
-    fireEvent.click(screen.getByRole("button", { name: /healthy/i, expanded: false }));
-    const healthy = screen.getByRole("region", { name: /healthy/i });
-    expect(await within(attention).findByText(/shop-web-1/i)).toBeVisible();
-    expect(within(attention).getByRole("button", { name: /group shop/i })).toBeVisible();
+    const table = await screen.findByRole("table", { name: /^containers$/i });
+    // Unhealthy is the default: the healthy container stays hidden.
+    expect(screen.getByRole("button", { name: /^unhealthy \(1\)$/i })).toHaveAttribute("aria-pressed", "true");
+    expect(within(table).getByRole("row", { name: /container shop-web-1/i })).toBeVisible();
+    expect(within(table).queryByText(/aspecracing-admin-1/i)).toBeNull();
+    expect(within(table).getByText("shop")).toBeVisible();
+
+    // Healthy containers show only after the filter changes.
+    fireEvent.click(screen.getByRole("button", { name: /^healthy \(1\)$/i }));
+    const healthy = screen.getByRole("table", { name: /^containers$/i });
     expect(within(healthy).getByText(/aspecracing-admin-1/i)).toBeVisible();
     expect(within(healthy).queryByText(/shop-web-1/i)).toBeNull();
-    expect(screen.getAllByText(/\/srv\/shop/).length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: /engines with no containers/i })).toBeVisible();
-    expect(screen.queryByRole("heading", { name: /^cursor$/i })).toBeNull();
-    expect(document.querySelector(".docker-section.docker-idle .docker-card")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^all \(2\)$/i }));
+    expect(within(screen.getByRole("table", { name: /^containers$/i })).getAllByRole("row")).toHaveLength(3);
+    fireEvent.click(screen.getByRole("button", { name: /^unhealthy/i }));
 
-    fireEvent.click(screen.getByRole("button", { name: /shop-web-1 actions/i }));
-    fireEvent.click(screen.getByRole("menuitem", { name: /^restart$/i }));
+    // Right-click a row for its tools.
+    fireEvent.contextMenu(screen.getByRole("row", { name: /container shop-web-1/i }));
+    const menu = await screen.findByRole("menu", { name: /shop-web-1 actions/i });
+    expect(within(menu).getByRole("menuitem", { name: /^restart project shop$/i })).toBeVisible();
+    fireEvent.click(within(menu).getByRole("menuitem", { name: /^restart$/i }));
     await waitFor(() => expect(posted.some((b) => b.includes("restart"))).toBe(true));
 
     fireEvent.click(screen.getByRole("button", { name: /shop-web-1 actions/i }));
@@ -264,9 +267,44 @@ describe("Docker page", () => {
     await waitFor(() => expect(prefs.length).toBe(1));
     const saved = JSON.parse(prefs[0]);
     expect(saved).toMatchObject({ machine_id: "host", scope: "container", name: "shop-web-1", ignored: true, note: "noisy healthcheck" });
+
+    // Engines with no containers live in the Engines dialog, not on the page.
+    expect(screen.queryByRole("cell", { name: /^cursor$/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /more docker actions/i }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /^engines$/i }));
+    const engines = await screen.findByRole("dialog", { name: /docker engines/i });
+    expect(within(engines).getByText(/^cursor$/)).toBeVisible();
   });
 
-  it("keeps an ignored group out of needs attention", async () => {
+  it("counts stopped containers as unhealthy and shows no Cloudflare content", async () => {
+    const fetchMock = mockApi({
+      ...baseRoutes,
+      "/api/v1/docker": {
+        status: 200,
+        body: {
+          summary: {},
+          machines: [{ id: "ct-1", name: "apps", kind: "system-container", daemon_ok: true, health: "healthy", container_count: 2, projects: [] }],
+          projects: [],
+          containers: [
+            { id: "ct-1/a", machine_id: "ct-1", machine_name: "apps", container_id: "a", name: "worker-1", state: "exited", health: "healthy", status_label: "Exited (0)" },
+            { id: "ct-1/b", machine_id: "ct-1", machine_name: "apps", container_id: "b", name: "web-1", state: "running", health: "healthy", status_label: "Running" },
+          ],
+        },
+      },
+      "GET /api/v1/docker/prefs": { status: 200, body: { items: [] } },
+      "GET /api/v1/docker/tunnels": { status: 200, body: { supported: true, items: [{ machine_id: "ct-1", machine_name: "apps", unit: "cloudflared.service", health: "critical" }] } },
+    });
+    window.history.replaceState({}, "", "/docker");
+    render(<App />);
+    const table = await screen.findByRole("table", { name: /^containers$/i });
+    expect(within(table).getByText("worker-1")).toBeVisible();
+    expect(within(table).queryByText("web-1")).toBeNull();
+    expect(screen.queryByText(/cloudflare|cloudflared|tunnel/i)).toBeNull();
+    const paths = fetchMock.mock.calls.map(([input]) => new URL(String(input), "http://localhost").pathname);
+    expect(paths).not.toContain("/api/v1/docker/tunnels");
+  });
+
+  it("keeps an ignored project out of unhealthy", async () => {
     mockApi({
       ...baseRoutes,
       "/api/v1/docker": {
@@ -319,18 +357,8 @@ describe("Docker page", () => {
     });
     window.history.replaceState({}, "", "/docker");
     render(<App />);
-    localStorage.setItem("ndl-docker-expand-pref", "expanded");
-    const attention = await screen.findByRole("region", { name: /needs attention/i });
-    expect(await within(attention).findByText(/nothing needs attention/i)).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: /ignored groups/i }));
+    expect(await screen.findByText(/every container is healthy/i)).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /^ignored \(1\)$/i }));
     expect(await screen.findByText(/flaky-app-1/i)).toBeVisible();
-  });
-
-  it("pins docker column tracks in CSS so names cannot shift the grid", () => {
-    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../styles.css"), "utf8").replace(/\r\n/g, "\n");
-    expect(css).toContain("table-layout: fixed");
-    expect(css).toContain(".docker-table-flat th:nth-child(1)");
-    expect(css).toContain(".docker-grid");
-    expect(css).toContain("grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr))");
   });
 });

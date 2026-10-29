@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DeployProject, DeployProjectList, Deployment } from "../api/client";
 
@@ -57,6 +57,7 @@ vi.mock("../api/client", async (orig) => ({
 }));
 
 import { setAutoConfirm } from "../confirm";
+import { resetPrefsForTest } from "../prefs";
 import { DeployPage } from "./DeployPage";
 
 beforeEach(() => {
@@ -74,6 +75,8 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  resetPrefsForTest();
+  localStorage.clear();
 });
 
 describe("DeployPage", () => {
@@ -83,6 +86,9 @@ describe("DeployPage", () => {
     expect(screen.getAllByText("3 behind").length).toBeGreaterThan(0);
     expect(screen.getByText("Up to date")).toBeTruthy();
     expect(screen.getByText("Command 2 of 2")).toBeTruthy();
+    // Found projects fold away while there are projects; they open on demand.
+    expect(screen.queryByText("wiki")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /found in containers/i }));
     expect(screen.getByText("wiki")).toBeTruthy();
   });
 
@@ -95,7 +101,8 @@ describe("DeployPage", () => {
 
   it("adds a found project with the default commands", async () => {
     render(<DeployPage />);
-    await screen.findByText("wiki");
+    await screen.findByText("blog");
+    fireEvent.click(screen.getByRole("button", { name: /found in containers/i }));
     fireEvent.click(screen.getByRole("button", { name: "Add wiki" }));
     expect((screen.getByLabelText("Working folder") as HTMLInputElement).value).toBe("/opt/wiki");
     expect((screen.getByLabelText("Command 1") as HTMLTextAreaElement).value).toContain("docker compose up -d --build --force-recreate");
@@ -128,11 +135,21 @@ describe("DeployPage", () => {
     setAutoConfirm(false);
   });
 
-  it("checks one project for updates", async () => {
+  it("checks one project for updates from its right-click menu", async () => {
+    render(<DeployPage />);
+    const name = await screen.findByRole("button", { name: "blog" });
+    fireEvent.contextMenu(name.closest("tr")!);
+    const menu = await screen.findByRole("menu", { name: "blog actions" });
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Check for updates" }));
+    await waitFor(() => expect(api.checkDeployProject).toHaveBeenCalledWith("p2"));
+  });
+
+  it("opens a project's settings from its menu", async () => {
     render(<DeployPage />);
     await screen.findByText("blog");
-    fireEvent.click(screen.getByRole("button", { name: "Check" }));
-    await waitFor(() => expect(api.checkDeployProject).toHaveBeenCalledWith("p2"));
+    fireEvent.click(screen.getByRole("button", { name: "blog actions" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Settings" }));
+    expect(await screen.findByRole("tab", { name: "Settings", selected: true })).toBeTruthy();
   });
 
   it("turns a project's webhook on and shows the secret once", async () => {

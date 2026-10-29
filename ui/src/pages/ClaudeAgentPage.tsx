@@ -20,6 +20,7 @@ import { Link } from "../components/Link";
 import { PageHeader } from "../components/PageHeader";
 import { StatusBadge } from "../components/StatusBadge";
 import { listGameFiles } from "../gameservers/api";
+import "../system-pages.css";
 
 const modeLabel: Record<string, string> = {
   default: "Ask before edits and commands",
@@ -155,30 +156,32 @@ export function ClaudeAgentPage() {
           ) : null}
           {data.status_error ? <ErrorNotice error={`The agent's container did not answer: ${data.status_error}`} /> : null}
 
-          {!ready ? <SetupPanel data={data} busy={busy} onSetup={(body) => run("Setup", () => setupClaudeAgent(body))} /> : null}
-          {ready && !stopped ? <SignInPanel data={data} busy={busy} run={run} /> : null}
-          <GrantsPanel data={data} busy={busy} run={run} />
-          {ready ? <SettingsPanel data={data} busy={busy} run={run} /> : null}
-          {data.workload_id ? (
-            <article className="panel">
-              <h2>Remove the agent</h2>
-              <p className="muted">
-                Takes the agent's access to every folder away, then deletes its container and the Claude sign-in stored in it. Your game server files are not touched.
-              </p>
-              <button
-                className="btn btn-danger"
-                type="button"
-                disabled={busy}
-                onClick={() => {
-                  if (confirmAction("Remove the Claude Agent? Its container and Claude sign-in are deleted.")) {
-                    void run("Removing the agent", () => removeClaudeAgent(), "The agent was removed.");
-                  }
-                }}
-              >
-                Remove agent
-              </button>
-            </article>
-          ) : null}
+          <div className="sys-grid ca-grid">
+            {!ready ? <SetupPanel data={data} busy={busy} onSetup={(body) => run("Setup", () => setupClaudeAgent(body))} /> : null}
+            {ready && !stopped ? <SignInPanel data={data} busy={busy} run={run} /> : null}
+            {ready ? <SettingsPanel data={data} busy={busy} run={run} /> : null}
+            <GrantsPanel data={data} busy={busy} run={run} />
+            {data.workload_id ? (
+              <article className="panel sys-card">
+                <h2>Remove the agent</h2>
+                <p className="muted">
+                  Takes the agent's access to every folder away, then deletes its container and the Claude sign-in stored in it. Your game server files are not touched.
+                </p>
+                <button
+                  className="btn btn-danger"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    if (confirmAction("Remove the Claude Agent? Its container and Claude sign-in are deleted.")) {
+                      void run("Removing the agent", () => removeClaudeAgent(), "The agent was removed.");
+                    }
+                  }}
+                >
+                  Remove agent
+                </button>
+              </article>
+            ) : null}
+          </div>
         </>
       )}
     </section>
@@ -190,7 +193,7 @@ function SetupPanel({ data, busy, onSetup }: { data: ClaudeAgentOverview; busy: 
   const [mode, setMode] = useState(data.permission_mode || "default");
   const working = data.state === "creating" || data.state === "installing";
   return (
-    <article className="panel">
+    <article className="panel sys-card">
       <h2>1. Set up</h2>
       {working ? (
         <LoadingState label={data.state === "creating" ? "Creating the agent's container" : "Installing Claude Code (a few minutes)"} />
@@ -254,7 +257,7 @@ function SignInPanel({ data, busy, run }: { data: ClaudeAgentOverview; busy: boo
   const st = data.status;
   if (st?.logged_in) {
     return (
-      <article className="panel">
+      <article className="panel sys-card">
         <h2>2. Claude account</h2>
         <p>
           Signed in as <strong>{st.account || "your Claude account"}</strong>
@@ -285,7 +288,7 @@ function SignInPanel({ data, busy, run }: { data: ClaudeAgentOverview; busy: boo
     );
   }
   return (
-    <article className="panel">
+    <article className="panel sys-card">
       <h2>2. Sign in to Claude</h2>
       <p className="muted">Remote Control needs a Claude plan that includes Claude Code (Pro or Max).</p>
       {!link ? (
@@ -371,29 +374,31 @@ function GrantsPanel({ data, busy, run }: { data: ClaudeAgentOverview; busy: boo
   }
 
   return (
-    <article className="panel">
+    <article className="panel sys-card sys-span-all">
       <h2>{data.state === "ready" ? "3. Access" : "Access"}</h2>
       <p className="muted">
         Shared folders appear in the agent under /srv/&lt;server&gt;/. Everything else on the host is out of its reach.
         {data.state !== "ready" ? " Choices saved now take effect when setup finishes." : ""}
       </p>
       {servers.length === 0 ? <EmptyState title="No game servers yet." /> : null}
-      {servers.map((srv) => {
-        const g = draft.find((x) => x.id === srv.id);
-        return (
-          <fieldset key={srv.id} className="stack" aria-label={srv.name}>
-            <label className="check-row">
-              <input
-                type="checkbox"
-                checked={Boolean(g)}
-                onChange={(e) => update(srv.id, () => (e.target.checked ? { kind: "gameserver", id: srv.id, folders: srv.default_folders ?? [] } : null))}
-              />
-              <strong>{srv.name}</strong> <span className="muted">({srv.game})</span>
-            </label>
-            {g ? <GrantEditor server={srv} grant={g} onChange={(next) => update(srv.id, () => next)} /> : null}
-          </fieldset>
-        );
-      })}
+      <div className="ca-servers">
+        {servers.map((srv) => {
+          const g = draft.find((x) => x.id === srv.id);
+          return (
+            <fieldset key={srv.id} className={"stack ca-server" + (g ? " is-on" : "")} aria-label={srv.name}>
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  checked={Boolean(g)}
+                  onChange={(e) => update(srv.id, () => (e.target.checked ? { kind: "gameserver", id: srv.id, folders: srv.default_folders ?? [] } : null))}
+                />
+                <strong>{srv.name}</strong> <span className="muted">({srv.game})</span>
+              </label>
+              {g ? <GrantEditor server={srv} grant={g} onChange={(next) => update(srv.id, () => next)} /> : null}
+            </fieldset>
+          );
+        })}
+      </div>
       <div className="btn-row">
         <button className="btn btn-primary" type="button" disabled={busy || !changed} onClick={() => void run("Saving access", () => putClaudeAgentGrants(draft), "Access saved.")}>
           Save access
@@ -418,7 +423,7 @@ function GrantEditor({ server, grant, onChange }: { server: ClaudeAgentServer; g
       {folders.length === 0 ? <p className="muted">No folders shared yet.</p> : null}
       <ul className="plain-list">
         {folders.map((f) => (
-          <li key={f.path} className="btn-row">
+          <li key={f.path} className="ca-folder">
             <code>{f.path}</code>
             <select
               className="field-input"
@@ -453,7 +458,7 @@ function GrantEditor({ server, grant, onChange }: { server: ClaudeAgentServer; g
           </button>
         </div>
       )}
-      <div className="btn-row">
+      <div className="ca-perms">
         <label className="check-row">
           <input type="checkbox" checked={Boolean(grant.log)} onChange={(e) => onChange({ ...grant, log: e.target.checked })} /> Read the server log
         </label>
@@ -495,7 +500,7 @@ function FolderPicker({ serverId, onPick, onCancel }: { serverId: string; onPick
   }, [serverId, path]);
   const parts = path ? path.split("/") : [];
   return (
-    <div className="panel" role="group" aria-label="Choose a folder">
+    <div className="panel ca-picker" role="group" aria-label="Choose a folder">
       <p>
         <button className="btn btn-ghost btn-sm" type="button" onClick={() => setPath("")}>
           server
@@ -542,7 +547,7 @@ function SettingsPanel({ data, busy, run }: { data: ClaudeAgentOverview; busy: b
   }, [data.name, data.permission_mode]);
   const changed = name.trim() !== data.name || mode !== data.permission_mode;
   return (
-    <article className="panel">
+    <article className="panel sys-card">
       <h2>Settings</h2>
       <form
         className="stack"

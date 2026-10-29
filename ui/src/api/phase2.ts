@@ -1,6 +1,9 @@
 export type NodeSummary = {
   id: string;
+  /** The nickname when one is set (see nodeNames.ts), else the node's own name. */
   name: string;
+  /** The node's own name, set only when a nickname replaces it in name. */
+  real_name?: string;
   status: string;
   /** The host No-dal runs on. Every other host can be deleted. */
   local?: boolean;

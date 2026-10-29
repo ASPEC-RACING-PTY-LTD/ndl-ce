@@ -1,0 +1,153 @@
+/*
+ * Docker page (containers and sites) and Deployments. Tables are sized to
+ * their content, never stretched across the page.
+ */
+
+.dk-section {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  justify-items: start;
+  min-width: 0;
+}
+
+.dk-section > * {
+  max-width: 100%;
+}
+
+.dk-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+.dk-section-head h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.dk-section-head .meta {
+  font-weight: 400;
+}
+
+.dk-search {
+  width: 16rem;
+  max-width: 100%;
+}
+
+.dk-select {
+  width: auto;
+  max-width: 14rem;
+}
+
+.dk-empty {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  width: fit-content;
+  max-width: 100%;
+}
+
+.dk-table-wrap {
+  width: fit-content;
+  max-width: 100%;
+}
+
+.dk-table {
+  width: auto;
+}
+
+.dk-table td {
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.dk-table td.cell-actions {
+  width: 1%;
+}
+
+.dk-row {
+  cursor: default;
+}
+
+.dk-row.is-clickable {
+  cursor: pointer;
+}
+
+.dk-row:hover td {
+  background: var(--bg-hover);
+}
+
+.dk-row.is-bad td:first-child {
+  box-shadow: inset 3px 0 0 var(--danger);
+}
+
+.dk-row.is-muted td {
+  opacity: 0.65;
+}
+
+.dk-clip {
+  display: inline-block;
+  max-width: 18rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.dk-name {
+  display: inline-grid;
+  gap: 1px;
+}
+
+.dk-name .meta {
+  font-size: 0.75rem;
+}
+
+.dk-reason {
+  color: var(--danger);
+  font-size: 0.8125rem;
+}
+
+td .dk-reason.meta {
+  display: block;
+  max-width: 16rem;
+}
+
+.dk-sites {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.dk-table .uptime-history {
+  width: 8rem;
+}
+
+.dk-engines-down {
+  width: fit-content;
+  max-width: 100%;
+}
+
+/* Deployments: compact bars and the found-projects table. */
+
+.dp-bar .bk-stats {
+  flex-wrap: wrap;
+}
+
+.dp-found-toggle {
+  font: inherit;
+  font-weight: 600;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--fg-primary);
+  cursor: pointer;
+}
+
+.dp-found-toggle:hover,
+.dp-found-toggle:focus-visible {
+  color: var(--accent);
+}

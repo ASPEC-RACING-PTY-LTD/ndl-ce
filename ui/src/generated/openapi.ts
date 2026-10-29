@@ -327,6 +327,16 @@ export interface Appearance {
   can_set_profile_limit?: boolean;
 }
 
+export interface NodeNicknames {
+  nicknames?: Record<string, unknown>;
+  can_edit?: boolean;
+}
+
+export interface NodeNicknameBody {
+  node_id?: string;
+  nickname?: string;
+}
+
 export interface MyAppearance {
   theme?: Record<string, unknown>;
   theme_source?: string;
@@ -4271,6 +4281,8 @@ export type StartSearchIndexPath = "/api/v1/search/index";
 export type CancelSearchIndexPath = "/api/v1/search/index/cancel";
 
 export type ClearDeepSearchIndexPath = "/api/v1/search/index/deep";
+
+export type GetNodeNicknamesPath = "/api/v1/node-nicknames";
 
 export type GetAppearancePath = "/api/v1/settings/appearance";
 

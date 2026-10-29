@@ -104,8 +104,8 @@ function refHref(f: EdgeForward): string | null {
   return null;
 }
 
-/** EdgePage is Network > Edge forwarding. */
-export function EdgePage() {
+/** EdgePage is the Edge forwarding section of the Network page. */
+export function EdgePage({ embedded = false }: { embedded?: boolean } = {}) {
   const session = useSession();
   const user = session.status === "ready" ? session.user : null;
   const canManage = hasGrant(user, "network.apply");
@@ -179,11 +179,11 @@ export function EdgePage() {
   };
 
   return (
-    <section className="page page-wide" aria-labelledby="edge-heading">
+    <section className={embedded ? "network-section" : "page page-wide"} id="edge" aria-labelledby="edge-heading">
       <PageHeader
         id="edge-heading"
         title="Edge forwarding"
-        kicker="Publish a service that runs on a node with no public address, such as a home server, on a node that has one, such as a VPS. Players connect to the edge; their own addresses reach the server through a WireGuard tunnel."
+        kicker="Publish a home service on a VPS in the cluster. Players connect to the VPS and reach the service through a tunnel with their own address."
         actions={
           <div className="btn-row is-flush">
             <button className="btn btn-secondary" type="button" onClick={() => void reload()}>
@@ -237,7 +237,7 @@ export function EdgePage() {
       </div>
       {data.forwards.length === 0 ? (
         <EmptyState title="Nothing is published through an edge">
-          Add a VPS to the cluster from <Link href="/settings/cluster">Cluster</Link>, then publish a game server, a workload or a host service on it.
+          Add a VPS from <Link href="/network/cluster">Cluster</Link>, then publish a game server, a workload or a host service on it.
         </EmptyState>
       ) : (
         <div className="table-wrap">
@@ -247,8 +247,6 @@ export function EdgePage() {
                 <th>Service</th>
                 <th>Players connect to</th>
                 <th>Runs on</th>
-                <th>Player addresses</th>
-                <th>Its own traffic</th>
                 <th>Forwarded</th>
                 <th>Status</th>
                 <th className="cell-actions">
@@ -264,7 +262,10 @@ export function EdgePage() {
                   <tr key={f.id}>
                     <td>
                       {href ? <Link href={href}>{f.name}</Link> : f.name}
-                      <div className="meta">{KIND_LABEL[f.kind]}</div>
+                      <div className="meta">
+                        {KIND_LABEL[f.kind]} · {f.kind === "workload" && !f.keep_address ? "player addresses hidden" : "player addresses passed on"} ·{" "}
+                        {f.egress ? "outbound through the edge" : "outbound from its own node"}
+                      </div>
                       {f.warnings?.map((w) => (
                         <div key={w} className="meta ddos-warning">
                           {w}
@@ -281,8 +282,6 @@ export function EdgePage() {
                       {f.origin_name || nodeName(f.origin_node_id)}
                       {f.target ? <div className="meta">{f.target}</div> : null}
                     </td>
-                    <td>{f.kind === "workload" && !f.keep_address ? "Hidden behind the node" : "Passed on"}</td>
-                    <td>{f.egress ? "Leaves through the edge" : "Leaves from its own node"}</td>
                     <td>
                       {num.format(f.packets)} packets
                       <div className="meta">{formatBytes(f.bytes)}</div>
@@ -348,7 +347,54 @@ export function EdgePage() {
         </>
       ) : null}
 
-      <h2 className="section-title">Nodes</h2>
+      <p className="meta ddos-footnote">
+        Allow the forwarded ports and the tunnel's UDP port in to the edge, also in its provider's firewall. Point the service's DNS at the edge with a DNS only record. Edge public addresses are set on{" "}
+        <Link href="/network/cluster">Cluster</Link>.
+      </p>
+      <ForwardDialog
+        state={editing}
+        data={data}
+        onClose={() => setEditing(null)}
+        onSaved={(res, msg) => {
+          setData(res);
+          setEditing(null);
+          setNotice(msg);
+          void reload();
+        }}
+      />
+    </section>
+  );
+}
+
+/** EdgeNodesSection lists the nodes that can be edges and their public addresses; it sits on the Cluster tab. */
+export function EdgeNodesSection() {
+  const session = useSession();
+  const user = session.status === "ready" ? session.user : null;
+  const canManage = hasGrant(user, "network.apply");
+  const [data, setData] = useState<EdgeOverview | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const reload = useCallback(async () => {
+    try {
+      setData(await getEdge());
+      setError(null);
+    } catch (err) {
+      setError(errText(err, "Edge addresses could not be loaded"));
+    }
+  }, []);
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+  if (!data) {
+    return error ? <ErrorNotice error={error} /> : null;
+  }
+  return (
+    <section className="section-block" aria-labelledby="edge-nodes-heading">
+      <h2 id="edge-nodes-heading" className="section-title">
+        Edge addresses
+      </h2>
+      <p className="meta">The public address players reach each node on, used by Edge forwarding.</p>
+      {error ? <ErrorNotice error={error} /> : null}
       <div className="table-wrap">
         <table className="data-table">
           <thead>
@@ -364,36 +410,19 @@ export function EdgePage() {
                 key={n.id}
                 node={n}
                 canManage={canManage}
-                busy={busy != null}
-                onSave={(addr) => void act("Saving", () => putEdgeNode(n.id, addr), "Public address saved.")}
+                busy={busy}
+                onSave={(addr) => {
+                  setBusy(true);
+                  void putEdgeNode(n.id, addr)
+                    .then((res) => setData(res))
+                    .catch((err: unknown) => setError(errText(err, "Saving failed")))
+                    .finally(() => setBusy(false));
+                }}
               />
             ))}
           </tbody>
         </table>
       </div>
-
-      <div className="meta ddos-footnote">
-        <p>To finish publishing a service on an edge:</p>
-        <ul>
-          <li>Allow the forwarded ports and the tunnel's UDP port in to the edge node, in its provider's firewall as well.</li>
-          <li>Remove the port forwards to the service on your home router; the edge replaces them.</li>
-          <li>Point the service's DNS name at the edge's address. On Cloudflare, use a DNS only (grey cloud) A record: the proxy does not carry game traffic.</li>
-          <li>
-            Turn on <Link href="/network/ddos">DDoS Protection</Link> to filter floods on the edge before they enter the tunnel.
-          </li>
-        </ul>
-      </div>
-      <ForwardDialog
-        state={editing}
-        data={data}
-        onClose={() => setEditing(null)}
-        onSaved={(res, msg) => {
-          setData(res);
-          setEditing(null);
-          setNotice(msg);
-          void reload();
-        }}
-      />
     </section>
   );
 }

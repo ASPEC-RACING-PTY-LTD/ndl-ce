@@ -1,31 +1,17 @@
-import { useMemo, useState, type ReactNode } from "react";
-import { getBackupTargetUsage } from "../api/client";
-import type { BackupArtifact, BackupTarget } from "../generated/openapi";
+import type { BackupArtifact } from "../generated/openapi";
 
-const OPEN_KEY = "ndl.backups.sizes.open";
+// Size helpers for the Backups workload table: what a workload holds before
+// a backup, what one backup added to storage, and the total kept.
+
 const UNIT_KEY = "ndl.backups.sizes.unit";
-const FREE_TIER_BYTES = 10e9;
+
+/** FREE_TIER_BYTES is Cloudflare R2's free storage. */
+export const FREE_TIER_BYTES = 10e9;
 
 export type Unit = "MB" | "GB" | "TB";
 
-const UNITS: Unit[] = ["MB", "GB", "TB"];
+export const UNITS: Unit[] = ["MB", "GB", "TB"];
 const UNIT_BYTES: Record<Unit, number> = { MB: 1e6, GB: 1e9, TB: 1e12 };
-
-function readPref(key: string): string | null {
-  try {
-    return window.localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-function writePref(key: string, value: string) {
-  try {
-    window.localStorage.setItem(key, value);
-  } catch {
-    // Preferences are a convenience; the box works without them.
-  }
-}
 
 /** gb shows a source size in decimal gigabytes. */
 export function gb(bytes: number): string {
@@ -38,329 +24,67 @@ export function small(bytes: number, unit: Unit): string {
   return `${n.toFixed(n >= 100 || n === 0 ? 0 : n >= 10 ? 1 : 2)} ${unit}`;
 }
 
-function readUnit(): Unit {
-  const saved = readPref(UNIT_KEY);
-  return saved === "GB" || saved === "TB" ? saved : "MB";
+export function readUnit(): Unit {
+  try {
+    const saved = window.localStorage.getItem(UNIT_KEY);
+    return saved === "GB" || saved === "TB" ? saved : "MB";
+  } catch {
+    return "MB";
+  }
+}
+
+export function writeUnit(unit: Unit) {
+  try {
+    window.localStorage.setItem(UNIT_KEY, unit);
+  } catch {
+    // A convenience only; the table works without it.
+  }
 }
 
 /** before is a restore point's size on the workload before compression. */
-function before(a: BackupArtifact): number {
+export function before(a: BackupArtifact): number {
   return a.logical_bytes || a.size_bytes || 0;
 }
 
 /**
- * landed is roughly what a restore point added to cloud storage: the new
+ * landed is roughly what a restore point added to storage: the new
  * compressed packs it uploaded. Older restore points that only report what
  * they stored locally fall back to that.
  */
-function landed(a: BackupArtifact): number {
+export function landed(a: BackupArtifact): number {
   if (a.remote_state === "protected" && a.upload_total_bytes) {
     return a.upload_total_bytes;
   }
   return a.physical_new_data ?? 0;
 }
 
-type Row = { id: string; name: string; latestBefore: number; latestLanded: number; count: number; totalLanded: number };
+export type WorkloadSize = {
+  /** latest is the newest restore point of the workload. */
+  latest?: BackupArtifact;
+  /** before is the newest restore point's size before compression. */
+  before: number;
+  /** latestStored is what the newest restore point added to storage. */
+  latestStored: number;
+  /** total is what every restore point of the workload added to storage. */
+  total: number;
+  count: number;
+};
 
-/**
- * BackupSizes shows, in one collapsible line, how big backups are before and
- * after they land in cloud storage, with per-backup, average and total sizes
- * and a per-workload breakdown when opened.
- */
-export function BackupSizes({
-  artifacts,
-  workloadName,
-  targets,
-  onDeleteWorkload,
-  status,
-}: {
-  artifacts: BackupArtifact[];
-  workloadName: (id: string) => string;
-  targets: BackupTarget[];
-  /** onDeleteWorkload deletes every backup of a workload. */
-  onDeleteWorkload?: (id: string, name: string) => void;
-  /**
-   * status makes it the new layout's Backup Status box: always open, its
-   * summary as pills after leading, its table beside aside, footer below.
-   */
-  status?: { leading: ReactNode; aside: ReactNode; footer?: ReactNode };
-}) {
-  const [open, setOpen] = useState(() => readPref(OPEN_KEY) === "1");
-  const [unit, setUnit] = useState<Unit>(readUnit);
-  const [measured, setMeasured] = useState<number | null>(null);
-  const [measuring, setMeasuring] = useState(false);
-  const [measureError, setMeasureError] = useState<string | null>(null);
-  const cloud = targets.find((t) => t.kind === "r2") ?? targets.find((t) => ["s3", "aws", "b2", "minio"].includes(t.kind));
-
-  const stats = useMemo(() => {
-    const points = artifacts.filter((a) => before(a) > 0).sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
-    const rows = new Map<string, Row>();
-    for (const a of points) {
-      const row = rows.get(a.workload_id);
-      if (!row) {
-        rows.set(a.workload_id, {
-          id: a.workload_id,
-          name: workloadName(a.workload_id),
-          latestBefore: before(a),
-          latestLanded: landed(a),
-          count: 1,
-          totalLanded: landed(a),
-        });
-      } else {
-        row.count += 1;
-        row.totalLanded += landed(a);
-      }
+/** sizesByWorkload sums restore points per workload, newest first. */
+export function sizesByWorkload(artifacts: BackupArtifact[]): Map<string, WorkloadSize> {
+  const sorted = [...artifacts].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+  const out = new Map<string, WorkloadSize>();
+  for (const a of sorted) {
+    let row = out.get(a.workload_id);
+    if (!row) {
+      row = { latest: a, before: before(a), latestStored: landed(a), total: 0, count: 0 };
+      out.set(a.workload_id, row);
+    } else if (row.before === 0 && before(a) > 0) {
+      // The newest point may still be capturing; size it by the newest one that reported.
+      row.before = before(a);
     }
-    const list = [...rows.values()].sort((a, b) => b.totalLanded - a.totalLanded);
-    const totalLanded = list.reduce((n, r) => n + r.totalLanded, 0);
-    return {
-      list,
-      count: points.length,
-      latest: points[0],
-      fleetBefore: list.reduce((n, r) => n + r.latestBefore, 0),
-      totalLanded,
-      avgBefore: points.length ? points.reduce((n, a) => n + before(a), 0) / points.length : 0,
-      avgLanded: points.length ? totalLanded / points.length : 0,
-    };
-  }, [artifacts, workloadName]);
-
-  const cloudTotal = measured ?? stats.totalLanded;
-  const share = cloudTotal / FREE_TIER_BYTES;
-
-  function toggle(next: boolean) {
-    setOpen(next);
-    writePref(OPEN_KEY, next ? "1" : "0");
+    row.total += landed(a);
+    row.count += 1;
   }
-
-  function pickUnit(next: Unit) {
-    setUnit(next);
-    writePref(UNIT_KEY, next);
-  }
-
-  const unitToggle = (
-    <div className="bk-toggle" role="group" aria-label="Size unit">
-      {UNITS.map((u) => (
-        <button key={u} type="button" className={"btn btn-sm" + (unit === u ? " is-selected" : "")} aria-pressed={unit === u} onClick={() => pickUnit(u)}>
-          {u}
-        </button>
-      ))}
-    </div>
-  );
-
-  function measure() {
-    if (!cloud) {
-      return;
-    }
-    setMeasuring(true);
-    setMeasureError(null);
-    getBackupTargetUsage(cloud.id)
-      .then((res) => setMeasured(res.usage?.total_bytes ?? 0))
-      .catch((err) => setMeasureError(err instanceof Error ? err.message : "Could not measure"))
-      .finally(() => setMeasuring(false));
-  }
-
-  if (status) {
-    const meter = cloud && stats.count > 0 ? (
-      <div className="bk-meter-row">
-        <div className={"bk-meter" + (share >= 0.9 ? " is-danger" : share >= 0.75 ? " is-warn" : "")} aria-label="Cloud free tier use">
-          <span style={{ width: `${Math.min(100, share * 100)}%` }} />
-        </div>
-        <span className="bk-hint">
-          {small(cloudTotal, unit)} of the 10 GB free tier (estimated; Measure on the target in Management gives the exact size)
-        </span>
-      </div>
-    ) : null;
-    return (
-      <section className="panel bk-panel bk-status" aria-labelledby="backup-status-heading">
-        <div className="bk-head">
-          <h2 id="backup-status-heading">Backup Status</h2>
-          {unitToggle}
-        </div>
-        <div className="bk-stats" aria-label="Backup summary">
-          {status.leading}
-          {stats.count > 0 ? (
-            <>
-              <span className="bk-stat" title={stats.latest ? `${gb(before(stats.latest))} on the workload before compression` : undefined}>
-                Latest backup{stats.latest ? ` (${workloadName(stats.latest.workload_id)})` : ""} <b>{stats.latest ? small(landed(stats.latest), unit) : "None"}</b>
-              </span>
-              <span className="bk-stat" title={`${gb(stats.avgBefore)} on the workload before compression`}>
-                Average per backup <b>{small(stats.avgLanded, unit)}</b>
-              </span>
-              <span className="bk-stat" title={`${gb(stats.fleetBefore)} on your workloads before compression`}>
-                Total ({stats.count} backup{stats.count === 1 ? "" : "s"}) <b>{small(cloudTotal, unit)}</b>
-                {measured != null ? " measured" : ""}
-              </span>
-            </>
-          ) : null}
-        </div>
-        <div className="bk-status-grid">
-          <div className="bk-status-sizes">
-            {stats.count === 0 ? (
-              <p className="bk-hint">Sizes show after the first backup.</p>
-            ) : (
-              <div className="bk-scroll is-short">
-                <table className="bk-table is-compact" aria-label="Backup size per workload">
-                  <thead>
-                    <tr>
-                      <th>Workload</th>
-                      <th className="bk-num">Before</th>
-                      <th className="bk-num">Latest</th>
-                      <th className="bk-num">Total</th>
-                      {onDeleteWorkload ? <th className="bk-actions-col" /> : null}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {stats.list.map((r) => (
-                      <tr key={r.id}>
-                        <td>{r.name}</td>
-                        <td className="bk-num">{gb(r.latestBefore)}</td>
-                        <td className="bk-num">{small(r.latestLanded, unit)}</td>
-                        <td className="bk-num" title={`${r.count} backup${r.count === 1 ? "" : "s"}`}>
-                          {small(r.totalLanded, unit)} <span className="bk-hint">({r.count})</span>
-                        </td>
-                        {onDeleteWorkload ? (
-                          <td className="bk-actions-col">
-                            <button
-                              className="btn btn-sm btn-ghost btn-danger-text"
-                              type="button"
-                              aria-label={`Delete all backups of ${r.name}`}
-                              onClick={() => onDeleteWorkload(r.id, r.name)}
-                            >
-                              Delete all
-                            </button>
-                          </td>
-                        ) : null}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            {meter}
-          </div>
-          <div className="bk-status-runs">{status.aside}</div>
-        </div>
-        {status.footer}
-      </section>
-    );
-  }
-
-  if (stats.count === 0) {
-    return (
-      <section className="panel bk-panel" aria-label="Backup size">
-        <div className="bk-head">
-          <h2>Backup size</h2>
-          <span className="bk-hint">Sizes show after the first backup.</span>
-        </div>
-      </section>
-    );
-  }
-  const saved = stats.fleetBefore > 0 ? Math.max(0, 1 - cloudTotal / stats.fleetBefore) : 0;
-  return (
-    <section className="panel bk-panel" aria-labelledby="backup-size-heading">
-      <div className="bk-head">
-        <h2 id="backup-size-heading">Backup size</h2>
-        <span className="bk-summary-meta">
-          ~{gb(stats.fleetBefore)} on your workloads → ~{small(cloudTotal, unit)} in {cloud?.name ?? "cloud storage"}
-          {saved > 0 ? ` (${Math.round(saved * 100)}% smaller)` : ""}
-        </span>
-        <button className="btn btn-sm btn-ghost" type="button" aria-expanded={open} onClick={() => toggle(!open)}>
-          {open ? "Hide details" : "Show details"}
-        </button>
-      </div>
-      {open ? (
-      <div className="bk-collapse-body">
-        <div className="bk-head">
-          <p className="bk-hint">
-            "Before" is the data on the workload. "In the cloud" is what was uploaded after compression and skipping
-            data already stored. Numbers are approximate.
-          </p>
-          {unitToggle}
-        </div>
-        <table className="bk-table" aria-label="Backup size summary">
-          <thead>
-            <tr>
-              <th />
-              <th className="bk-num">Before</th>
-              <th className="bk-num">In the cloud</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <th scope="row">Latest backup{stats.latest ? ` (${workloadName(stats.latest.workload_id)})` : ""}</th>
-              <td className="bk-num">{stats.latest ? gb(before(stats.latest)) : "None"}</td>
-              <td className="bk-num">{stats.latest ? small(landed(stats.latest), unit) : "None"}</td>
-            </tr>
-            <tr>
-              <th scope="row">Average per backup</th>
-              <td className="bk-num">{gb(stats.avgBefore)}</td>
-              <td className="bk-num">{small(stats.avgLanded, unit)}</td>
-            </tr>
-            <tr>
-              <th scope="row">
-                Total ({stats.count} backup{stats.count === 1 ? "" : "s"})
-              </th>
-              <td className="bk-num">{gb(stats.fleetBefore)}</td>
-              <td className="bk-num">
-                {small(cloudTotal, unit)}
-                {measured != null ? " measured" : " estimated"}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        {cloud ? (
-          <div className="bk-meter-row">
-            <div className={"bk-meter" + (share >= 0.9 ? " is-danger" : share >= 0.75 ? " is-warn" : "")} aria-label="Cloud free tier use">
-              <span style={{ width: `${Math.min(100, share * 100)}%` }} />
-            </div>
-            <span className="bk-hint">
-              {gb(cloudTotal)} of the 10 GB free tier
-            </span>
-            <button className="btn btn-sm" type="button" disabled={measuring} onClick={measure}>
-              {measuring ? "Measuring" : "Measure exactly"}
-            </button>
-            {measureError ? <span className="bk-hint is-danger">{measureError}</span> : null}
-          </div>
-        ) : null}
-        <div className="bk-scroll is-short">
-          <table className="bk-table" aria-label="Backup size per workload">
-            <thead>
-              <tr>
-                <th>Workload</th>
-                <th className="bk-num">Latest before</th>
-                <th className="bk-num">Latest in the cloud</th>
-                <th className="bk-num">Backups</th>
-                <th className="bk-num">Total in the cloud</th>
-                {onDeleteWorkload ? <th className="bk-actions-col" /> : null}
-              </tr>
-            </thead>
-            <tbody>
-              {stats.list.map((r) => (
-                <tr key={r.id}>
-                  <td>{r.name}</td>
-                  <td className="bk-num">{gb(r.latestBefore)}</td>
-                  <td className="bk-num">{small(r.latestLanded, unit)}</td>
-                  <td className="bk-num">{r.count}</td>
-                  <td className="bk-num">{small(r.totalLanded, unit)}</td>
-                  {onDeleteWorkload ? (
-                    <td className="bk-actions-col">
-                      <button
-                        className="btn btn-sm btn-ghost btn-danger-text"
-                        type="button"
-                        aria-label={`Delete all backups of ${r.name}`}
-                        onClick={() => onDeleteWorkload(r.id, r.name)}
-                      >
-                        Delete all
-                      </button>
-                    </td>
-                  ) : null}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      ) : null}
-    </section>
-  );
+  return out;
 }

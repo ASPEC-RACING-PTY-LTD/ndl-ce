@@ -298,6 +298,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/v1/iam/groups/{id}", s.iamSaveGroup)
 	mux.HandleFunc("GET /api/v1/nodes", s.listNodes)
 	mux.HandleFunc("POST /api/v1/placement/preview", s.previewPlacement)
+	mux.HandleFunc("GET /api/v1/node-nicknames", s.getNodeNicknames)
+	mux.HandleFunc("PUT /api/v1/node-nicknames", s.putNodeNickname)
 	mux.HandleFunc("GET /api/v1/node-groups", s.listNodeGroups)
 	mux.HandleFunc("POST /api/v1/node-groups", s.createNodeGroup)
 	mux.HandleFunc("POST /api/v1/nodes/{id}/maintain", s.maintainNode)

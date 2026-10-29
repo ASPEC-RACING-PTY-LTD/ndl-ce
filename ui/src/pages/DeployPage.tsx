@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
   ApiError,
   bulkDeploy,
@@ -19,11 +19,12 @@ import {
   type Deployment,
 } from "../api/client";
 import { confirmAction } from "../confirm";
+import { ActionMenu } from "../components/ActionMenu";
+import { ContextMenu, useContextMenu, type ContextItem } from "../components/ContextMenu";
 import { EmptyState, LoadingState } from "../components/EmptyState";
 import { ErrorNotice } from "../components/ErrorNotice";
-import { ResourceTable } from "../components/ResourceTable";
-import { ResultsToolbar, useResultsView } from "../components/ResultsToolbar";
 import { StatusBadge } from "../components/StatusBadge";
+import { usePref } from "../prefs";
 import { formatRelative, formatWhen } from "../format";
 import { usePoll } from "../query";
 import { Dialog } from "../ui/Dialog";
@@ -31,6 +32,8 @@ import { ACTIVE, badgeStatus, DeploymentLog, DeployProgress, deployStatusLabel, 
 import { NotifySection, WebhookSection } from "../deploy/NotifyAndHook";
 import { ProjectEditor, type EditorSeed } from "../deploy/ProjectEditor";
 import "../deploy/deploy.css";
+import "../docker.css";
+import { menuItems } from "./UptimePage";
 
 type Container = { id: string; name: string };
 
@@ -99,20 +102,24 @@ function LastResult({ p }: { p: DeployProject }) {
 }
 
 /** ProjectDrawer shows a project's live deployment, history and settings. */
+type DrawerTab = "live" | "history" | "settings";
+
 function ProjectDrawer({
   project,
   list,
   containers,
+  initialTab = "live",
   onChanged,
   onClose,
 }: {
   project: DeployProject;
   list: DeployProjectList;
   containers: Container[];
+  initialTab?: DrawerTab;
   onChanged: () => void;
   onClose: () => void;
 }) {
-  const [tab, setTab] = useState<"live" | "history" | "settings">("live");
+  const [tab, setTab] = useState<DrawerTab>(initialTab === "settings" && !list.can_configure ? "live" : initialTab);
   const [history, setHistory] = useState<Deployment[]>([]);
   const [shown, setShown] = useState<Deployment | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -461,23 +468,6 @@ function SettingsDialog({ settings, onSaved, onClose }: { settings: DeploySettin
   );
 }
 
-/**
- * DeployPage lists Docker Compose projects in system containers, shows
- * which have new commits, and deploys them with their own commands.
- */
-const FOUND_FILTERS = [
-  { value: "all", label: "All projects" },
-  { value: "running", label: "All services running" },
-  { value: "partial", label: "Partly running" },
-  { value: "stopped", label: "Stopped" },
-];
-
-const FOUND_SORTS = [
-  { value: "name", label: "Name" },
-  { value: "running", label: "Services running" },
-  { value: "folder", label: "Folder" },
-];
-
 function foundState(f: DeployDiscovered): string {
   const running = f.running ?? 0;
   const services = f.services ?? 0;
@@ -488,133 +478,118 @@ function foundState(f: DeployDiscovered): string {
 }
 
 /**
- * FoundInContainers lists Compose projects with no update commands yet,
- * grouped by the system container they run in, with the Docker page's
- * search, filter, sort and Grid/Table switch.
+ * FoundInContainers lists Compose projects in system containers that have
+ * no update commands yet, as one compact table that folds away.
  */
-function FoundInContainers({ found, canAdd, onAdd }: { found: DeployDiscovered[]; canAdd: boolean; onAdd: (f: DeployDiscovered) => void }) {
+function FoundInContainers({
+  found,
+  canAdd,
+  defaultOpen,
+  onAdd,
+}: {
+  found: DeployDiscovered[];
+  canAdd: boolean;
+  defaultOpen: boolean;
+  onAdd: (f: DeployDiscovered) => void;
+}) {
+  const [saved, setSaved] = usePref<boolean | null>("deploy.foundOpen", null);
+  const open = saved ?? defaultOpen;
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState("all");
-  const [sort, setSort] = useState("name");
-  const [view, setView] = useResultsView("ndl-deploy-found-view");
   const q = query.trim().toLowerCase();
   const rows = found
-    .filter((f) => filter === "all" || foundState(f) === filter)
     .filter((f) => !q || `${f.name} ${f.workload_name} ${f.working_dir}`.toLowerCase().includes(q))
-    .sort((a, b) => {
-      const byName = a.name.localeCompare(b.name);
-      if (sort === "running") {
-        return (a.running ?? 0) - (b.running ?? 0) || byName;
-      }
-      if (sort === "folder") {
-        return a.working_dir.localeCompare(b.working_dir) || byName;
-      }
-      return byName;
-    });
-  const groups: { key: string; label: string; items: DeployDiscovered[] }[] = [];
-  for (const f of rows) {
-    let g = groups.find((x) => x.key === f.workload_id);
-    if (!g) {
-      g = { key: f.workload_id, label: f.workload_name || f.workload_id, items: [] };
-      groups.push(g);
-    }
-    g.items.push(f);
-  }
-  groups.sort((a, b) => a.label.localeCompare(b.label));
+    .sort((a, b) => (a.workload_name || a.workload_id).localeCompare(b.workload_name || b.workload_id) || a.name.localeCompare(b.name));
   const tone = (f: DeployDiscovered) => {
     const st = foundState(f);
     return st === "running" ? "healthy" : st === "partial" ? "degraded" : "unknown";
   };
-  const addButton = (f: DeployDiscovered) =>
-    canAdd ? (
-      <button type="button" className="btn btn-sm" aria-label={`Add ${f.name}`} onClick={() => onAdd(f)}>
-        Add
-      </button>
-    ) : null;
   return (
-    <section className="panel bk-panel" aria-labelledby="dp-found-heading">
-      <div className="bk-head">
+    <section className="dk-section" aria-labelledby="dp-found-heading">
+      <div className="dk-section-head">
         <h2 id="dp-found-heading">
-          Found in containers <span className="meta">{found.length}</span>
+          <button className="dp-found-toggle" type="button" aria-expanded={open} onClick={() => setSaved(!open)}>
+            {open ? "▾" : "▸"} Found in containers <span className="meta">{found.length}</span>
+          </button>
         </h2>
+        {open && found.length > 8 ? (
+          <input
+            className="field-input dk-search"
+            type="search"
+            aria-label="Search found projects"
+            placeholder="Search project, container, folder"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        ) : null}
       </div>
-      <p className="bk-hint">Compose projects running in system containers that have no update commands yet.</p>
-      <ResultsToolbar
-        label="Found projects"
-        query={query}
-        onQuery={setQuery}
-        placeholder="Search project, container, folder"
-        filter={filter}
-        filters={FOUND_FILTERS}
-        onFilter={setFilter}
-        filterLabel="Running state"
-        sort={sort}
-        sorts={FOUND_SORTS}
-        onSort={setSort}
-        view={view}
-        onView={setView}
-      />
-      {groups.length === 0 ? (
-        <p className="muted">No projects match the current filters.</p>
-      ) : view === "table" ? (
-        <ResourceTable
-          className="docker-table-flat"
-          headers={["Project", "Container", "Folder", "Services", ""]}
-          rows={groups.flatMap((g) =>
-            g.items.map((f) => [
-              <strong key="n" className="docker-clip" title={f.name}>
-                {f.name}
-              </strong>,
-              <span key="c" className="docker-clip" title={g.label}>
-                {g.label}
-              </span>,
-              <span key="d" className="docker-clip" title={f.working_dir}>
-                {f.working_dir}
-              </span>,
-              <StatusBadge key="s" status={tone(f)} label={`${f.running ?? 0} of ${f.services ?? 0} running`} />,
-              <span key="a">{addButton(f)}</span>,
-            ]),
-          )}
-        />
-      ) : (
-        groups.map((g) => (
-          <section key={g.key} className="docker-section" aria-label={`Container ${g.label}`}>
-            <h3 className="docker-section-title">
-              {g.label} <span className="meta">{g.items.length}</span>
-            </h3>
-            <div className="docker-grid">
-              {g.items.map((f) => (
-                <article key={`${f.workload_id}:${f.working_dir}`} className={"docker-card" + (foundState(f) === "stopped" ? " is-ignored" : "")}>
-                  <header className="docker-card-head">
-                    <strong className="docker-head-name" title={f.name}>
-                      {f.name}
-                    </strong>
-                    <StatusBadge status={tone(f)} label={`${f.running ?? 0} of ${f.services ?? 0} running`} />
-                    {addButton(f)}
-                  </header>
-                  <p className="meta docker-card-meta" title={f.working_dir}>
-                    {f.working_dir}
-                  </p>
-                </article>
-              ))}
+      {open ? (
+        <>
+          <p className="bk-hint">Compose projects running in system containers that have no update commands yet.</p>
+          {rows.length === 0 ? (
+            <p className="dk-empty muted">No projects match.</p>
+          ) : (
+            <div className="table-wrap dk-table-wrap">
+              <table className="dk-table" aria-label="Found projects">
+                <thead>
+                  <tr>
+                    <th>Project</th>
+                    <th>Container</th>
+                    <th>Folder</th>
+                    <th>Services</th>
+                    {canAdd ? <th className="cell-actions" /> : null}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((f) => (
+                    <tr key={`${f.workload_id}:${f.working_dir}`} className={"dk-row" + (foundState(f) === "stopped" ? " is-muted" : "")}>
+                      <td>
+                        <strong className="dk-clip" title={f.name}>
+                          {f.name}
+                        </strong>
+                      </td>
+                      <td>{f.workload_name || f.workload_id}</td>
+                      <td>
+                        <span className="dk-clip dp-sub" title={f.working_dir}>
+                          {f.working_dir}
+                        </span>
+                      </td>
+                      <td>
+                        <StatusBadge status={tone(f)} label={`${f.running ?? 0} of ${f.services ?? 0} running`} />
+                      </td>
+                      {canAdd ? (
+                        <td className="cell-actions">
+                          <button type="button" className="btn btn-sm" aria-label={`Add ${f.name}`} onClick={() => onAdd(f)}>
+                            Add
+                          </button>
+                        </td>
+                      ) : null}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          </section>
-        ))
-      )}
+          )}
+        </>
+      ) : null}
     </section>
   );
 }
 
+/**
+ * DeployPage lists Docker Compose projects in system containers, shows
+ * which have new commits, and deploys them with their own commands.
+ */
 export function DeployPage() {
   const [list, setList] = useState<DeployProjectList | null>(null);
   const [containers, setContainers] = useState<Container[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openAt, setOpenAt] = useState<{ id: string; tab: DrawerTab } | null>(null);
   const [adding, setAdding] = useState<EditorSeed | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const ctx = useContextMenu();
 
   const load = useCallback(async () => {
     try {
@@ -643,9 +618,11 @@ export function DeployPage() {
   usePoll(load, anyActive ? 2000 : 15000);
 
   const projects = useMemo(() => list?.projects ?? [], [list]);
-  const open = projects.find((p) => p.id === openId) ?? null;
+  const open = projects.find((p) => p.id === openAt?.id) ?? null;
   const due = projects.filter((p) => p.state.due && !p.active_deployment);
   const chosen = projects.filter((p) => selected.has(p.id) && !p.active_deployment);
+  const canDeploy = Boolean(list?.can_deploy);
+  const canConfigure = Boolean(list?.can_configure);
 
   async function runBulk(body: { project_ids?: string[]; due?: boolean }, what: string) {
     setBusy("bulk");
@@ -676,6 +653,14 @@ export function DeployPage() {
     }
   }
 
+  function checkAll() {
+    setBusy("checkall");
+    checkAllDeployProjects()
+      .then((r) => setNotice(r.started ? "Checking every project for new commits." : (r.message ?? "A check is already running.")))
+      .catch((err) => setError(errorText(err, "Could not start the check")))
+      .finally(() => setBusy(null));
+  }
+
   function toggle(id: string, on: boolean) {
     setSelected((cur) => {
       const next = new Set(cur);
@@ -702,9 +687,48 @@ export function DeployPage() {
     }
   }
 
+  async function removeProject(p: DeployProject) {
+    if (!confirmAction(`Forget ${p.name}? Its history and logs are deleted; the folder is not touched.`)) {
+      return;
+    }
+    setError(null);
+    try {
+      await deleteDeployProject(p.id);
+      setNotice(`${p.name} removed.`);
+      await load();
+    } catch (err) {
+      setError(errorText(err, "Could not remove the project"));
+    }
+  }
+
+  function projectItems(p: DeployProject): ContextItem[] {
+    const d = p.active_deployment;
+    const items: ContextItem[] = [{ label: d ? "Watch deployment" : "Open", onClick: () => setOpenAt({ id: p.id, tab: "live" }) }];
+    if (canDeploy) {
+      items.push(
+        { label: "Deploy now", onClick: () => void deployOne(p), disabled: Boolean(d) || p.workload_missing || busy === p.id },
+        { label: "Check for updates", onClick: () => void checkOne(p), disabled: Boolean(d) || !p.config.detect || busy === "check:" + p.id },
+      );
+    }
+    items.push({ label: "History", onClick: () => setOpenAt({ id: p.id, tab: "history" }) });
+    if (canConfigure) {
+      items.push({ label: "Settings", onClick: () => setOpenAt({ id: p.id, tab: "settings" }) });
+    }
+    items.push("sep", { label: "Copy folder path", onClick: () => void navigator.clipboard?.writeText(p.working_dir) });
+    if (canConfigure) {
+      items.push("sep", { label: "Remove project", danger: true, onClick: () => void removeProject(p) });
+    }
+    return items;
+  }
+
   if (!list && !error) {
     return <LoadingState label="Loading deployments" />;
   }
+
+  const more = [
+    ...(canDeploy ? [{ label: busy === "checkall" ? "Checking" : "Check all for updates", onClick: checkAll }] : []),
+    ...(canConfigure ? [{ label: "Deployment settings", onClick: () => setSettingsOpen(true) }] : []),
+  ];
 
   return (
     <div className="dp-page">
@@ -724,51 +748,31 @@ export function DeployPage() {
           </span>
         </div>
         <div className="bk-actions">
-          {list?.can_deploy ? (
-            <>
-              <button
-                className="btn"
-                type="button"
-                disabled={busy === "checkall"}
-                onClick={() => {
-                  setBusy("checkall");
-                  checkAllDeployProjects()
-                    .then((r) => setNotice(r.started ? "Checking every project for new commits." : (r.message ?? "A check is already running.")))
-                    .catch((err) => setError(errorText(err, "Could not start the check")))
-                    .finally(() => setBusy(null));
-                }}
-              >
-                Check all
-              </button>
-              {chosen.length ? (
-                <button className="btn" type="button" disabled={busy === "bulk"} onClick={() => void runBulk({ project_ids: chosen.map((p) => p.id) }, "Deploy selected")}>
-                  Deploy selected ({chosen.length})
-                </button>
-              ) : null}
-              <button
-                className="btn btn-primary"
-                type="button"
-                disabled={busy === "bulk" || due.length === 0}
-                onClick={() => {
-                  if (confirmAction(`Deploy ${due.length} project(s) with updates: ${due.map((p) => p.name).join(", ")}?`)) {
-                    void runBulk({ due: true }, "Deploy all updates");
-                  }
-                }}
-              >
-                Deploy all updates{due.length ? ` (${due.length})` : ""}
-              </button>
-            </>
+          {canDeploy && chosen.length ? (
+            <button className="btn" type="button" disabled={busy === "bulk"} onClick={() => void runBulk({ project_ids: chosen.map((p) => p.id) }, "Deploy selected")}>
+              Deploy selected ({chosen.length})
+            </button>
           ) : null}
-          {list?.can_configure ? (
-            <>
-              <button className="btn" type="button" onClick={() => setSettingsOpen(true)}>
-                Settings
-              </button>
-              <button className="btn btn-primary" type="button" onClick={() => setAdding({})}>
-                Add project
-              </button>
-            </>
+          {canDeploy ? (
+            <button
+              className="btn btn-primary"
+              type="button"
+              disabled={busy === "bulk" || due.length === 0}
+              onClick={() => {
+                if (confirmAction(`Deploy ${due.length} project(s) with updates: ${due.map((p) => p.name).join(", ")}?`)) {
+                  void runBulk({ due: true }, "Deploy all updates");
+                }
+              }}
+            >
+              Deploy all updates{due.length ? ` (${due.length})` : ""}
+            </button>
           ) : null}
+          {canConfigure ? (
+            <button className="btn btn-secondary" type="button" onClick={() => setAdding({})}>
+              Add project
+            </button>
+          ) : null}
+          <ActionMenu label="More deployment actions" items={more} />
         </div>
       </div>
       {error ? <ErrorNotice error={error} /> : null}
@@ -778,8 +782,8 @@ export function DeployPage() {
         </p>
       ) : null}
 
-      <section className="panel bk-panel" aria-labelledby="dp-projects-heading">
-        <div className="bk-head">
+      <section className="dk-section" aria-labelledby="dp-projects-heading">
+        <div className="dk-section-head">
           <h2 id="dp-projects-heading">Projects</h2>
         </div>
         {projects.length === 0 ? (
@@ -788,11 +792,11 @@ export function DeployPage() {
             containers are listed below.
           </EmptyState>
         ) : (
-          <div className="bk-scroll">
-            <table className="bk-table" aria-label="Deployment projects">
+          <div className="table-wrap dk-table-wrap">
+            <table className="dk-table" aria-label="Deployment projects">
               <thead>
                 <tr>
-                  {list?.can_deploy ? (
+                  {canDeploy ? (
                     <th className="dp-check">
                       <input
                         type="checkbox"
@@ -805,25 +809,29 @@ export function DeployPage() {
                   <th>Project</th>
                   <th>Updates</th>
                   <th>Deployment</th>
-                  <th className="bk-actions-col" />
+                  <th className="cell-actions" />
                 </tr>
               </thead>
               <tbody>
                 {projects.map((p) => {
                   const d = p.active_deployment;
                   return (
-                    <tr key={p.id} className={d ? "dp-row-active" : undefined}>
-                      {list?.can_deploy ? (
+                    <tr
+                      key={p.id}
+                      className={"dk-row" + (d ? " dp-row-active" : "")}
+                      onContextMenu={(e: ReactMouseEvent) => ctx.openAt(e, p.name, projectItems(p))}
+                    >
+                      {canDeploy ? (
                         <td className="dp-check">
                           <input type="checkbox" aria-label={`Select ${p.name}`} checked={selected.has(p.id)} onChange={(e) => toggle(p.id, e.target.checked)} />
                         </td>
                       ) : null}
                       <td>
                         <div className="dp-project">
-                          <button type="button" className="dp-project-name" onClick={() => setOpenId(p.id)}>
+                          <button type="button" className="dp-project-name" onClick={() => setOpenAt({ id: p.id, tab: "live" })}>
                             {p.name}
                           </button>
-                          <span className="dp-sub" title={p.working_dir}>
+                          <span className="dp-sub dk-clip" title={p.working_dir}>
                             {p.workload_missing ? "Container removed" : p.workload_name} · {p.working_dir}
                           </span>
                         </div>
@@ -832,26 +840,14 @@ export function DeployPage() {
                         <UpdateState p={p} />
                       </td>
                       <td>{d ? <DeployProgress d={d} estimate={p.estimate_sec} /> : <LastResult p={p} />}</td>
-                      <td className="bk-actions-col">
+                      <td className="cell-actions">
                         <div className="bk-actions">
-                          {list?.can_deploy && p.config.detect && !d ? (
-                            <button className="btn btn-sm btn-ghost" type="button" disabled={busy === "check:" + p.id} onClick={() => void checkOne(p)}>
-                              {busy === "check:" + p.id ? "Checking" : "Check"}
-                            </button>
-                          ) : null}
-                          {list?.can_deploy && !d ? (
-                            <button
-                              className="btn btn-sm btn-primary"
-                              type="button"
-                              disabled={busy === p.id || p.workload_missing}
-                              onClick={() => void deployOne(p)}
-                            >
+                          {canDeploy && !d ? (
+                            <button className="btn btn-sm btn-primary" type="button" disabled={busy === p.id || p.workload_missing} onClick={() => void deployOne(p)}>
                               Deploy
                             </button>
                           ) : null}
-                          <button className="btn btn-sm" type="button" onClick={() => setOpenId(p.id)}>
-                            {d ? "Watch" : "Open"}
-                          </button>
+                          <ActionMenu label={`${p.name} actions`} items={menuItems(projectItems(p))} />
                         </div>
                       </td>
                     </tr>
@@ -866,13 +862,24 @@ export function DeployPage() {
       {list?.discovered?.length ? (
         <FoundInContainers
           found={list.discovered}
-          canAdd={Boolean(list.can_configure)}
+          canAdd={canConfigure}
+          defaultOpen={projects.length === 0}
           onAdd={(f) => setAdding({ workload_id: f.workload_id, working_dir: f.working_dir, name: f.name })}
         />
       ) : null}
 
+      <ContextMenu menu={ctx.menu} onClose={ctx.close} />
+
       {open && list ? (
-        <ProjectDrawer project={open} list={list} containers={containers} onChanged={() => void load()} onClose={() => setOpenId(null)} />
+        <ProjectDrawer
+          key={`${open.id}:${openAt?.tab}`}
+          project={open}
+          list={list}
+          containers={containers}
+          initialTab={openAt?.tab}
+          onChanged={() => void load()}
+          onClose={() => setOpenAt(null)}
+        />
       ) : null}
       {adding && list ? (
         <Dialog open wide title="Add project" onClose={() => setAdding(null)}>
@@ -903,4 +910,3 @@ export function DeployPage() {
     </div>
   );
 }
-

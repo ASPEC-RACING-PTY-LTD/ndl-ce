@@ -1,36 +1,30 @@
 import { confirmAction } from "../confirm";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
   checkAllUptime,
   checkUptimeMonitor,
   deleteUptimeMonitor,
-  getDocker,
   getDockerTunnels,
   importUptime,
-  listUptimeMonitors,
   saveUptimeMonitor,
   type OpsJob,
   type UptimeImportResult,
   type UptimeMonitor,
   type UptimeMonitorIn,
 } from "../api/client";
-import { ActionMenu } from "../components/ActionMenu";
-import type { ContextItem } from "../components/ContextMenu";
+import { ActionMenu, type ActionItem } from "../components/ActionMenu";
+import { ContextMenu, useContextMenu, type ContextItem } from "../components/ContextMenu";
 import { EmptyState, LoadingState } from "../components/EmptyState";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { JobLog } from "../components/JobLog";
 import { JsonScriptModal } from "../components/JsonScriptModal";
-import { PageHeader } from "../components/PageHeader";
-import { ResourceTable } from "../components/ResourceTable";
-import { ResultsToolbar, useResultsView } from "../components/ResultsToolbar";
 import { StatusBadge } from "../components/StatusBadge";
 import type { DockerContainer, DockerMachine } from "../generated/openapi";
 import { discoverMonitors, type UptimeCandidate } from "../uptime/discover";
 import { formatWhen } from "../format";
-import { usePoll } from "../query";
-import { canMutate } from "../rbac";
-import { useSession } from "../session";
 import { Dialog } from "../ui/Dialog";
+import { Segmented } from "../ui/Segmented";
+import { ColumnEditor, SortHeader, useTablePrefs, type TableColumn } from "../ui/tablePrefs";
 
 const UPTIME_TEMPLATE = `{
   "monitors": [
@@ -78,49 +72,12 @@ function stateLabel(m: UptimeMonitor): string {
   return "Waiting for first check";
 }
 
-const STATE_FILTERS = [
-  { value: "all", label: "All monitors" },
-  { value: "down", label: "Down" },
-  { value: "up", label: "Up" },
-  { value: "pending", label: "Waiting" },
-  { value: "paused", label: "Paused" },
-];
-
-const SORTS = [
-  { value: "status", label: "Status" },
-  { value: "name", label: "Name" },
-  { value: "latency", label: "Response time" },
-  { value: "uptime", label: "Uptime" },
-  { value: "checked", label: "Last checked" },
-];
-
 function stateKey(m: UptimeMonitor): string {
   if (!m.enabled) {
     return "paused";
   }
   return m.state === "up" || m.state === "down" ? m.state : "pending";
 }
-
-function compareMonitors(sort: string) {
-  const rank = (m: UptimeMonitor) => (!m.enabled ? 3 : m.state === "down" ? 0 : m.state === "up" ? 2 : 1);
-  return (a: UptimeMonitor, b: UptimeMonitor) => {
-    const byName = a.name.localeCompare(b.name);
-    switch (sort) {
-      case "name":
-        return byName;
-      case "latency":
-        return (a.last_latency_ms || Infinity) - (b.last_latency_ms || Infinity) || byName;
-      case "uptime":
-        return (a.uptime_percent ?? 101) - (b.uptime_percent ?? 101) || byName;
-      case "checked":
-        return Date.parse(b.last_check_at ?? "") - Date.parse(a.last_check_at ?? "") || byName;
-      default:
-        return rank(a) - rank(b) || byName;
-    }
-  };
-}
-
-type MonitorGroup = { key: string; label: string; meta: string; monitors: UptimeMonitor[]; down: number };
 
 function targetHref(target: string): string | null {
   if (/^https?:\/\//.test(target)) {
@@ -332,7 +289,7 @@ function ScanDialog({ open, existing, canSave, onClose, onSaved }: {
   const [result, setResult] = useState<UptimeImportResult | null>(null);
 
   async function scan(refresh: boolean) {
-    setBusy(refresh ? "Rescanning tunnels" : "Reading tunnels");
+    setBusy(refresh ? "Looking again" : "Looking for sites");
     setError(null);
     setResult(null);
     try {
@@ -340,7 +297,7 @@ function ScanDialog({ open, existing, canSave, onClose, onSaved }: {
       setFound(list);
       setPicked(new Set(list.filter((c) => !c.existing).map((c) => c.hostname)));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not read the Docker tunnels");
+      setError(err instanceof Error ? err.message : "Could not look for sites");
       setFound((cur) => cur ?? []);
     } finally {
       setBusy(null);
@@ -390,7 +347,7 @@ function ScanDialog({ open, existing, canSave, onClose, onSaved }: {
   return (
     <Dialog
       open={open}
-      title="Scan Docker for sites"
+      title="Find sites"
       wide
       onClose={onClose}
       footer={
@@ -399,7 +356,7 @@ function ScanDialog({ open, existing, canSave, onClose, onSaved }: {
             Close
           </button>
           <button className="btn btn-secondary" type="button" disabled={busy !== null} onClick={() => void scan(true)}>
-            Rescan
+            Look again
           </button>
           {canSave ? (
             <>
@@ -415,7 +372,7 @@ function ScanDialog({ open, existing, canSave, onClose, onSaved }: {
       }
     >
       <p className="field-hint">
-        Every public hostname your Cloudflare tunnels route to a web service becomes a monitor for <code>https://hostname</code>, linked to the
+        Every public hostname routed to a web service in a container becomes a monitor for <code>https://hostname</code>, linked to the
         container serving it. Sites already watched are left alone. SSH, TCP and wildcard routes are skipped.
       </p>
       {busy ? (
@@ -426,10 +383,10 @@ function ScanDialog({ open, existing, canSave, onClose, onSaved }: {
       {error ? <ErrorNotice error={error} /> : null}
       {result ? <ImportResults res={result} /> : null}
       {found === null ? (
-        <LoadingState label="Reading tunnels" />
+        <LoadingState label="Looking for sites" />
       ) : found.length === 0 ? (
         <EmptyState title="No sites found">
-          No tunnel routes were found. Tunnels configured in the Cloudflare dashboard report their routes after cloudflared starts; try Rescan.
+          No public hostnames were found. Routes can take a minute to show after a service starts; try Look again.
         </EmptyState>
       ) : (
         <>
@@ -473,14 +430,65 @@ function ScanDialog({ open, existing, canSave, onClose, onSaved }: {
   );
 }
 
-/** UptimePage watches public URLs and restarts the containers behind them when they fail. */
-export function UptimePage() {
-  const session = useSession();
-  const roles = session.status === "ready" ? session.user?.roles : undefined;
-  const mutate = canMutate(roles);
-  const [items, setItems] = useState<UptimeMonitor[] | null>(null);
-  const [containers, setContainers] = useState<DockerContainer[]>([]);
-  const [machines, setMachines] = useState<DockerMachine[]>([]);
+export type SiteFilter = "down" | "up" | "paused" | "all";
+
+const SITE_COLUMNS: TableColumn<UptimeMonitor>[] = [
+  { id: "name", label: "Site", required: true, sortValue: (m) => m.name.toLowerCase() },
+  { id: "status", label: "Status", sortValue: (m) => statusRank(m) },
+  { id: "target", label: "Address", sortValue: (m) => m.target },
+  { id: "response", label: "Response", sortValue: (m) => m.last_latency_ms || Number.MAX_SAFE_INTEGER },
+  { id: "uptime", label: "Uptime", sortValue: (m) => m.uptime_percent ?? 101 },
+  { id: "checked", label: "Checked", sortValue: (m) => -Date.parse(m.last_check_at ?? "1970-01-01") },
+  { id: "history", label: "Recent checks" },
+  { id: "containers", label: "Restarts", sortValue: (m) => m.containers.map((c) => c.name).join(",") },
+];
+
+function statusRank(m: UptimeMonitor): number {
+  return !m.enabled ? 3 : m.state === "down" ? 0 : m.state === "up" ? 2 : 1;
+}
+
+/** siteCounts counts sites per filter. */
+export function siteCounts(list: UptimeMonitor[]): Record<SiteFilter, number> {
+  const out: Record<SiteFilter, number> = { down: 0, up: 0, paused: 0, all: list.length };
+  for (const m of list) {
+    const k = stateKey(m);
+    if (k === "down" || k === "up" || k === "paused") {
+      out[k] += 1;
+    }
+  }
+  return out;
+}
+
+/** monitorDown is true for an enabled site that fails its check. */
+export function monitorDown(m: UptimeMonitor): boolean {
+  return m.enabled && m.state === "down";
+}
+
+/** SiteBadge is a site's state as a status badge. */
+export function SiteBadge({ m, withName }: { m: UptimeMonitor; withName?: boolean }) {
+  return <StatusBadge status={stateTone(m.state, m.enabled)} label={withName ? `${m.name}: ${stateLabel(m).toLowerCase()}` : stateLabel(m)} />;
+}
+
+/**
+ * UptimeSites is the Sites part of the Docker page: public URLs checked from
+ * this server, and the containers restarted when one fails.
+ */
+export function UptimeSites({
+  monitors,
+  machines,
+  containers,
+  mutate,
+  reload,
+  focus,
+}: {
+  monitors: UptimeMonitor[] | null;
+  machines: DockerMachine[];
+  containers: DockerContainer[];
+  mutate: boolean;
+  reload: () => Promise<void> | void;
+  focus?: boolean;
+}) {
+  const [filter, setFilter] = useState<SiteFilter>(focus ? "all" : "down");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -488,41 +496,19 @@ export function UptimePage() {
   const [jsonOpen, setJsonOpen] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
   const [job, setJob] = useState<OpsJob | null>(null);
-  const [query, setQuery] = useState("");
-  const [stateFilter, setStateFilter] = useState("all");
-  const [sort, setSort] = useState("status");
-  const [view, setView] = useResultsView("ndl-uptime-view");
-
-  async function reload() {
-    try {
-      setItems((await listUptimeMonitors()).items ?? []);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unavailable");
-      setItems((cur) => cur ?? []);
-    }
-  }
+  const table = useTablePrefs<UptimeMonitor>("docker.sites", SITE_COLUMNS, null);
+  const ctx = useContextMenu();
+  const ref = useRef<HTMLElement>(null);
 
   useEffect(() => {
-    void reload();
-    void getDocker()
-      .then((inv) => {
-        setContainers(inv.containers ?? []);
-        setMachines(inv.machines ?? []);
-      })
-      .catch(() => undefined);
-  }, []);
-  usePoll(() => reload(), 15000);
+    if (focus) {
+      ref.current?.scrollIntoView?.({ block: "start" });
+    }
+  }, [focus]);
 
-  const counts = useMemo(() => {
-    const list = items ?? [];
-    const up = list.filter((m) => m.enabled && m.state === "up").length;
-    const down = list.filter((m) => m.enabled && m.state === "down").length;
-    const paused = list.filter((m) => !m.enabled).length;
-    const lat = list.filter((m) => m.enabled && m.state === "up" && m.last_latency_ms > 0);
-    const avg = lat.length ? Math.round(lat.reduce((n, m) => n + m.last_latency_ms, 0) / lat.length) : 0;
-    return { up, down, paused, avg };
-  }, [items]);
+  const items = useMemo(() => monitors ?? [], [monitors]);
+  const counts = siteCounts(items);
+  const machineName = (id: string) => machines.find((x) => x.id === id)?.name ?? id;
 
   async function act(label: string, fn: () => Promise<unknown>, done?: string) {
     setBusy(label);
@@ -540,24 +526,22 @@ export function UptimePage() {
     }
   }
 
-  function edit(m: UptimeMonitor) {
-    const name = (id: string) => machines.find((x) => x.id === id)?.name ?? id;
-    setDraft({
-      id: m.id,
+  function toInput(m: UptimeMonitor, enabled = m.enabled): UptimeMonitorIn {
+    return {
       name: m.name,
       target: m.target,
       expect_status: m.expect_status,
       keyword: m.keyword,
-      containers: m.containers.map((c) => ({ machine: name(c.machine_id), name: c.name })),
+      containers: m.containers.map((c) => ({ machine: machineName(c.machine_id), name: c.name })),
       auto_restart: m.auto_restart,
-      enabled: m.enabled,
-    });
+      enabled,
+    };
   }
 
   function monitorItems(m: UptimeMonitor): ContextItem[] {
-    const items: ContextItem[] = [];
+    const out: ContextItem[] = [];
     if (mutate) {
-      items.push(
+      out.push(
         { label: "Check now", onClick: () => void act(`Checking ${m.name}`, () => checkUptimeMonitor(m.id)) },
         {
           label: "Check and restart now",
@@ -565,45 +549,28 @@ export function UptimePage() {
           disabled: !m.auto_restart || m.containers.length === 0,
         },
         "sep",
-        { label: "Edit", onClick: () => edit(m) },
-        {
-          label: m.enabled ? "Pause" : "Resume",
-          onClick: () => {
-            const name = (id: string) => machines.find((x) => x.id === id)?.name ?? id;
-            void act(m.enabled ? "Pausing" : "Resuming", () =>
-              saveUptimeMonitor(
-                {
-                  name: m.name,
-                  target: m.target,
-                  expect_status: m.expect_status,
-                  keyword: m.keyword,
-                  containers: m.containers.map((c) => ({ machine: name(c.machine_id), name: c.name })),
-                  auto_restart: m.auto_restart,
-                  enabled: !m.enabled,
-                },
-                m.id,
-              ),
-            );
-          },
-        },
-        "sep",
-        {
-          label: "Delete",
-          danger: true,
-          onClick: () => {
-            if (confirmAction(`Delete the monitor ${m.name} and its history?`)) {
-              void act(`Deleting ${m.name}`, () => deleteUptimeMonitor(m.id), `${m.name} deleted.`);
-            }
-          },
-        },
+        { label: "Edit", onClick: () => setDraft({ id: m.id, ...toInput(m) }) },
+        { label: m.enabled ? "Pause" : "Resume", onClick: () => void act(m.enabled ? "Pausing" : "Resuming", () => saveUptimeMonitor(toInput(m, !m.enabled), m.id)) },
       );
     }
     const href = targetHref(m.target);
+    out.push("sep");
     if (href) {
-      items.push("sep", { label: "Open site", onClick: () => window.open(href, "_blank", "noopener") });
+      out.push({ label: "Open site", onClick: () => window.open(href, "_blank", "noopener") });
     }
-    items.push({ label: "Copy target", onClick: () => void navigator.clipboard?.writeText(m.target) });
-    return items;
+    out.push({ label: "Copy address", onClick: () => void navigator.clipboard?.writeText(m.target) });
+    if (mutate) {
+      out.push("sep", {
+        label: "Delete",
+        danger: true,
+        onClick: () => {
+          if (confirmAction(`Delete the monitor ${m.name} and its history?`)) {
+            void act(`Deleting ${m.name}`, () => deleteUptimeMonitor(m.id), `${m.name} deleted.`);
+          }
+        },
+      });
+    }
+    return out;
   }
 
   async function saveDraft() {
@@ -615,132 +582,119 @@ export function UptimePage() {
     setDraft(null);
   }
 
-  if (items === null) {
-    return (
-      <section className="page">
-        <LoadingState label="Loading monitors" />
-      </section>
-    );
-  }
+  const shown = table.sort
+    ? table.sortRows(items.filter((m) => filter === "all" || stateKey(m) === filter))
+    : items.filter((m) => filter === "all" || stateKey(m) === filter).sort((a, b) => statusRank(a) - statusRank(b) || a.name.localeCompare(b.name));
 
-  const machineName = (id: string) => machines.find((x) => x.id === id)?.name ?? id;
-  // A monitor belongs to the Compose project (or standalone container) of
-  // the first container it restarts.
-  function groupOf(m: UptimeMonitor): { key: string; label: string; meta: string } {
-    const first = m.containers[0];
-    if (!first) {
-      return { key: "", label: "Not linked to a container", meta: "Reports only" };
-    }
-    const c = containers.find((x) => x.machine_id === first.machine_id && x.name === first.name);
-    const project = c?.project;
-    return project
-      ? { key: `${first.machine_id}/p/${project}`, label: project, meta: `Compose on ${machineName(first.machine_id)}` }
-      : { key: `${first.machine_id}/c/${first.name}`, label: first.name, meta: `Container on ${machineName(first.machine_id)}` };
-  }
-  const q = query.trim().toLowerCase();
-  const matching = items.filter((m) => {
-    if (stateFilter !== "all" && stateKey(m) !== stateFilter) {
-      return false;
-    }
-    if (!q) {
-      return true;
-    }
-    const g = groupOf(m);
-    const hay = [m.name, m.target, g.label, g.meta, ...m.containers.map((c) => `${machineName(c.machine_id)}/${c.name}`)].join(" ").toLowerCase();
-    return hay.includes(q);
-  });
-  const groups: MonitorGroup[] = [];
-  for (const m of [...matching].sort(compareMonitors(sort))) {
-    const g = groupOf(m);
-    let entry = groups.find((x) => x.key === g.key);
-    if (!entry) {
-      entry = { ...g, monitors: [], down: 0 };
-      groups.push(entry);
-    }
-    entry.monitors.push(m);
-    if (m.enabled && m.state === "down") {
-      entry.down += 1;
-    }
-  }
-  // Groups with a site down come first, then by name; "not linked" goes last.
-  groups.sort((a, b) => Number(b.down > 0) - Number(a.down > 0) || Number(a.key === "") - Number(b.key === "") || a.label.localeCompare(b.label));
-
-  function monitorCard(m: UptimeMonitor) {
+  function cell(id: string, m: UptimeMonitor) {
     const href = targetHref(m.target);
-    return (
-      <article
-        key={m.id}
-        className={"docker-card" + (m.enabled && m.state === "down" ? " is-issue" : "") + (!m.enabled ? " is-ignored" : "")}
-        aria-label={`Monitor ${m.name}`}
-      >
-        <header className="docker-card-head">
-          <strong className="docker-head-name" title={m.name}>
-            {m.name}
-          </strong>
-          <StatusBadge status={stateTone(m.state, m.enabled)} label={stateLabel(m)} />
-          <ActionMenu label={`${m.name} actions`} items={monitorItems(m).filter((i): i is Exclude<ContextItem, "sep"> => i !== "sep" && !i.disabled)} />
-        </header>
-        <p className="meta docker-card-meta" title={m.target}>
-          {href ? (
-            <a href={href} target="_blank" rel="noopener noreferrer">
-              {m.target}
-            </a>
-          ) : (
-            m.target
-          )}
-        </p>
-        <p className="uptime-stats">
-          {m.uptime_percent != null ? <span>{m.uptime_percent}% of recent checks</span> : null}
-          {m.last_check_at ? <span>Checked {formatWhen(m.last_check_at)}</span> : <span>Not checked yet</span>}
-          {m.state === "up" && m.last_latency_ms ? <span>{m.last_latency_ms} ms</span> : null}
-          {m.last_status ? <span>HTTP {m.last_status}</span> : null}
-        </p>
-        {m.state === "down" && m.last_error ? <p className="tunnel-reason">{m.last_error}</p> : null}
-        <History events={m.events} />
-        <p className="meta">
-          {m.containers.length
-            ? `${m.auto_restart ? "Restarts" : "Linked to"} ${m.containers.map((c) => `${machineName(c.machine_id)}/${c.name}`).join(", ")}`
-            : "Reports only, no containers linked"}
-          {m.last_restart_at ? ` · last restart ${formatWhen(m.last_restart_at)}` : ""}
-        </p>
-      </article>
-    );
+    switch (id) {
+      case "name":
+        return (
+          <td key={id}>
+            <strong className="dk-clip" title={m.name}>
+              {m.name}
+            </strong>
+          </td>
+        );
+      case "status":
+        return (
+          <td key={id} title={m.state === "down" ? m.last_error : undefined}>
+            <SiteBadge m={m} />
+            {m.state === "down" && m.last_error ? (
+              <span className="dk-clip meta dk-reason" title={m.last_error}>
+                {m.last_error}
+              </span>
+            ) : null}
+          </td>
+        );
+      case "target":
+        return (
+          <td key={id}>
+            {href ? (
+              <a className="dk-clip" href={href} target="_blank" rel="noopener noreferrer" title={m.target} onClick={(e) => e.stopPropagation()}>
+                {m.target}
+              </a>
+            ) : (
+              <span className="dk-clip" title={m.target}>
+                {m.target}
+              </span>
+            )}
+          </td>
+        );
+      case "response":
+        return (
+          <td key={id} className="num">
+            {m.state === "up" && m.last_latency_ms ? `${m.last_latency_ms} ms` : "-"}
+          </td>
+        );
+      case "uptime":
+        return (
+          <td key={id} className="num">
+            {m.uptime_percent != null ? `${m.uptime_percent}%` : "-"}
+          </td>
+        );
+      case "checked":
+        return <td key={id}>{m.last_check_at ? formatWhen(m.last_check_at) : "Not yet"}</td>;
+      case "history":
+        return (
+          <td key={id}>
+            <History events={m.events} />
+          </td>
+        );
+      case "containers": {
+        const text = m.containers.map((c) => `${machineName(c.machine_id)}/${c.name}`).join(", ");
+        return (
+          <td key={id}>
+            <span className="dk-clip meta" title={text}>
+              {m.containers.length ? `${m.auto_restart ? "" : "Linked: "}${text}` : "Reports only"}
+            </span>
+          </td>
+        );
+      }
+      default:
+        return <td key={id} />;
+    }
   }
+
+  const tools: ActionItem[] = mutate
+    ? [
+        { label: "Find sites", onClick: () => setScanOpen(true) },
+        {
+          label: "Check all now",
+          onClick: () =>
+            void checkAllUptime()
+              .then(setJob)
+              .catch((err) => setError(err instanceof Error ? err.message : "Could not start")),
+        },
+        { label: "Edit as JSON", onClick: () => setJsonOpen(true) },
+      ]
+    : [{ label: "View as JSON", onClick: () => setJsonOpen(true) }];
 
   return (
-    <section className="page page-wide" aria-labelledby="uptime-heading">
-      <PageHeader
-        id="uptime-heading"
-        title="Uptime"
-        kicker="Each site is checked from this server the way a visitor would reach it. A failing site gets its containers restarted (and any stopped tunnel started), then is checked every minute until it works. Working sites are checked every five minutes."
-        actions={
-          mutate ? (
-            <div className="btn-row is-flush">
-              <button className="btn btn-primary" type="button" onClick={() => setDraft(emptyDraft())}>
-                New monitor
-              </button>
-              <button className="btn btn-secondary" type="button" onClick={() => setScanOpen(true)}>
-                Scan Docker
-              </button>
-              <button
-                className="btn btn-secondary"
-                type="button"
-                disabled={items.length === 0}
-                onClick={() =>
-                  void checkAllUptime()
-                    .then(setJob)
-                    .catch((err) => setError(err instanceof Error ? err.message : "Could not start"))
-                }
-              >
-                Check all now
-              </button>
-              <button className="btn btn-secondary" type="button" onClick={() => setJsonOpen(true)}>
-                JSON
-              </button>
-            </div>
-          ) : null
-        }
-      />
+    <section ref={ref} className="dk-section" aria-labelledby="dk-sites-heading">
+      <div className="dk-section-head">
+        <h2 id="dk-sites-heading">Sites</h2>
+        {items.length ? (
+          <Segmented<SiteFilter>
+            ariaLabel="Show sites"
+            value={filter}
+            onChange={setFilter}
+            options={[
+              { id: "down", label: `Down (${counts.down})` },
+              { id: "up", label: `Up (${counts.up})` },
+              { id: "paused", label: `Paused (${counts.paused})` },
+              { id: "all", label: `All (${counts.all})` },
+            ]}
+          />
+        ) : null}
+        {mutate ? (
+          <button className="btn btn-sm btn-secondary" type="button" onClick={() => setDraft(emptyDraft())}>
+            New monitor
+          </button>
+        ) : null}
+        <ActionMenu label="Site tools" items={tools} />
+      </div>
       {error ? <ErrorNotice error={error} /> : null}
       {notice ? (
         <p className="banner banner-ok" role="status">
@@ -755,93 +709,55 @@ export function UptimePage() {
           Working: {busy}
         </p>
       ) : null}
-      <div className="status-strip">
-        <div className="status-tile">
-          <span className="label">Down</span>
-          <span className="value">
-            <StatusBadge status={counts.down ? "critical" : "healthy"} /> {counts.down}
-          </span>
-          <span className="meta">Rechecked every minute</span>
-        </div>
-        <div className="status-tile">
-          <span className="label">Up</span>
-          <span className="value">{counts.up}</span>
-          <span className="meta">Checked every five minutes</span>
-        </div>
-        <div className="status-tile">
-          <span className="label">Paused</span>
-          <span className="value">{counts.paused}</span>
-          <span className="meta">Not checked</span>
-        </div>
-        <div className="status-tile">
-          <span className="label">Response</span>
-          <span className="value">{counts.avg ? `${counts.avg} ms` : "n/a"}</span>
-          <span className="meta">Average of working sites</span>
-        </div>
-      </div>
       {job ? <JobLog job={job} onDone={() => void reload()} onClose={() => setJob(null)} /> : null}
-      {items.length === 0 ? (
-        <EmptyState title="No monitors yet">
-          Add a site and the containers that serve it, or use Scan Docker to add every site your tunnels serve. If a site stops answering,
-          its containers are restarted automatically.
-        </EmptyState>
+      {monitors === null ? (
+        <LoadingState label="Loading sites" />
+      ) : items.length === 0 ? (
+        <p className="dk-empty muted">
+          No sites are watched yet. A watched site that stops answering gets its containers restarted.
+          {mutate ? " Use New monitor, or Find sites under Site tools." : ""}
+        </p>
+      ) : shown.length === 0 ? (
+        <p className="dk-empty muted">
+          {filter === "down" ? "No sites are down." : "No sites match."}{" "}
+          {filter !== "all" ? (
+            <button className="btn btn-ghost btn-sm" type="button" onClick={() => setFilter("all")}>
+              Show all sites
+            </button>
+          ) : null}
+        </p>
       ) : (
-        <>
-          <ResultsToolbar
-            label="Monitors"
-            query={query}
-            onQuery={setQuery}
-            placeholder="Search name, site, container, project"
-            filter={stateFilter}
-            filters={STATE_FILTERS}
-            onFilter={setStateFilter}
-            filterLabel="Status"
-            sort={sort}
-            sorts={SORTS}
-            onSort={setSort}
-            view={view}
-            onView={setView}
-          />
-          {groups.length === 0 ? (
-            <p className="muted">No monitors match the current filters.</p>
-          ) : view === "table" ? (
-            <article className="panel">
-              <ResourceTable
-                className="docker-table-flat"
-                headers={["Monitor", "Group", "Status", "Target", "Response", "Uptime", "Checked", ""]}
-                numeric={[4, 5]}
-                rows={groups.flatMap((g) =>
-                  g.monitors.map((m) => [
-                    <span key="n" className="docker-clip" title={m.name}>
-                      {m.name}
-                    </span>,
-                    <span key="g" className="docker-clip" title={`${g.label} · ${g.meta}`}>
-                      {g.label}
-                    </span>,
-                    <StatusBadge key="s" status={stateTone(m.state, m.enabled)} label={stateLabel(m)} />,
-                    <span key="t" className="docker-clip" title={m.target}>
-                      {m.target}
-                    </span>,
-                    m.state === "up" && m.last_latency_ms ? `${m.last_latency_ms} ms` : "n/a",
-                    m.uptime_percent != null ? `${m.uptime_percent}%` : "n/a",
-                    m.last_check_at ? formatWhen(m.last_check_at) : "Not yet",
-                    <ActionMenu key="a" label={`${m.name} actions`} items={monitorItems(m).filter((i): i is Exclude<ContextItem, "sep"> => i !== "sep" && !i.disabled)} />,
-                  ]),
-                )}
-              />
-            </article>
-          ) : (
-            groups.map((g) => (
-              <section key={g.key || "none"} className="docker-section" aria-label={`Group ${g.label}`}>
-                <h2 className="docker-section-title">
-                  {g.label} <span className="meta">{g.meta} · {g.monitors.length}{g.down ? `, ${g.down} down` : ""}</span>
-                </h2>
-                <div className="docker-grid">{g.monitors.map(monitorCard)}</div>
-              </section>
-            ))
-          )}
-        </>
+        <div className="table-wrap dk-table-wrap">
+          <table className="dk-table" aria-label="Sites">
+            <thead>
+              <tr>
+                {table.visible.map((c) => (
+                  <SortHeader key={c.id} column={c} prefs={table} className={c.id === "response" || c.id === "uptime" ? "num" : undefined} />
+                ))}
+                <th className="cell-actions">
+                  <ColumnEditor prefs={table} label="Edit site columns" />
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((m) => (
+                <tr
+                  key={m.id}
+                  aria-label={`Site ${m.name}`}
+                  className={"dk-row" + (monitorDown(m) ? " is-bad" : "") + (!m.enabled ? " is-muted" : "")}
+                  onContextMenu={(e: ReactMouseEvent) => ctx.openAt(e, m.name, monitorItems(m))}
+                >
+                  {table.visible.map((c) => cell(c.id, m))}
+                  <td className="cell-actions">
+                    <ActionMenu label={`${m.name} actions`} items={menuItems(monitorItems(m))} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
+      <ContextMenu menu={ctx.menu} onClose={ctx.close} />
 
       <Dialog
         open={draft != null}
@@ -892,4 +808,9 @@ export function UptimePage() {
       <ScanDialog open={scanOpen} existing={items} canSave={mutate} onClose={() => setScanOpen(false)} onSaved={() => void reload()} />
     </section>
   );
+}
+
+/** menuItems turns context items into "…" menu items: no separators or disabled entries. */
+export function menuItems(items: ContextItem[]): ActionItem[] {
+  return items.filter((i): i is Exclude<ContextItem, "sep"> => i !== "sep" && !i.disabled);
 }

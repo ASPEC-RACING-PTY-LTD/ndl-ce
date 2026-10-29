@@ -27,6 +27,7 @@ import { useSession } from "../session";
 import { storageGet, storageSet } from "../storage";
 import { Dialog } from "../ui/Dialog";
 import { ColumnEditor, SortHeader, useTablePrefs, type TableColumn } from "../ui/tablePrefs";
+import { nodeLabel } from "../nodeNames";
 
 // Caddy and Nginx pages. Sites No-dal adds live in their own files (Caddy:
 // /etc/caddy/ndl.d, Nginx: /etc/nginx/conf.d/ndl-*.conf); other sites are
@@ -49,7 +50,7 @@ const COLUMNS: TableColumn<Row>[] = [
   { id: "tls", label: "TLS", sortValue: (r) => r.tls ?? "" },
   { id: "source", label: "Source", sortValue: (r) => (r.managed ? "" : `${r.file}:${r.line}`) },
   { id: "workload", label: "Workload", sortValue: (r) => r.workload?.name ?? "￿" },
-  { id: "machine", label: "Machine", defaultHidden: true, sortValue: (r) => r.machine_name },
+  { id: "machine", label: "Machine", defaultHidden: true, sortValue: (r) => nodeLabel(r.machine_id, r.machine_name) },
 ];
 
 const errText = (err: unknown, fallback: string) => (err instanceof Error ? err.message : fallback);
@@ -105,7 +106,7 @@ const SiteRow = memo(function SiteRow({ r, cols, itemsFor }: { r: Row; cols: str
           case "workload":
             return <td key={c}>{r.workload ? <Link href={`/workloads/${r.workload.id}`}>{r.workload.name}</Link> : <span className="meta">-</span>}</td>;
           case "machine":
-            return <td key={c}>{r.machine_name}</td>;
+            return <td key={c}>{nodeLabel(r.machine_id, r.machine_name)}</td>;
         }
         return null;
       })}
@@ -193,13 +194,13 @@ export function ProxyPage({ kind }: { kind: ProxyKind }) {
   const rows = useMemo(() => {
     const out: Row[] = [];
     for (const in_ of instances) {
-      in_.sites.forEach((s, i) => out.push({ ...s, key: `${in_.machine_id}/${s.name || `${s.file}:${s.line}:${i}`}`, machine_id: in_.machine_id, machine_name: in_.machine_name }));
+      in_.sites.forEach((s, i) => out.push({ ...s, key: `${in_.machine_id}/${s.name || `${s.file}:${s.line}:${i}`}`, machine_id: in_.machine_id, machine_name: nodeLabel(in_.machine_id, in_.machine_name) }));
     }
     return out;
   }, [instances]);
   const q = query.trim().toLowerCase();
   const shown = useMemo(
-    () => table.sortRows(rows.filter((r) => !q || [r.domains.join(" "), r.upstream, r.redirect, r.file, r.machine_name, r.workload?.name].some((f) => f?.toLowerCase().includes(q)))),
+    () => table.sortRows(rows.filter((r) => !q || [r.domains.join(" "), r.upstream, r.redirect, r.file, nodeLabel(r.machine_id, r.machine_name), r.workload?.name].some((f) => f?.toLowerCase().includes(q)))),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [rows, q, table.sort?.id, table.sort?.dir],
   );
@@ -223,7 +224,7 @@ export function ProxyPage({ kind }: { kind: ProxyKind }) {
           label: "Delete",
           danger: true,
           onClick: () => {
-            if (confirmAction(`Remove ${r.domains.join(", ")} from ${title} on ${r.machine_name}? It stops answering after the reload.`)) {
+            if (confirmAction(`Remove ${r.domains.join(", ")} from ${title} on ${nodeLabel(r.machine_id, r.machine_name)}? It stops answering after the reload.`)) {
               void act("Removing site", () => deleteProxySite(kind, r.machine_id, r.name ?? ""));
             }
           },
@@ -244,7 +245,7 @@ export function ProxyPage({ kind }: { kind: ProxyKind }) {
           void act(label, async () => {
             const res = await proxyService(kind, in_.machine_id, action);
             if (action === "validate") {
-              setOutput({ title: `${title} on ${in_.machine_name}`, text: res.output || res.message || "The configuration is valid." });
+              setOutput({ title: `${title} on ${nodeLabel(in_.machine_id, in_.machine_name)}`, text: res.output || res.message || "The configuration is valid." });
             }
             return res;
           }),
@@ -383,7 +384,7 @@ export function ProxyPage({ kind }: { kind: ProxyKind }) {
             {grouped ? (
               instances.map((in_) => {
                 const list = shown.filter((r) => r.machine_id === in_.machine_id);
-                if (q && list.length === 0 && !in_.machine_name.toLowerCase().includes(q)) {
+                if (q && list.length === 0 && !nodeLabel(in_.machine_id, in_.machine_name).toLowerCase().includes(q)) {
                   return null;
                 }
                 const isCollapsed = collapsed.has(in_.machine_id);
@@ -396,12 +397,12 @@ export function ProxyPage({ kind }: { kind: ProxyKind }) {
                             type="button"
                             className="cf-group-toggle"
                             aria-expanded={!isCollapsed}
-                            aria-label={`${isCollapsed ? "Show" : "Hide"} sites on ${in_.machine_name}`}
+                            aria-label={`${isCollapsed ? "Show" : "Hide"} sites on ${nodeLabel(in_.machine_id, in_.machine_name)}`}
                             onClick={() => setCollapsedList((cur) => (cur.includes(in_.machine_id) ? cur.filter((x) => x !== in_.machine_id) : [...cur, in_.machine_id]))}
                           >
                             <Icon name="chevron-down" size={14} className={isCollapsed ? "is-collapsed" : undefined} />
                           </button>
-                          <strong className="cf-group-name">{in_.machine_name}</strong>
+                          <strong className="cf-group-name">{nodeLabel(in_.machine_id, in_.machine_name)}</strong>
                           <StatusBadge status={in_.active ? "running" : in_.state === "failed" ? "critical" : "stopped"} label={in_.state} />
                           <span className="meta">
                             {in_.sites.length} site{in_.sites.length === 1 ? "" : "s"}
@@ -419,7 +420,7 @@ export function ProxyPage({ kind }: { kind: ProxyKind }) {
                             </span>
                           ))}
                           <span className="cf-group-actions">
-                            <ActionMenu label={`${in_.machine_name} actions`} items={actionItems(instanceItems(in_))} />
+                            <ActionMenu label={`${nodeLabel(in_.machine_id, in_.machine_name)} actions`} items={actionItems(instanceItems(in_))} />
                           </span>
                         </div>
                       </td>
@@ -571,7 +572,7 @@ function SiteDialog({
         <select id="px-machine" className="field-input" value={machine} disabled={Boolean(site)} onChange={(e) => setMachine(e.target.value)}>
           {instances.map((i) => (
             <option key={i.machine_id} value={i.machine_id}>
-              {i.machine_name}
+              {nodeLabel(i.machine_id, i.machine_name)}
             </option>
           ))}
         </select>

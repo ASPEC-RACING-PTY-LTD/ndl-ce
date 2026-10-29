@@ -36,6 +36,8 @@ type Appearance struct {
 	NavLayout      string                     `json:"nav_layout,omitempty"`
 	InstanceLayout string                     `json:"instance_layout,omitempty"`
 	ProfileLimit   int                        `json:"profile_limit,omitempty"`
+	// NodeNicknames are UI names for nodes, by node ID (see node_nicknames.go).
+	NodeNicknames map[string]string `json:"node_nicknames,omitempty"`
 }
 
 func (a Appearance) limit() int {

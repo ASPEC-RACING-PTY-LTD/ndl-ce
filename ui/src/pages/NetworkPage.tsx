@@ -22,12 +22,26 @@ function isConfirm(value: unknown): value is ConfirmRequired {
 
 type CreateKind = "network" | "vlan" | "bond" | "policy" | null;
 
+// Interfaces that belong to guests or to Docker, not to the host itself.
+const GUEST_NIC = /^(veth|vnet|tap|fwbr|fwpr|fwln|docker\d|br-[0-9a-f]{12}$|lxc|virbr\d+-nic)/;
+
+/** hostNICs keeps the host's own interfaces: physical NICs, and the host's bridges and tunnels that carry an address. */
+export function hostNICs(nics: NetworkNIC[]): NetworkNIC[] {
+  return nics.filter((nic) => {
+    if (nic.kind === "loopback" || nic.name === "lo" || GUEST_NIC.test(nic.name)) {
+      return false;
+    }
+    return nic.kind === "physical" || (nic.addresses?.length ?? 0) > 0;
+  });
+}
+
 export function NetworkPage() {
   const session = useSession();
   const roles = session.status === "ready" ? session.user?.roles : undefined;
   const mutate = canMutate(roles);
   const [items, setItems] = useState<Network[]>([]);
   const [nics, setNics] = useState<NetworkNIC[]>([]);
+  const shownNICs = hostNICs(nics);
   const [vlans, setVlans] = useState<NetworkVLAN[]>([]);
   const [bonds, setBonds] = useState<NetworkBond[]>([]);
   const [policies, setPolicies] = useState<NetworkPolicy[]>([]);
@@ -396,7 +410,7 @@ export function NetworkPage() {
       ) : null}
       <article className="stack">
         <h2>Host NICs</h2>
-        {nics.length === 0 ? (
+        {shownNICs.length === 0 ? (
           <p>NIC inventory is still collecting.</p>
         ) : (
           <div className="data-list">
@@ -404,17 +418,19 @@ export function NetworkPage() {
               <thead>
                 <tr>
                   <th>Name</th>
+                  <th>Type</th>
                   <th>State</th>
-                  <th>Index</th>
+                  <th>MAC</th>
                   <th>Addresses</th>
                 </tr>
               </thead>
               <tbody>
-                {nics.map((nic) => (
+                {shownNICs.map((nic) => (
                   <tr key={nic.name}>
                     <td>{nic.name}</td>
+                    <td>{nic.kind === "physical" ? "Physical" : "Host bridge or tunnel"}</td>
                     <td>{nic.state || "Not reported"}</td>
-                    <td>{nic.ifindex != null ? `ifindex ${nic.ifindex}` : "Not reported"}</td>
+                    <td>{nic.mac || "Not reported"}</td>
                     <td>{nic.addresses?.join(", ") || "None"}</td>
                   </tr>
                 ))}

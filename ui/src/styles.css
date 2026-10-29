@@ -488,47 +488,10 @@ fieldset.field legend.field-label {
   overflow-wrap: anywhere;
 }
 
-/* Add Features: one compact row per feature. */
-.feature-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 0.4rem;
-}
-
-.feature-row {
-  display: grid;
-  /* Fixed state and action columns so every row's buttons line up. */
-  grid-template-columns: minmax(0, 1fr) 7.5rem 15rem;
-  gap: 0.4rem 1rem;
-  align-items: center;
-  padding: 0.6rem 0.8rem;
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--bg-surface);
-}
-
-.feature-row.is-on,
-.feature-row.is-enabled,
-.feature-row.is-core {
-  border-left-color: var(--ok);
-}
-
-.feature-row.is-disabled {
-  border-left-color: var(--warn, var(--line));
-}
-
-.feature-row.is-focused,
+/* Add Features: the focused feature row. */
 .feature-table .is-focused {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-}
-
-.feature-row h3 {
-  margin: 0;
-  font-size: 0.95rem;
 }
 
 .feature-summary {
@@ -596,10 +559,6 @@ fieldset.field legend.field-label {
 }
 
 @media (max-width: 640px) {
-  .feature-row {
-    grid-template-columns: 1fr;
-  }
-
   .feature-actions {
     justify-content: flex-start;
   }
@@ -6051,4 +6010,72 @@ thead th[data-autosort="desc"]::after {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
   gap: var(--space-3);
+}
+
+/* Network tab: networks, Edge forwarding and DDoS Protection as categories of one page. */
+.network-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-3);
+  font-size: 0.875rem;
+}
+.network-section {
+  margin-top: var(--space-5, 2rem);
+  padding-top: var(--space-4, 1.5rem);
+  border-top: 1px solid var(--line);
+  scroll-margin-top: 4rem;
+}
+#networks,
+#approvals,
+#codehold-cli {
+  scroll-margin-top: 4rem;
+}
+.cluster-extras {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 26rem), 1fr));
+  gap: var(--space-4, 1.5rem);
+  align-items: start;
+  margin-top: var(--space-4, 1.5rem);
+}
+
+/* IAM > Users: users with approvals below, both compact. */
+.users-area {
+  display: grid;
+  gap: var(--space-4, 1.5rem);
+}
+.users-area .toolbar {
+  flex-wrap: wrap;
+  gap: var(--space-2, 0.5rem);
+}
+.users-area .toolbar .field-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2, 0.5rem);
+}
+.users-area .toolbar .field-input {
+  width: auto;
+  min-width: 0;
+}
+.users-area-approvals {
+  border-top: 1px solid var(--line);
+  padding-top: var(--space-3, 1rem);
+}
+
+/* System sub-bar sits above each System page's own header. */
+.system-subnav {
+  margin-bottom: var(--space-3, 1rem);
+}
+
+/* Node > Metrics and logs: one table. */
+.node-monitor-table td {
+  vertical-align: top;
+}
+.node-monitor-log {
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-size: 0.8125rem;
+}
+.codehold-cli-section {
+  margin-top: var(--space-5, 2rem);
 }

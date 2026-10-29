@@ -110,8 +110,9 @@ describe("CodeHold runners", () => {
     });
     window.history.replaceState({}, "", "/settings/features");
     render(<App />);
-    const heads = await screen.findAllByRole("heading", { name: /^codehold runners$/i });
-    const row = heads[0].closest("article")!;
+    // Add Features lists each feature as a table row.
+    const titles = await screen.findAllByText(/^codehold runners$/i, { selector: "strong" });
+    const row = titles[0].closest("tr")!;
     fireEvent.click(await within(row).findByRole("button", { name: /^disable$/i }));
     const dlg = await screen.findByRole("dialog", { name: /turn off codehold runners/i });
     const apply = within(dlg).getByRole("button", { name: /apply and turn off/i });

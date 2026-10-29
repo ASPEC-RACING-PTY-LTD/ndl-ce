@@ -1,50 +1,51 @@
 import { confirmAction } from "../confirm";
-import { HOST_TUNNEL_LEFT_ALONE, useHostTunnelApproval } from "../components/HostTunnelApproval";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
   ApiError,
+  checkUptimeMonitor,
   dockerBulk,
-  dockerTunnelAction,
-  getDockerTunnels,
-  runDockerScript,
-  type DockerTunnel,
-  type OpsJob,
   dockerContainerAction,
   dockerContainerLogs,
   getDocker,
   listDockerPrefs,
   listNodes,
+  listUptimeMonitors,
   putDockerPref,
+  runDockerScript,
   type DockerPref,
+  type OpsJob,
+  type UptimeMonitor,
 } from "../api/client";
-import { ActionMenu } from "../components/ActionMenu";
-import type { ContextItem } from "../components/ContextMenu";
+import { ActionMenu, type ActionItem } from "../components/ActionMenu";
+import { ContextMenu, useContextMenu, type ContextItem } from "../components/ContextMenu";
 import { EmptyState, ErrorState, LoadingState } from "../components/EmptyState";
 import { Link } from "../components/Link";
 import { PageHeader } from "../components/PageHeader";
-import { ResourceTable } from "../components/ResourceTable";
 import { StatusBadge } from "../components/StatusBadge";
 import { Dialog } from "../ui/Dialog";
+import { Segmented } from "../ui/Segmented";
+import { ColumnEditor, SortHeader, useTablePrefs, type TableColumn } from "../ui/tablePrefs";
 import { JobLog } from "../components/JobLog";
 import { JsonScriptModal } from "../components/JsonScriptModal";
-import type { DockerContainer, DockerInventory, DockerMachine, DockerProject } from "../generated/openapi";
+import type { DockerContainer, DockerInventory, DockerMachine } from "../generated/openapi";
 import { filesWorkspaceHref } from "../files/workspace";
 import { formatBytes, formatWhen } from "../format";
 import { navigate } from "../router";
 import { canMutate, isAdmin } from "../rbac";
 import { DockerPrunePanel } from "../components/DockerPrune";
 import { useSession } from "../session";
-import { storageGet, storageSet } from "../storage";
 import { usePoll } from "../query";
 import { useTerminalWorkspace } from "../terminal/workspace";
 import type { TermTarget } from "../terminal/types";
+import { menuItems, monitorDown, SiteBadge, UptimeSites } from "./UptimePage";
+import "../docker.css";
+import { nodeLabel } from "../nodeNames";
 
-type ViewMode = "groups" | "table";
 type Act = "start" | "stop" | "restart" | "pull" | "recreate" | "remove";
+type Bulk = "start-all" | "stop-all" | "restart-all" | "fix";
 
-// Cards start collapsed. Expand all / Collapse all is remembered per browser;
-// single-card toggles are not.
-const EXPAND_KEY = "ndl-docker-expand-pref";
+/** ContainerFilter picks which containers the list shows. Unhealthy is the default. */
+export type ContainerFilter = "unhealthy" | "healthy" | "ignored" | "all";
 
 const SCRIPT_TEMPLATE = `{
   "name": "Restart shop in order and check it",
@@ -52,7 +53,6 @@ const SCRIPT_TEMPLATE = `{
   "steps": [
     { "action": "restart", "machine": "apps", "project": "shop" },
     { "action": "wait-healthy", "machine": "apps", "container": "shop-web-1", "timeout": 120 },
-    { "action": "tunnel-restart", "machine": "apps" },
     { "action": "uptime-check" }
   ]
 }`;
@@ -75,26 +75,22 @@ function ScriptHelp() {
           <code>start-all</code>, <code>stop-all</code>, <code>restart-all</code>: everything, or one <code>machine</code> or <code>project</code>.
         </li>
         <li>
-          <code>fix</code>: restart unhealthy containers, their dependencies first, then start any stopped tunnel. Ignored containers are skipped
-          unless <code>include_ignored</code> is true.
+          <code>fix</code>: restart unhealthy containers, their dependencies first. Ignored containers are skipped unless{" "}
+          <code>include_ignored</code> is true.
         </li>
         <li>
           <code>exec</code>: run <code>command</code> (a list, for example <code>["sh","-c","php artisan migrate"]</code>) in a container. Admin only.
         </li>
         <li>
-          <code>tunnel-restart</code>, <code>tunnel-start</code>: a cloudflared service on a <code>machine</code> (all of them, or <code>unit</code>). Admin only.
-        </li>
-        <li>
           <code>wait</code> (<code>seconds</code>), <code>wait-healthy</code> (<code>container</code>, <code>timeout</code>).
         </li>
         <li>
-          <code>uptime-check</code>: check Uptime monitors (all, or <code>monitor</code>) and recover failing ones.
+          <code>uptime-check</code>: check site monitors (all, or <code>monitor</code>) and recover failing ones.
         </li>
       </ul>
     </>
   );
 }
-const ROWS_SHOWN = 6;
 
 function healthTone(health?: string): string {
   if (health === "critical" || health === "degraded" || health === "healthy") {
@@ -103,56 +99,36 @@ function healthTone(health?: string): string {
   return health || "unknown";
 }
 
-function isIssue(health?: string): boolean {
-  return health === "degraded" || health === "critical";
+function badHealth(health?: string): boolean {
+  return health === "degraded" || health === "critical" || health === "unhealthy";
+}
+
+/** containerProblem says why a container needs attention, or "" when it is healthy. Exported for tests. */
+export function containerProblem(c: DockerContainer, sites: UptimeMonitor[] = []): string {
+  if (c.state !== "running") {
+    return c.health_reason || c.error || c.status_label || "Not running";
+  }
+  if (c.restarting || c.restart_loop) {
+    return c.health_reason || "Restarting";
+  }
+  if (badHealth(c.health) || c.healthcheck === "unhealthy") {
+    return c.health_reason || c.status_label || "Unhealthy";
+  }
+  const down = sites.filter(monitorDown);
+  if (down.length) {
+    return down.length === 1 ? `Site ${down[0].name} is down` : `${down.length} sites are down`;
+  }
+  return "";
 }
 
 function matchesQuery(c: DockerContainer, q: string): boolean {
   if (!q) {
     return true;
   }
-  const hay = [c.name, c.image, c.project, c.service, c.machine_name, c.machine_ip, c.status_label, c.working_dir, ...(c.networks ?? [])]
+  const hay = [c.name, c.image, c.project, c.service, nodeLabel(c.machine_id, c.machine_name), c.machine_ip, c.status_label, c.working_dir, ...(c.networks ?? [])]
     .join(" ")
     .toLowerCase();
   return hay.includes(q);
-}
-
-/** Hl marks the first match of q in text. */
-function Hl({ text, q }: { text: string; q: string }) {
-  const i = q ? text.toLowerCase().indexOf(q) : -1;
-  if (i < 0) {
-    return <>{text}</>;
-  }
-  return (
-    <>
-      {text.slice(0, i)}
-      <mark className="docker-hl">{text.slice(i, i + q.length)}</mark>
-      {text.slice(i + q.length)}
-    </>
-  );
-}
-
-function nameRank(names: string[], q: string): number {
-  let best = 3;
-  for (const raw of names) {
-    const n = (raw || "").toLowerCase();
-    if (!n) {
-      continue;
-    }
-    if (n === q) {
-      return 0;
-    }
-    if (n.startsWith(q)) {
-      best = Math.min(best, 1);
-    } else if (n.includes(q)) {
-      best = Math.min(best, 2);
-    }
-  }
-  return best;
-}
-
-function groupRank(g: { project: DockerProject; machine: DockerMachine; containers: DockerContainer[] }, q: string): number {
-  return nameRank([g.project.name, g.machine.name, ...g.containers.flatMap((c) => [c.name, c.service ?? ""])], q);
 }
 
 function dockerTarget(c: DockerContainer): TermTarget {
@@ -182,28 +158,41 @@ function prefKey(machineId: string, scope: "container" | "project", name: string
   return `${machineId}|${scope}|${name}`;
 }
 
-function honestCap(value?: string): string {
-  if (!value) {
-    return "Unknown";
-  }
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
-
 function copy(text: string) {
   void navigator.clipboard?.writeText(text);
 }
 
-type Group = {
-  key: string;
-  machine: DockerMachine;
-  project: DockerProject;
-  containers: DockerContainer[];
+type Row = {
+  c: DockerContainer;
   ignored: boolean;
-  issues: DockerContainer[];
+  problem: string;
+  sites: UptimeMonitor[];
+  rank: number;
 };
 
-export function DockerPage() {
-  const hostGate = useHostTunnelApproval();
+function rowKind(r: Row): Exclude<ContainerFilter, "all"> {
+  return r.ignored ? "ignored" : r.problem ? "unhealthy" : "healthy";
+}
+
+const COLUMNS: TableColumn<Row>[] = [
+  { id: "name", label: "Container", required: true, sortValue: (r) => (r.c.name || "").toLowerCase() },
+  { id: "status", label: "Status", sortValue: (r) => r.rank },
+  { id: "problem", label: "Detail", sortValue: (r) => r.problem || r.c.uptime || "" },
+  { id: "project", label: "Project", sortValue: (r) => r.c.project || "" },
+  { id: "machine", label: "Machine", sortValue: (r) => nodeLabel(r.c.machine_id, r.c.machine_name) || r.c.machine_id },
+  { id: "sites", label: "Sites", sortValue: (r) => (r.sites.some(monitorDown) ? 0 : r.sites.length ? 1 : 2) },
+  { id: "restarts", label: "Restarts", sortValue: (r) => r.c.restart_count ?? 0 },
+  { id: "image", label: "Image", defaultHidden: true, sortValue: (r) => r.c.image || "" },
+  { id: "ports", label: "Ports", defaultHidden: true, sortValue: (r) => portText(r.c) },
+];
+
+type Props = {
+  /** focus scrolls to the Sites section (the old Uptime address). */
+  focus?: "sites";
+};
+
+/** DockerPage is containers and the sites they serve, on every Docker engine. */
+export function DockerPage({ focus }: Props = {}) {
   const session = useSession();
   const roles = session.status === "ready" ? session.user?.roles : undefined;
   const mutate = canMutate(roles);
@@ -211,40 +200,25 @@ export function DockerPage() {
   const { openOrFocus } = useTerminalWorkspace();
   const [inv, setInv] = useState<DockerInventory | null>(null);
   const [prefs, setPrefs] = useState<Map<string, DockerPref>>(new Map());
+  const [monitors, setMonitors] = useState<UptimeMonitor[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [disabled, setDisabled] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [machineFilter, setMachineFilter] = useState("all");
-  const [view, setView] = useState<ViewMode>("groups");
-  const [expandPref, setExpandPref] = useState<"expanded" | "collapsed" | null>(() => {
-    const v = storageGet(EXPAND_KEY);
-    return v === "expanded" || v === "collapsed" ? v : null;
-  });
-  const [opened, setOpened] = useState<Record<string, boolean>>({});
-  // Healthy groups need no watching: the section always starts closed.
-  const [healthyOpen, setHealthyOpen] = useState(false);
-  const [showAll, setShowAll] = useState<Record<string, boolean>>({});
-  const [ignoredOpen, setIgnoredOpen] = useState(false);
-  const [idleOpen, setIdleOpen] = useState(false);
+  // Not saved on purpose: the page always opens on what needs attention.
+  const [filter, setFilter] = useState<ContainerFilter>("unhealthy");
   const [selected, setSelected] = useState<string | null>(null);
   const [logs, setLogs] = useState<string>("");
   const [logFor, setLogFor] = useState<string | null>(null);
   const [hostNodeId, setHostNodeId] = useState<string | null>(null);
   const [job, setJob] = useState<OpsJob | null>(null);
   const [jsonOpen, setJsonOpen] = useState(false);
-  const [tunnels, setTunnels] = useState<DockerTunnel[]>([]);
-  const [tunnelsOpen, setTunnelsOpen] = useState(true);
-
-  async function loadTunnels(refresh = false) {
-    try {
-      const res = await getDockerTunnels(refresh);
-      setTunnels(res.items ?? []);
-    } catch {
-      // Tunnels are optional; the containers still show.
-    }
-  }
+  const [enginesOpen, setEnginesOpen] = useState(false);
+  const [cleanupOpen, setCleanupOpen] = useState(false);
+  const table = useTablePrefs<Row>("docker.containers", COLUMNS, null);
+  const ctx = useContextMenu();
 
   async function reload(refresh = false) {
     try {
@@ -266,71 +240,69 @@ export function DockerPage() {
     }
   }
 
+  async function reloadSites() {
+    try {
+      setMonitors((await listUptimeMonitors()).items ?? []);
+    } catch {
+      // Sites are optional; the containers still show.
+      setMonitors((cur) => cur ?? []);
+    }
+  }
+
   useEffect(() => {
     void reload();
-    void loadTunnels();
+    void reloadSites();
   }, []);
   usePoll(() => reload(), 5000);
-  usePoll(() => loadTunnels(), 30000);
+  usePoll(() => reloadSites(), 15000);
 
   const q = query.trim().toLowerCase();
-  const machines = inv?.machines ?? [];
-
-  function containerIgnored(c: DockerContainer): boolean {
-    return (
-      Boolean(prefs.get(prefKey(c.machine_id, "container", c.name))?.ignored) ||
-      Boolean(c.project && prefs.get(prefKey(c.machine_id, "project", c.project))?.ignored)
-    );
-  }
-
-  const groups = useMemo<Group[]>(() => {
-    const out: Group[] = [];
-    for (const m of machines) {
-      if (machineFilter !== "all" && m.id !== machineFilter) {
-        continue;
-      }
-      for (const p of m.projects ?? []) {
-        const all = p.containers ?? [];
-        const groupHit = !q || `${p.name} ${m.name} ${p.working_dir ?? ""}`.toLowerCase().includes(q);
-        const containers = groupHit ? all : all.filter((c) => matchesQuery(c, q));
-        if (containers.length === 0) {
-          continue;
-        }
-        const ignored = !p.standalone && Boolean(prefs.get(prefKey(m.id, "project", p.name))?.ignored);
-        const issues = all.filter((c) => isIssue(c.health) && !containerIgnored(c));
-        out.push({ key: `${m.id}/${p.id}`, machine: m, project: p, containers, ignored, issues });
-      }
+  const machines = useMemo(() => inv?.machines ?? [], [inv]);
+  // The flat list is preferred; older servers only fill it per project.
+  const containers = useMemo(() => {
+    const flat = inv?.containers ?? [];
+    if (flat.length) {
+      return flat;
     }
-    return out;
-    // containerIgnored reads prefs, which is listed.
+    return (inv?.machines ?? []).flatMap((m) => (m.projects ?? []).flatMap((p) => p.containers ?? []));
+  }, [inv]);
+
+  function ignoredSelf(c: DockerContainer): boolean {
+    return Boolean(prefs.get(prefKey(c.machine_id, "container", c.name))?.ignored);
+  }
+  function ignoredProject(machineId: string, project?: string): boolean {
+    return Boolean(project && prefs.get(prefKey(machineId, "project", project))?.ignored);
+  }
+
+  const rows = useMemo<Row[]>(() => {
+    return containers.map((c) => {
+      const sites = (monitors ?? []).filter((m) => m.containers.some((x) => x.machine_id === c.machine_id && x.name === c.name));
+      const ignored = ignoredSelf(c) || ignoredProject(c.machine_id, c.project);
+      const problem = containerProblem(c, sites);
+      const rank = ignored ? 3 : !problem ? 2 : c.state !== "running" || c.health === "critical" ? 0 : 1;
+      return { c, ignored, problem, sites, rank };
+    });
+    // ignoredSelf and ignoredProject read prefs, which is listed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [machines, machineFilter, q, prefs]);
+  }, [containers, monitors, prefs]);
 
-  const attention = groups.filter((g) => !g.ignored && g.issues.length > 0);
-  const healthy = groups.filter((g) => !g.ignored && g.issues.length === 0);
-  const ignoredGroups = groups.filter((g) => g.ignored);
-  const machineShown = (m: DockerMachine) =>
-    (machineFilter === "all" || m.id === machineFilter) && (!q || `${m.name} ${m.ipv4 ?? ""}`.toLowerCase().includes(q));
-  const downEngines = machines.filter((m) => !m.daemon_ok && machineShown(m));
-  const idleMachines = machines.filter((m) => m.daemon_ok && (m.container_count ?? 0) === 0 && machineShown(m));
-  const ignoredCount = (inv?.containers ?? []).filter((c) => containerIgnored(c)).length;
-  const flat = (inv?.containers ?? []).filter((c) => (machineFilter === "all" || c.machine_id === machineFilter) && matchesQuery(c, q));
-  const selectedRow = (inv?.containers ?? []).find((c) => c.id === selected) ?? null;
-
-  function isOpen(key: string): boolean {
-    return opened[key] ?? expandPref === "expanded";
+  const scoped = rows.filter((r) => (machineFilter === "all" || r.c.machine_id === machineFilter) && matchesQuery(r.c, q));
+  const counts: Record<ContainerFilter, number> = { unhealthy: 0, healthy: 0, ignored: 0, all: scoped.length };
+  for (const r of scoped) {
+    counts[rowKind(r)] += 1;
   }
-
-  function toggleCollapsed(key: string) {
-    setOpened((cur) => ({ ...cur, [key]: !(cur[key] ?? expandPref === "expanded") }));
-  }
-
-  function setAllOpen(open: boolean) {
-    const v = open ? "expanded" : "collapsed";
-    setExpandPref(v);
-    storageSet(EXPAND_KEY, v);
-    setOpened({});
-  }
+  const filtered = scoped.filter((r) => filter === "all" || rowKind(r) === filter);
+  const shown = table.sort
+    ? table.sortRows(filtered)
+    : [...filtered].sort(
+        (a, b) =>
+          a.rank - b.rank ||
+          (nodeLabel(a.c.machine_id, a.c.machine_name) || "").localeCompare(nodeLabel(b.c.machine_id, b.c.machine_name) || "") ||
+          (a.c.project || "~").localeCompare(b.c.project || "~") ||
+          a.c.name.localeCompare(b.c.name),
+      );
+  const downEngines = machines.filter((m) => !m.daemon_ok);
+  const selectedRow = rows.find((r) => r.c.id === selected) ?? null;
 
   async function runAction(c: DockerContainer, action: Act) {
     if (action === "remove" && !confirmAction(`Remove container ${c.name || c.container_id}? It is stopped and deleted. Named volumes are kept.`)) {
@@ -348,7 +320,7 @@ export function DockerPage() {
     }
   }
 
-  async function bulk(action: "start-all" | "stop-all" | "restart-all" | "fix", scope: { machine_id?: string; project?: string } = {}) {
+  async function bulk(action: Bulk, scope: { machine_id?: string; project?: string } = {}) {
     const where = scope.project
       ? `every container in ${scope.project}`
       : scope.machine_id
@@ -372,55 +344,11 @@ export function DockerPage() {
     return machineFilter !== "all" ? { machine_id: machineFilter } : {};
   }
 
-  async function runGroup(g: Group, action: "start" | "stop" | "restart") {
-    await bulk(`${action}-all` as "start-all" | "stop-all" | "restart-all", { machine_id: g.machine.id, project: g.project.standalone ? undefined : g.project.name });
-  }
-
-  async function tunnelAction(t: DockerTunnel, action: "start" | "restart") {
-    setError(null);
-    setBusy(`${t.unit}: ${action}`);
-    try {
-      await hostGate.guard((approveHost) => dockerTunnelAction(t.machine_id, t.unit, action, approveHost));
-      setNotice(`${t.unit} on ${t.machine_name}: ${action} sent.`);
-      await loadTunnels(true);
-    } catch (err) {
-      if (err instanceof Error && err.message === HOST_TUNNEL_LEFT_ALONE) {
-        setNotice(err.message);
-        return;
-      }
-      setError(err instanceof Error ? err.message : "Tunnel action failed");
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  function tunnelItems(t: DockerTunnel): ContextItem[] {
-    const m = machines.find((x) => x.id === t.machine_id);
-    const items: ContextItem[] = [];
-    if (admin) {
-      items.push(
-        { label: "Restart tunnel", onClick: () => void tunnelAction(t, "restart") },
-        { label: "Start tunnel", onClick: () => void tunnelAction(t, "start"), disabled: t.active },
-      );
-    }
-    if (mutate) {
-      items.push({ label: "Fix containers on this machine", onClick: () => void bulk("fix", { machine_id: t.machine_id }) });
-    }
-    if (m) {
-      items.push("sep", { label: "Open terminal on machine", onClick: () => void openTerminalAt(m), disabled: !mutate || (m.kind === "host" && !admin) });
-    }
-    items.push({ label: "Copy unit name", onClick: () => copy(t.unit) });
-    return items;
-  }
-
   async function setIgnored(machineId: string, scope: "container" | "project", name: string, ignored: boolean) {
     setError(null);
     let note = "";
     if (ignored) {
-      const typed = window.prompt(
-        `Why is ${name} ignored? (optional) It stays out of Needs attention until someone stops ignoring it.`,
-        "",
-      );
+      const typed = window.prompt(`Why is ${name} ignored? (optional) It stays out of Unhealthy until someone stops ignoring it.`, "");
       if (typed === null) {
         return;
       }
@@ -444,6 +372,21 @@ export function DockerPage() {
       setLogs(res.logs || "(no log output)");
     } catch (err) {
       setLogs(err instanceof Error ? err.message : "Logs unavailable");
+    }
+  }
+
+  async function checkSites(sites: UptimeMonitor[]) {
+    setBusy("Checking sites");
+    setError(null);
+    try {
+      for (const m of sites) {
+        await checkUptimeMonitor(m.id);
+      }
+      await reloadSites();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Check failed");
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -497,16 +440,11 @@ export function DockerPage() {
     navigate(filesWorkspaceHref({ kind: "workload", id: m.id, name: m.name }, dir || "/"));
   }
 
-  function machineOf(c: DockerContainer): DockerMachine | undefined {
-    return machines.find((m) => m.id === c.machine_id);
-  }
-
-  function containerItems(c: DockerContainer): ContextItem[] {
-    const m = machineOf(c);
+  function rowItems(r: Row): ContextItem[] {
+    const c = r.c;
+    const m = machines.find((x) => x.id === c.machine_id);
     const dir = c.working_dir;
     const termOK = mutate && (m?.kind !== "host" || admin);
-    const ignoredSelf = Boolean(prefs.get(prefKey(c.machine_id, "container", c.name))?.ignored);
-    const ignoredProject = Boolean(c.project && prefs.get(prefKey(c.machine_id, "project", c.project))?.ignored);
     const items: ContextItem[] = [
       { label: "Details and logs", onClick: () => void loadLogs(c) },
       { label: "Open shell in container", onClick: () => openShell(c), disabled: !mutate || c.state !== "running" },
@@ -525,22 +463,42 @@ export function DockerPage() {
         { label: "Restart", onClick: () => void runAction(c, "restart") },
         { label: "Pull image", onClick: () => void runAction(c, "pull") },
         { label: "Recreate", onClick: () => void runAction(c, "recreate") },
+      );
+      if (c.project) {
+        const scope = { machine_id: c.machine_id, project: c.project };
+        items.push(
+          "sep",
+          { label: `Fix project ${c.project}`, onClick: () => void bulk("fix", scope) },
+          { label: `Restart project ${c.project}`, onClick: () => void bulk("restart-all", scope) },
+          { label: `Start project ${c.project}`, onClick: () => void bulk("start-all", scope) },
+          { label: `Stop project ${c.project}`, onClick: () => void bulk("stop-all", scope) },
+        );
+      }
+    }
+    if (r.sites.length && mutate) {
+      items.push("sep", { label: r.sites.length === 1 ? "Check its site now" : "Check its sites now", onClick: () => void checkSites(r.sites) });
+    }
+    if (mutate) {
+      items.push(
         "sep",
-        ignoredSelf
+        ignoredSelf(c)
           ? { label: "Stop ignoring container", onClick: () => void setIgnored(c.machine_id, "container", c.name, false) }
           : { label: "Ignore container", onClick: () => void setIgnored(c.machine_id, "container", c.name, true) },
       );
       if (c.project) {
         items.push(
-          ignoredProject
-            ? { label: "Stop ignoring group", onClick: () => void setIgnored(c.machine_id, "project", c.project!, false) }
-            : { label: "Ignore whole group", onClick: () => void setIgnored(c.machine_id, "project", c.project!, true) },
+          ignoredProject(c.machine_id, c.project)
+            ? { label: "Stop ignoring project", onClick: () => void setIgnored(c.machine_id, "project", c.project!, false) }
+            : { label: "Ignore whole project", onClick: () => void setIgnored(c.machine_id, "project", c.project!, true) },
         );
       }
     }
     items.push("sep", { label: "Copy name", onClick: () => copy(c.name) }, { label: "Copy container ID", onClick: () => copy(c.container_id) });
     if (c.image) {
       items.push({ label: "Copy image", onClick: () => copy(c.image!) });
+    }
+    if (dir) {
+      items.push({ label: "Copy compose folder path", onClick: () => copy(dir) });
     }
     if (m && m.kind !== "host") {
       items.push({ label: "Go to machine", onClick: () => navigate(`/workloads/${encodeURIComponent(m.id)}`) });
@@ -551,53 +509,130 @@ export function DockerPage() {
     return items;
   }
 
-  function groupItems(g: Group, isCollapsed: boolean): ContextItem[] {
-    const dir = g.project.working_dir;
-    const termOK = mutate && (g.machine.kind !== "host" || admin);
+  function engineItems(m: DockerMachine): ContextItem[] {
+    const termOK = mutate && (m.kind !== "host" || admin);
     const items: ContextItem[] = [
-      { label: isCollapsed ? "Expand" : "Collapse", onClick: () => toggleCollapsed(g.key) },
-      { label: dir ? "Open terminal in compose folder" : "Open terminal on machine", onClick: () => void openTerminalAt(g.machine, dir), disabled: !termOK },
-      { label: dir ? "Open compose folder in Files" : "Open machine files", onClick: () => void openFilesAt(g.machine, dir), disabled: g.machine.kind === "host" && !admin },
+      {
+        label: "Show its containers",
+        onClick: () => {
+          setMachineFilter(m.id);
+          setFilter("all");
+          setEnginesOpen(false);
+        },
+      },
+      { label: "Open terminal on machine", onClick: () => void openTerminalAt(m), disabled: !termOK },
+      { label: "Open machine files", onClick: () => void openFilesAt(m), disabled: m.kind === "host" && !admin },
     ];
-    if (mutate) {
-      if (g.issues.length) {
-        items.push("sep", { label: "Fix this group", onClick: () => void bulk("fix", { machine_id: g.machine.id, project: g.project.standalone ? undefined : g.project.name }) });
-      }
+    if (mutate && m.daemon_ok) {
       items.push(
         "sep",
-        { label: "Start all", onClick: () => void runGroup(g, "start") },
-        { label: "Stop all", onClick: () => void runGroup(g, "stop") },
-        { label: "Restart all", onClick: () => void runGroup(g, "restart") },
+        { label: "Fix unhealthy here", onClick: () => void bulk("fix", { machine_id: m.id }) },
+        { label: "Restart all here", onClick: () => void bulk("restart-all", { machine_id: m.id }) },
+        { label: "Start all here", onClick: () => void bulk("start-all", { machine_id: m.id }) },
+        { label: "Stop all here", onClick: () => void bulk("stop-all", { machine_id: m.id }) },
       );
-      if (!g.project.standalone) {
-        items.push(
-          "sep",
-          g.ignored
-            ? { label: "Stop ignoring group", onClick: () => void setIgnored(g.machine.id, "project", g.project.name, false) }
-            : { label: "Ignore group", onClick: () => void setIgnored(g.machine.id, "project", g.project.name, true) },
-        );
-      }
     }
-    if (dir) {
-      items.push("sep", { label: "Copy compose folder path", onClick: () => copy(dir) });
-    }
-    if (g.machine.kind !== "host") {
-      items.push({ label: "Go to machine", onClick: () => navigate(`/workloads/${encodeURIComponent(g.machine.id)}`) });
+    if (m.kind !== "host") {
+      items.push("sep", { label: "Go to machine", onClick: () => navigate(`/workloads/${encodeURIComponent(m.id)}`) });
     }
     return items;
   }
 
+  function cell(id: string, r: Row) {
+    const c = r.c;
+    switch (id) {
+      case "name":
+        return (
+          <td key={id}>
+            <span className="dk-name">
+              <strong className="dk-clip" title={c.name}>
+                {c.name}
+              </strong>
+              {c.service && c.service !== c.name ? <span className="meta dk-clip">{c.service}</span> : null}
+            </span>
+          </td>
+        );
+      case "status":
+        return (
+          <td key={id}>
+            <StatusBadge
+              status={r.ignored ? "unknown" : c.state !== "running" ? "critical" : r.problem ? (c.health === "critical" ? "critical" : "degraded") : healthTone(c.health)}
+              label={r.ignored ? `Ignored · ${c.status_label}` : c.status_label}
+            />
+          </td>
+        );
+      case "problem":
+        return (
+          <td key={id}>
+            <span className={"dk-clip" + (r.problem && !r.ignored ? " dk-reason" : " meta")} title={r.problem || c.uptime || ""}>
+              {r.problem || (c.uptime ? `Up ${c.uptime}` : "")}
+            </span>
+          </td>
+        );
+      case "project":
+        return (
+          <td key={id}>
+            <span className="dk-clip" title={c.working_dir || c.project || ""}>
+              {c.project || <span className="meta">Standalone</span>}
+            </span>
+          </td>
+        );
+      case "machine":
+        return (
+          <td key={id}>
+            <span className="dk-clip" title={c.machine_ip || ""}>
+              {nodeLabel(c.machine_id, c.machine_name) || c.machine_id}
+            </span>
+          </td>
+        );
+      case "sites":
+        return (
+          <td key={id}>
+            {r.sites.length ? (
+              <span className="dk-sites">
+                {r.sites.slice(0, 2).map((m) => (
+                  <SiteBadge key={m.id} m={m} withName />
+                ))}
+                {r.sites.length > 2 ? <span className="meta">+{r.sites.length - 2}</span> : null}
+              </span>
+            ) : (
+              <span className="meta">-</span>
+            )}
+          </td>
+        );
+      case "restarts":
+        return (
+          <td key={id} className="num">
+            {c.restart_count ?? 0}
+          </td>
+        );
+      case "image":
+        return (
+          <td key={id}>
+            <span className="dk-clip" title={c.image || ""}>
+              {c.image || "-"}
+            </span>
+          </td>
+        );
+      case "ports":
+        return <td key={id}>{portText(c)}</td>;
+      default:
+        return <td key={id} />;
+    }
+  }
+
+  const sites = (
+    <UptimeSites monitors={monitors} machines={machines} containers={containers} mutate={mutate} reload={reloadSites} focus={focus === "sites"} />
+  );
+
   if (disabled) {
     return (
       <section className="page page-wide" aria-labelledby="docker-heading">
-        <PageHeader
-          id="docker-heading"
-          title="Docker"
-          kicker="Optional Docker Management across No-DAL machines. Discovery stays off until you enable the feature."
-        />
+        <PageHeader id="docker-heading" title="Docker" kicker="Optional Docker Management across No-DAL machines. Discovery stays off until you enable the feature." />
         <EmptyState title="Docker Management is not enabled">
           Enable it from <Link href="/settings/features">Add Features</Link>. No Docker sockets are probed while the module is off.
         </EmptyState>
+        {sites}
       </section>
     );
   }
@@ -610,173 +645,36 @@ export function DockerPage() {
     );
   }
 
-  const shownTunnels = tunnels.filter(
-    (t) =>
-      (machineFilter === "all" || t.machine_id === machineFilter) &&
-      (!q || `${t.unit} ${t.machine_name} ${(t.ingress ?? []).map((i) => i.hostname ?? "").join(" ")}`.toLowerCase().includes(q)),
-  );
-  const badTunnels = shownTunnels.filter((t) => t.health === "critical" || t.health === "degraded");
-  const issueCount = attention.reduce((n, g) => n + g.issues.length, 0) + badTunnels.length;
-
-  const allBadTunnels = tunnels.filter((t) => t.health === "critical" || t.health === "degraded");
-  // Search results: best name matches first (exact, prefix, substring), then
-  // matches in other fields such as image, IP or folder.
-  const results = q ? [...groups].sort((a, b) => groupRank(a, q) - groupRank(b, q) || a.project.name.localeCompare(b.project.name)) : [];
-  const resultEngines = q ? machines.filter((m) => (m.container_count ?? 0) === 0 || !m.daemon_ok).filter(machineShown) : [];
-
-  function engineCard(m: DockerMachine) {
-    if (!m.daemon_ok) {
-      return (
-        <article key={`down-${m.id}`} className="docker-card is-issue">
-          <header className="docker-card-head">
-            <strong className="docker-head-name">
-              <Hl text={m.name} q={q} />
-            </strong>
-            <StatusBadge status="critical" label="Engine unreachable" />
-          </header>
-          <p className="docker-card-issue" title={m.daemon_error || ""}>
-            {m.daemon_error || "The Docker daemon did not answer."}
-          </p>
-        </article>
-      );
-    }
-    return (
-      <article key={m.id} className="docker-card is-healthy is-collapsed">
-        <header className="docker-card-head">
-          <strong className="docker-head-name">
-            <Hl text={m.name} q={q} />
-          </strong>
-          <StatusBadge status={healthTone(m.health)} label={m.health_reason || honestCap(m.health) || "Reachable"} />
-        </header>
-        <p className="meta docker-card-meta">
-          {m.kind === "host" ? "Host" : "System container"}
-          {m.ipv4 ? ` · ${m.ipv4}` : ""}
-          {m.docker_version ? ` · Docker ${m.docker_version}` : ""} · no containers
-        </p>
-      </article>
-    );
-  }
-
-  function tunnelCard(t: DockerTunnel) {
-    const key = `tunnel:${t.machine_id}/${t.unit}`;
-    return (
-      <TunnelCard key={key} tunnel={t} q={q} items={tunnelItems(t)} open={Boolean(q) || isOpen(key)} onToggle={() => toggleCollapsed(key)} />
-    );
-  }
-
-  function renderCard(g: Group, tone: "issue" | "healthy" | "ignored") {
-    // While searching, matches are always shown, whatever was collapsed.
-    const isCollapsed = q ? false : !isOpen(g.key);
-    const ordered = [...g.containers].sort((a, b) => {
-      const ai = isIssue(a.health) && !containerIgnored(a) ? 0 : 1;
-      const bi = isIssue(b.health) && !containerIgnored(b) ? 0 : 1;
-      return ai - bi || (a.service || a.name).localeCompare(b.service || b.name);
-    });
-    const rows = showAll[g.key] || q ? ordered : ordered.slice(0, ROWS_SHOWN);
-    const running = (g.project.containers ?? []).filter((c) => c.state === "running").length;
-    const total = (g.project.containers ?? []).length;
-    const groupStatus = tone === "ignored" ? "Ignored" : g.issues.length ? `${g.issues.length} need attention` : g.project.status_label || "Healthy";
-    return (
-      <article
-        key={g.key}
-        className={`docker-card is-${tone}` + (isCollapsed ? " is-collapsed" : "")}
-        data-group={g.project.name}
-      >
-        <header className="docker-card-head">
-          <button
-            className="linkish docker-head-name"
-            type="button"
-            aria-expanded={!isCollapsed}
-            aria-label={`Group ${g.project.name}`}
-            title={g.project.name}
-            onClick={() => toggleCollapsed(g.key)}
-          >
-            {isCollapsed ? "▸" : "▾"} <Hl text={g.project.standalone ? "Standalone containers" : g.project.name} q={q} />
-          </button>
-          <StatusBadge status={tone === "ignored" ? "unknown" : g.issues.length ? healthTone(g.issues[0].health) : "healthy"} label={groupStatus} />
-          <ActionMenu label={`${g.project.name} group actions`} items={groupItems(g, isCollapsed).filter((i): i is Exclude<ContextItem, "sep"> => i !== "sep" && !i.disabled)} />
-        </header>
-        <p className="meta docker-card-meta" title={g.project.working_dir || ""}>
-          <Hl text={g.machine.name} q={q} /> · {running}/{total} running
-          {g.project.working_dir ? ` · ${g.project.working_dir}` : ""}
-        </p>
-        {isCollapsed ? (
-          g.issues.length && tone !== "ignored" ? (
-            <p className="docker-card-issue" title={g.issues.map((c) => `${c.service || c.name}: ${c.health_reason || c.status_label}`).join("\n")}>
-              {g.issues
-                .slice(0, 2)
-                .map((c) => `${c.service || c.name}: ${c.health_reason || c.status_label}`)
-                .join(" · ")}
-              {g.issues.length > 2 ? ` · +${g.issues.length - 2} more` : ""}
-            </p>
-          ) : null
-        ) : (
-          <ul className="docker-rows">
-            {rows.map((c) => {
-              const ign = containerIgnored(c);
-              return (
-                <li
-                  key={c.id}
-                  className={"docker-row" + (isIssue(c.health) && !ign ? " is-issue" : "") + (ign ? " is-ignored" : "")}
-                >
-                  <button className="linkish docker-row-name" type="button" title={c.name} onClick={() => setSelected(c.id)}>
-                    <strong>
-                      <Hl text={c.service || c.name} q={q} />
-                    </strong>
-                    {c.service && c.name !== c.service ? (
-                      <span className="meta">
-                        {" "}
-                        <Hl text={c.name} q={q} />
-                      </span>
-                    ) : null}
-                  </button>
-                  <span className="docker-row-status">
-                    <StatusBadge status={ign ? "unknown" : healthTone(c.health)} label={ign ? `Ignored · ${c.status_label}` : c.status_label} />
-                  </span>
-                  <span className="meta docker-row-meta" title={c.health_reason || c.image}>
-                    {isIssue(c.health) && c.health_reason ? c.health_reason : c.uptime || c.image || ""}
-                  </span>
-                  <ActionMenu label={`${c.name} actions`} items={containerItems(c).filter((i): i is Exclude<ContextItem, "sep"> => i !== "sep" && !i.disabled)} />
-                </li>
-              );
-            })}
-            {ordered.length > ROWS_SHOWN ? (
-              <li className="docker-row-more">
-                <button className="btn btn-ghost btn-sm" type="button" onClick={() => setShowAll((cur) => ({ ...cur, [g.key]: !cur[g.key] }))}>
-                  {showAll[g.key] ? "Show fewer" : `Show ${ordered.length - ROWS_SHOWN} more`}
-                </button>
-              </li>
-            ) : null}
-          </ul>
-        )}
-      </article>
-    );
-  }
+  const more: ActionItem[] = [
+    ...(mutate
+      ? [
+          { label: "Restart all", onClick: () => void bulk("restart-all", scopeNow()) },
+          { label: "Start all", onClick: () => void bulk("start-all", scopeNow()) },
+          { label: "Stop all", onClick: () => void bulk("stop-all", scopeNow()), danger: true },
+          { label: "Run JSON script", onClick: () => setJsonOpen(true) },
+        ]
+      : []),
+    { label: "Engines", onClick: () => setEnginesOpen(true) },
+    { label: "Image cleanup", onClick: () => setCleanupOpen(true) },
+  ];
 
   return (
-    <section className="page page-wide" aria-labelledby="docker-heading">
-      {hostGate.dialog}
+    <section className="page page-wide dk-page" aria-labelledby="docker-heading">
       <PageHeader
         id="docker-heading"
         title="Docker"
-        kicker="Compose projects across the host and system containers. Use a card's … menu for its tools."
+        kicker="Containers on the host and system containers, and the sites they serve. Right-click a row for its tools."
         actions={
           <div className="btn-row is-flush">
             {mutate ? (
-              <button className="btn btn-secondary" type="button" onClick={() => setJsonOpen(true)}>
-                Run JSON
+              <button className="btn btn-primary" type="button" disabled={counts.unhealthy === 0} onClick={() => void bulk("fix", scopeNow())}>
+                Fix unhealthy
               </button>
             ) : null}
-            <button
-              className="btn btn-secondary"
-              type="button"
-              onClick={() => {
-                void reload(true);
-                void loadTunnels(true);
-              }}
-            >
+            <button className="btn btn-secondary" type="button" onClick={() => void Promise.all([reload(true), reloadSites()])}>
               Refresh
             </button>
+            <ActionMenu label="More Docker actions" items={more} />
           </div>
         }
       />
@@ -794,229 +692,119 @@ export function DockerPage() {
           Working: {busy}
         </p>
       ) : null}
-      <div className="docker-summary" aria-label="Docker status">
-        <span className={"docker-chip" + (issueCount ? " is-bad" : " is-ok")}>
-          <StatusBadge status={issueCount ? "critical" : "healthy"} label={issueCount ? `${issueCount} need attention` : "Nothing needs attention"} />
-        </span>
-        <span className="docker-chip">
-          {inv?.summary?.machines ?? 0} engines{inv?.summary?.daemons_down ? `, ${inv.summary.daemons_down} down` : ""}
-        </span>
-        <span className="docker-chip">
-          {healthy.length} healthy · {attention.length} with issues · {ignoredGroups.length} ignored groups
-        </span>
-        <span className="docker-chip">
-          {inv?.summary?.running ?? 0} running · {inv?.summary?.stopped ?? 0} stopped · {ignoredCount} ignored containers
-        </span>
-        <span className={"docker-chip" + (allBadTunnels.length ? " is-bad" : "")}>
-          {tunnels.length} tunnels{allBadTunnels.length ? `, ${allBadTunnels.length} with errors now` : ""}
-        </span>
-      </div>
-
-      <div className="docker-toolbar">
-        <input
-          id="docker-search"
-          className="field-input"
-          aria-label="Search containers"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search name, image, project, IP"
-        />
-        <select className="field-input" aria-label="Machine" value={machineFilter} onChange={(e) => setMachineFilter(e.target.value)}>
-          <option value="all">All machines</option>
-          {machines.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.name}
-            </option>
-          ))}
-        </select>
-        {mutate ? (
-          <div className="btn-row is-flush docker-bulk" role="group" aria-label="Bulk actions">
-            <button className="btn btn-sm btn-primary" type="button" onClick={() => void bulk("fix", scopeNow())}>
-              Fix unhealthy
-            </button>
-            <button className="btn btn-sm btn-secondary" type="button" onClick={() => void bulk("start-all", scopeNow())}>
-              Start all
-            </button>
-            <button className="btn btn-sm btn-secondary" type="button" onClick={() => void bulk("restart-all", scopeNow())}>
-              Restart all
-            </button>
-            <button className="btn btn-sm btn-ghost btn-danger-text" type="button" onClick={() => void bulk("stop-all", scopeNow())}>
-              Stop all
-            </button>
-          </div>
-        ) : null}
-        {view === "groups" ? (
-          <div className="btn-row is-flush" role="group" aria-label="Cards">
-            <button className="btn btn-sm btn-ghost" type="button" onClick={() => setAllOpen(true)}>
-              Expand all
-            </button>
-            <button className="btn btn-sm btn-ghost" type="button" onClick={() => setAllOpen(false)}>
-              Collapse all
-            </button>
-          </div>
-        ) : null}
-        <div className="segmented" role="group" aria-label="View">
-          <button type="button" aria-pressed={view === "groups"} onClick={() => setView("groups")}>
-            Groups
+      {downEngines.length ? (
+        <p className="banner banner-warn dk-engines-down" role="status">
+          {downEngines.length === 1 ? "1 Docker engine is unreachable: " : `${downEngines.length} Docker engines are unreachable: `}
+          {downEngines.map((m) => m.name).join(", ")}.{" "}
+          <button className="btn btn-ghost btn-sm" type="button" onClick={() => setEnginesOpen(true)}>
+            Engines
           </button>
-          <button type="button" aria-pressed={view === "table"} onClick={() => setView("table")}>
-            Table
-          </button>
-        </div>
-      </div>
-
-      {job ? (
-        <JobLog
-          job={job}
-          onDone={() => {
-            void reload(true);
-            void loadTunnels(true);
-          }}
-          onClose={() => setJob(null)}
-        />
+        </p>
       ) : null}
+      {job ? <JobLog job={job} onDone={() => void reload(true)} onClose={() => setJob(null)} /> : null}
 
       {machines.length === 0 ? (
         <EmptyState title="No Docker engines discovered">
           Install Docker in a system container or on the host. No-DAL does not install Docker Engine when this feature is enabled.
         </EmptyState>
-      ) : view === "table" ? (
-        <article className="panel">
-          <ResourceTable
-            className="docker-table-flat"
-            headers={["Container", "Machine", "Project", "Status", "Image", "Ports", "Restarts", ""]}
-            numeric={[6]}
-            rows={flat.map((c) => [
-              <button
-                key="n"
-                className="linkish docker-clip"
-                type="button"
-                title={c.name}
-                onClick={() => setSelected(c.id)}
-              >
-                {c.name}
-              </button>,
-              <span key="m" className="docker-clip" title={c.machine_name || c.machine_id}>
-                {c.machine_name || c.machine_id}
-              </span>,
-              <span key="p" className="docker-clip" title={c.project || "Standalone"}>
-                {c.project || "Standalone"}
-              </span>,
-              <StatusBadge
-                key="s"
-                status={containerIgnored(c) ? "unknown" : healthTone(c.health)}
-                label={containerIgnored(c) ? `Ignored · ${c.status_label}` : c.status_label}
-              />,
-              <span key="i" className="docker-clip" title={c.image || "Not reported"}>
-                {c.image || "Not reported"}
-              </span>,
-              <span key="pt" className="docker-clip" title={portText(c)}>
-                {portText(c)}
-              </span>,
-              String(c.restart_count ?? 0),
-              <ActionMenu key="a" label={`${c.name} actions`} items={containerItems(c).filter((i): i is Exclude<ContextItem, "sep"> => i !== "sep" && !i.disabled)} />,
-            ])}
-            empty={<p className="muted">No containers match the current filters.</p>}
-          />
-        </article>
       ) : (
-        <>
-          {q ? (
-            <section className="docker-section" aria-labelledby="docker-results">
-              <h2 id="docker-results" className="docker-section-title">
-                Results <span className="meta">{results.length + resultEngines.length + shownTunnels.length}</span>
-              </h2>
-              {results.length + resultEngines.length + shownTunnels.length === 0 ? (
-                <p className="muted">Nothing matches “{query.trim()}”.</p>
-              ) : (
-                <div className="docker-grid">
-                  {results.map((g) => renderCard(g, g.ignored ? "ignored" : g.issues.length ? "issue" : "healthy"))}
-                  {resultEngines.map((m) => engineCard(m))}
-                  {shownTunnels.map((t) => tunnelCard(t))}
-                </div>
-              )}
-            </section>
+        <section className="dk-section" aria-labelledby="dk-containers-heading">
+          <div className="dk-section-head">
+            <h2 id="dk-containers-heading">Containers</h2>
+            <Segmented<ContainerFilter>
+              ariaLabel="Show containers"
+              value={filter}
+              onChange={setFilter}
+              options={[
+                { id: "unhealthy", label: `Unhealthy (${counts.unhealthy})` },
+                { id: "healthy", label: `Healthy (${counts.healthy})` },
+                ...(counts.ignored || filter === "ignored" ? [{ id: "ignored" as const, label: `Ignored (${counts.ignored})` }] : []),
+                { id: "all", label: `All (${counts.all})` },
+              ]}
+            />
+            <input
+              className="field-input dk-search"
+              type="search"
+              aria-label="Search containers"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search name, image, project, IP"
+            />
+            {machines.length > 1 ? (
+              <select className="field-input dk-select" aria-label="Machine" value={machineFilter} onChange={(e) => setMachineFilter(e.target.value)}>
+                <option value="all">All machines</option>
+                {machines.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+          </div>
+          {shown.length === 0 ? (
+            <p className="dk-empty muted">
+              {filter === "unhealthy" && !q ? "Every container is healthy." : "No containers match."}{" "}
+              {filter !== "all" && counts.all > 0 ? (
+                <button className="btn btn-ghost btn-sm" type="button" onClick={() => setFilter(filter === "unhealthy" ? "healthy" : "all")}>
+                  {filter === "unhealthy" ? `Show healthy (${counts.healthy})` : "Show all"}
+                </button>
+              ) : null}
+            </p>
           ) : (
-            <>
-              <section className="docker-section" aria-labelledby="docker-attention">
-                <h2 id="docker-attention" className="docker-section-title">
-                  Needs attention <span className="meta">{attention.length + downEngines.length}</span>
-                </h2>
-                {attention.length === 0 && downEngines.length === 0 ? (
-                  <p className="muted">Nothing needs attention.</p>
-                ) : (
-                  <div className="docker-grid">
-                    {downEngines.map((m) => engineCard(m))}
-                    {attention.map((g) => renderCard(g, "issue"))}
-                  </div>
-                )}
-              </section>
-              {shownTunnels.length > 0 ? (
-                <section className="docker-section" aria-labelledby="docker-tunnels">
-                  <h2 id="docker-tunnels" className="docker-section-title">
-                    <button className="linkish" type="button" aria-expanded={tunnelsOpen} onClick={() => setTunnelsOpen((v) => !v)}>
-                      {tunnelsOpen ? "▾" : "▸"} Cloudflare tunnels
-                    </button>{" "}
-                    <span className="meta">
-                      {shownTunnels.length}
-                      {badTunnels.length ? `, ${badTunnels.length} with errors now` : ""}
-                    </span>
-                  </h2>
-                  {tunnelsOpen ? (
-                    <div className="docker-grid">{[...badTunnels, ...shownTunnels.filter((t) => !badTunnels.includes(t))].map((t) => tunnelCard(t))}</div>
-                  ) : null}
-                </section>
-              ) : null}
-              {ignoredGroups.length > 0 ? (
-                <section className="docker-section" aria-labelledby="docker-ignored">
-                  <h2 id="docker-ignored" className="docker-section-title">
-                    <button className="linkish" type="button" aria-expanded={ignoredOpen} onClick={() => setIgnoredOpen((v) => !v)}>
-                      {ignoredOpen ? "▾" : "▸"} Ignored groups
-                    </button>{" "}
-                    <span className="meta">{ignoredGroups.length}</span>
-                  </h2>
-                  {ignoredOpen ? <div className="docker-grid">{ignoredGroups.map((g) => renderCard(g, "ignored"))}</div> : null}
-                </section>
-              ) : null}
-              {idleMachines.length > 0 ? (
-                <section className="docker-section docker-idle" aria-labelledby="docker-idle">
-                  <h2 id="docker-idle" className="docker-section-title">
-                    <button className="linkish" type="button" aria-expanded={idleOpen} onClick={() => setIdleOpen((v) => !v)}>
-                      {idleOpen ? "▾" : "▸"} Engines with no containers
-                    </button>{" "}
-                    <span className="meta">{idleMachines.length}</span>
-                  </h2>
-                  {idleOpen ? <div className="docker-grid">{idleMachines.map((m) => engineCard(m))}</div> : null}
-                </section>
-              ) : null}
-              <section className="docker-section" aria-labelledby="docker-healthy">
-                <h2 id="docker-healthy" className="docker-section-title">
-                  <button className="linkish" type="button" aria-expanded={healthyOpen} onClick={() => setHealthyOpen((v) => !v)}>
-                    {healthyOpen ? "▾" : "▸"} Healthy
-                  </button>{" "}
-                  <span className="meta">{healthy.length}</span>
-                </h2>
-                {healthyOpen ? (
-                  healthy.length === 0 ? (
-                    <p className="muted">No healthy groups match.</p>
-                  ) : (
-                    <div className="docker-grid">{healthy.map((g) => renderCard(g, "healthy"))}</div>
-                  )
-                ) : null}
-              </section>
-            </>
+            <div className="table-wrap dk-table-wrap">
+              <table className="dk-table" aria-label="Containers">
+                <thead>
+                  <tr>
+                    {table.visible.map((c) => (
+                      <SortHeader key={c.id} column={c} prefs={table} className={c.id === "restarts" ? "num" : undefined} />
+                    ))}
+                    <th className="cell-actions">
+                      <ColumnEditor prefs={table} label="Edit container columns" />
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {shown.map((r) => (
+                    <tr
+                      key={r.c.id}
+                      aria-label={`Container ${r.c.name}`}
+                      className={"dk-row is-clickable" + (r.ignored ? " is-muted" : r.problem ? " is-bad" : "")}
+                      onClick={() => setSelected(r.c.id)}
+                      onContextMenu={(e: ReactMouseEvent) => ctx.openAt(e, r.c.name, rowItems(r))}
+                    >
+                      {table.visible.map((col) => cell(col.id, r))}
+                      <td className="cell-actions" onClick={(e) => e.stopPropagation()}>
+                        <ActionMenu label={`${r.c.name} actions`} items={menuItems(rowItems(r))} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
-        </>
+        </section>
       )}
 
-      <DockerPrunePanel mutate={mutate} />
+      {sites}
 
-      <Dialog open={selectedRow != null} title={selectedRow?.name ?? "Container"} wide onClose={() => setSelected(null)}>
+      <ContextMenu menu={ctx.menu} onClose={ctx.close} />
+
+      <Dialog open={enginesOpen} title="Docker engines" wide onClose={() => setEnginesOpen(false)}>
+        <EnginesTable machines={machines} itemsFor={engineItems} onContext={(e, m) => ctx.openAt(e, m.name, engineItems(m))} />
+      </Dialog>
+
+      <Dialog open={cleanupOpen} title="Image cleanup" wide onClose={() => setCleanupOpen(false)}>
+        <DockerPrunePanel mutate={mutate} />
+      </Dialog>
+
+      <Dialog open={selectedRow != null} title={selectedRow?.c.name ?? "Container"} wide onClose={() => setSelected(null)}>
         {selectedRow ? (
           <ContainerDetail
-            container={selectedRow}
-            ignored={containerIgnored(selectedRow)}
-            logs={logFor === selectedRow.id ? logs : ""}
+            container={selectedRow.c}
+            ignored={selectedRow.ignored}
+            problem={selectedRow.problem}
+            sites={selectedRow.sites}
+            logs={logFor === selectedRow.c.id ? logs : ""}
             mutate={mutate}
             busy={busy}
             onAction={runAction}
@@ -1053,6 +841,60 @@ export function DockerPage() {
   );
 }
 
+function EnginesTable({
+  machines,
+  itemsFor,
+  onContext,
+}: {
+  machines: DockerMachine[];
+  itemsFor: (m: DockerMachine) => ContextItem[];
+  onContext: (e: ReactMouseEvent, m: DockerMachine) => void;
+}) {
+  const sorted = [...machines].sort((a, b) => Number(a.daemon_ok) - Number(b.daemon_ok) || a.name.localeCompare(b.name));
+  return (
+    <div className="table-wrap dk-table-wrap">
+      <table className="dk-table" aria-label="Docker engines">
+        <thead>
+          <tr>
+            <th>Machine</th>
+            <th>Status</th>
+            <th>Kind</th>
+            <th>Address</th>
+            <th>Docker</th>
+            <th className="num">Containers</th>
+            <th className="cell-actions" />
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((m) => (
+            <tr key={m.id} className={"dk-row" + (m.daemon_ok ? "" : " is-bad")} onContextMenu={(e: ReactMouseEvent) => onContext(e, m)}>
+              <td>
+                <strong>{m.name}</strong>
+              </td>
+              <td>
+                {m.daemon_ok ? (
+                  <StatusBadge status={healthTone(m.health)} label={m.health_reason || "Reachable"} />
+                ) : (
+                  <span title={m.daemon_error || ""}>
+                    <StatusBadge status="critical" label="Unreachable" /> <span className="meta dk-clip">{m.daemon_error || "The Docker daemon did not answer."}</span>
+                  </span>
+                )}
+              </td>
+              <td>{m.kind === "host" ? "Host" : "System container"}</td>
+              <td>{m.ipv4 || "-"}</td>
+              <td>{m.docker_version || "-"}</td>
+              <td className="num">{m.container_count ?? 0}</td>
+              <td className="cell-actions">
+                <ActionMenu label={`${m.name} engine actions`} items={menuItems(itemsFor(m))} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function PlanView({ job }: { job: OpsJob }) {
   const lines = job.lines ?? [];
   return (
@@ -1070,82 +912,11 @@ function PlanView({ job }: { job: OpsJob }) {
   );
 }
 
-function TunnelCard({
-  tunnel: t,
-  items,
-  open,
-  q,
-  onToggle,
-}: {
-  tunnel: DockerTunnel;
-  items: ContextItem[];
-  open: boolean;
-  q: string;
-  onToggle: () => void;
-}) {
-  const bad = t.health === "critical" || t.health === "degraded";
-  const routes = (t.links ?? []).length || (t.ingress ?? []).length;
-  return (
-    <article className={"docker-card" + (bad ? " is-issue" : "") + (open ? "" : " is-collapsed")} aria-label={`Tunnel ${t.unit} on ${t.machine_name}`}>
-      <header className="docker-card-head">
-        <button className="linkish docker-head-name" type="button" aria-expanded={open} title={t.unit} onClick={onToggle}>
-          {open ? "▾" : "▸"} <Hl text={t.machine_name} q={q} /> <span className="meta">{t.unit}</span>
-        </button>
-        <StatusBadge status={t.health} label={t.active ? (bad ? "Errors" : "Running") : t.sub_state || t.state} />
-        <ActionMenu label={`${t.unit} actions`} items={items.filter((i): i is Exclude<ContextItem, "sep"> => i !== "sep" && !i.disabled)} />
-      </header>
-      <p className="meta docker-card-meta">
-        {routes ? `${routes} route(s) · ` : ""}
-        {t.remote_managed ? "routes set in the Cloudflare dashboard" : t.config_path || "no local config"}
-      </p>
-      {t.reason ? (
-        <p className={bad ? "docker-card-issue" : "meta docker-card-meta"} title={t.reason}>
-          {t.reason}
-        </p>
-      ) : null}
-      {open && (t.links ?? []).length ? (
-        <ul className="docker-rows">
-          {(t.links ?? []).map((l) => (
-            <li key={l.origin + l.id} className={"docker-row" + (l.state !== "running" || l.health === "critical" || l.health === "degraded" ? " is-issue" : "")}>
-              <span className="docker-row-name" title={l.origin}>
-                <strong>
-                  <Hl text={(l.hostnames ?? []).join(", ") || l.origin} q={q} />
-                </strong>
-              </span>
-              <span className="docker-row-status">
-                <StatusBadge status={l.state !== "running" ? "critical" : l.health || "unknown"} label={`${l.name} · ${l.state}`} />
-              </span>
-              <span className="meta docker-row-meta">
-                {l.origin}
-                {l.recent_errors ? ` · ${l.recent_errors} error(s) in the last minute` : l.errors ? ` · ${l.errors} earlier error(s)` : ""}
-              </span>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-      {open && (t.errors ?? []).length ? (
-        <details className="tunnel-errors">
-          <summary>
-            {t.current_errors ? `${t.current_errors} origin error(s) in the last minute · ` : "None in the last minute · "}
-            {t.error_count} in the last 15 minutes
-          </summary>
-          <ul className="plain-list">
-            {(t.errors ?? []).slice(0, 6).map((e, i) => (
-              <li key={i}>
-                <strong>{e.count}×</strong> {e.hostname ? `${e.hostname} → ` : ""}
-                {e.origin || ""} <span className="meta">{e.message}</span>
-              </li>
-            ))}
-          </ul>
-        </details>
-      ) : null}
-    </article>
-  );
-}
-
 function ContainerDetail({
   container,
   ignored,
+  problem,
+  sites,
   logs,
   mutate,
   busy,
@@ -1155,6 +926,8 @@ function ContainerDetail({
 }: {
   container: DockerContainer;
   ignored: boolean;
+  problem: string;
+  sites: UptimeMonitor[];
   logs: string;
   mutate: boolean;
   busy: string | null;
@@ -1167,7 +940,7 @@ function ContainerDetail({
       <p>
         <StatusBadge status={healthTone(container.health)} label={container.status_label} />{" "}
         {ignored ? <StatusBadge status="unknown" label="Ignored" /> : null}{" "}
-        {container.health_reason ? <span className="meta">{container.health_reason}</span> : null}
+        {problem || container.health_reason ? <span className="meta">{problem || container.health_reason}</span> : null}
       </p>
       <dl className="kv-grid">
         <div>
@@ -1177,7 +950,7 @@ function ContainerDetail({
         <div>
           <dt>Machine</dt>
           <dd>
-            {container.machine_name}
+            {nodeLabel(container.machine_id, container.machine_name)}
             {container.machine_ip ? ` · ${container.machine_ip}` : ""}
           </dd>
         </div>
@@ -1225,6 +998,19 @@ function ContainerDetail({
           <dd>{formatWhen(container.started_at)}</dd>
         </div>
       </dl>
+      {sites.length ? (
+        <div>
+          <h3>Sites</h3>
+          <ul className="plain-list">
+            {sites.map((m) => (
+              <li key={m.id}>
+                <SiteBadge m={m} withName /> <span className="meta">{m.target}</span>
+                {monitorDown(m) && m.last_error ? <span className="meta"> · {m.last_error}</span> : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       {container.problems && container.problems.length > 0 ? (
         <div className="docker-errors">
           <h3>Problems</h3>

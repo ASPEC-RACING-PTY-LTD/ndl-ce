@@ -49,7 +49,7 @@ function dnsText(plan: CfDNSPlan | null): { status: string; text: string } | nul
     case "unavailable":
       return {
         status: "warning",
-        text: `The route can be saved, but DNS is left alone: ${plan.reason || "no saved token may read DNS here"}. See Accounts for the permissions to add.`,
+        text: `The route can be saved, but DNS is left alone: ${plan.reason || "no saved token may read DNS here"}. See Manage accounts for the permissions to add.`,
       };
   }
   return { status: "unknown", text: plan.reason || plan.action };

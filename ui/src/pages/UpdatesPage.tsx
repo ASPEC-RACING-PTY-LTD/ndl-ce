@@ -28,6 +28,7 @@ import { SummaryCard } from "../ui/SummaryCard";
 
 import { hasGrant } from "../rbac";
 import { ErrorNotice } from "../components/ErrorNotice";
+import "../system-pages.css";
 
 // While an apply runs the control plane and agent restart, so status reads
 // fail for a few seconds. Poll quickly and ignore those errors.
@@ -325,78 +326,6 @@ export function UpdatesPage() {
         kicker="Control-plane package bumps must not stop guests. Split packages update the management plane while workloads keep running."
       />
 
-      <div className="btn-row">
-        <button className="btn" type="button" disabled={!actionsEnabled} onClick={() => void onCheck()}>
-          Check for updates
-        </button>
-        <button className="btn" type="button" disabled={!actionsEnabled} onClick={() => void onPreflight()}>
-          Run preflight
-        </button>
-        <button className="btn" type="button" disabled={!actionsEnabled} onClick={() => void onCheckpoint()}>
-          Create checkpoint
-        </button>
-        <button className="btn btn-primary" type="button" disabled={!actionsEnabled} onClick={() => void onApply()}>
-          Apply update
-        </button>
-        <button
-          className="btn"
-          type="button"
-          disabled={!actionsEnabled || !rollbackReady}
-          title={rollbackReady ? `Roll back to ${status?.rollback?.version ?? ""}` : status?.rollback?.reason}
-          onClick={() => void onRollback()}
-        >
-          Roll back update
-        </button>
-        {undoReady ? (
-          <button
-            className="btn"
-            type="button"
-            disabled={!actionsEnabled}
-            title={`Back to ${status?.undo_rollback?.version ?? ""}`}
-            onClick={() => void onUndoRollback()}
-          >
-            Undo rollback
-          </button>
-        ) : null}
-      </div>
-      {!rollbackReady && status?.rollback?.reason ? <p className="field-hint">{status.rollback.reason}</p> : null}
-      {undoReady && status?.undo_rollback?.window_ends_at ? (
-        <p className="field-hint">
-          The rollback can be undone until {formatWhen(status.undo_rollback.window_ends_at)} from the copy saved before it ran.
-        </p>
-      ) : null}
-      {rollbackReady && windowEnds ? (
-        <p className="field-hint">
-          Rollback is possible until {formatWhen(windowEnds)}. After that the previous version is deleted automatically.
-          {status?.rollback?.restores_database ? " Rolling back restores the database from before the update, so changes made since are lost." : ""}
-        </p>
-      ) : null}
-      {status?.previous_version_kept && status.can_wipe_previous ? (
-        <div className="btn-row">
-          <button className="btn btn-danger btn-sm" type="button" disabled={busy || updating} onClick={() => void onWipePrevious()}>
-            Delete previous version now
-          </button>
-          <span className="field-hint">SuperAdmin only. Frees the space used by the rollback copy.</span>
-        </div>
-      ) : null}
-      {notices.length ? (
-        <article className="panel update-notices">
-          <h2>
-            Before you update to {preview?.version}
-          </h2>
-          <ul>
-            {notices.map((n) => (
-              <li key={n.id} className={n.applies ? "is-applies" : "muted"}>
-                <strong>{n.audience}:</strong> {n.text}
-                {n.version && n.version !== preview?.version ? <span className="meta"> (from {n.version})</span> : null}
-                {n.detail ? <span className="meta"> {n.detail}</span> : null}
-                {n.applies ? <span className="chip chip-sm">Affects you</span> : null}
-              </li>
-            ))}
-          </ul>
-        </article>
-      ) : null}
-
       {updating ? (
         <p className="banner" role="status">
           {currentOp?.action === "rollback" ? "Rolling back" : currentOp?.action === "undo-rollback" ? "Undoing the rollback" : "Updating"}
@@ -471,36 +400,81 @@ export function UpdatesPage() {
         </p>
       ) : null}
 
-      {loadState === "ready" && status ? (
-        <>
-          <div className="summary-grid updates-summary">
-            <SummaryCard label="Channel" value={status.channel || "Not reported"} />
-            <SummaryCard label="Host" value={hostSupported ? "Supported" : "Unsupported"} meta={hostSupported ? status.host_reason || undefined : undefined} />
-            <SummaryCard
-              label="Last operation"
-              value={op ? operationStatusLabel(op.status) : "None"}
-              meta={op ? "View details" : undefined}
-              onClick={op ? () => setDetailsOpen(true) : undefined}
-            />
-          </div>
-          <div className="updates-grid">
-            <article className="panel updates-host">
-              <h2>Host support</h2>
+      <div className="updates-layout">
+        <div className="updates-side">
+          <article className="panel sys-card updates-actions">
+            <h2>Actions</h2>
+            <div className="btn-row">
+              <button className="btn" type="button" disabled={!actionsEnabled} onClick={() => void onCheck()}>
+                Check for updates
+              </button>
+              <button className="btn" type="button" disabled={!actionsEnabled} title="Runs the preflight checks without changing anything" onClick={() => void onPreflight()}>
+                Dry run
+              </button>
+              <button className="btn" type="button" disabled={!actionsEnabled} onClick={() => void onCheckpoint()}>
+                Create checkpoint
+              </button>
+              <button
+                className="btn"
+                type="button"
+                disabled={!actionsEnabled || !rollbackReady}
+                title={rollbackReady ? `Roll back to ${status?.rollback?.version ?? ""}` : status?.rollback?.reason}
+                onClick={() => void onRollback()}
+              >
+                Roll back
+              </button>
+              <button className="btn btn-primary" type="button" disabled={!actionsEnabled} onClick={() => void onApply()}>
+                Apply update
+              </button>
+              {undoReady ? (
+                <button
+                  className="btn"
+                  type="button"
+                  disabled={!actionsEnabled}
+                  title={`Back to ${status?.undo_rollback?.version ?? ""}`}
+                  onClick={() => void onUndoRollback()}
+                >
+                  Undo rollback
+                </button>
+              ) : null}
+            </div>
+            {!rollbackReady && status?.rollback?.reason ? <p className="field-hint">{status.rollback.reason}</p> : null}
+            {undoReady && status?.undo_rollback?.window_ends_at ? (
+              <p className="field-hint">
+                The rollback can be undone until {formatWhen(status.undo_rollback.window_ends_at)} from the copy saved before it ran.
+              </p>
+            ) : null}
+            {rollbackReady && windowEnds ? (
+              <p className="field-hint">
+                Rollback is possible until {formatWhen(windowEnds)}. After that the previous version is deleted automatically.
+                {status?.rollback?.restores_database ? " Rolling back restores the database from before the update, so changes made since are lost." : ""}
+              </p>
+            ) : null}
+            {status?.previous_version_kept && status.can_wipe_previous ? (
+              <div>
+                <button className="btn btn-danger btn-sm" type="button" disabled={busy || updating} onClick={() => void onWipePrevious()}>
+                  Delete previous version now
+                </button>
+                <p className="field-hint">SuperAdmin only. Frees the space used by the rollback copy.</p>
+              </div>
+            ) : null}
+          </article>
+
+          {loadState === "ready" && status ? (
+            <article className="panel sys-card updates-status">
+              <h2>Status</h2>
+              <div className="summary-grid">
+                <SummaryCard label="Channel" value={status.channel || "Not reported"} />
+                <SummaryCard label="Host" value={hostSupported ? "Supported" : "Unsupported"} />
+                <SummaryCard
+                  label="Last operation"
+                  value={op ? operationStatusLabel(op.status) : "None"}
+                  meta={op ? "View details" : undefined}
+                  onClick={op ? () => setDetailsOpen(true) : undefined}
+                />
+              </div>
               {hostSupported ? (
-                <dl className="definition-list">
-                  <div>
-                    <dt>Channel</dt>
-                    <dd>{status.channel}</dd>
-                  </div>
-                  <div>
-                    <dt>Host</dt>
-                    <dd>Supported</dd>
-                  </div>
-                  <div>
-                    <dt>Detail</dt>
-                    <dd>{status.host_reason || "None"}</dd>
-                  </div>
-                </dl>
+                <p className="field-hint">{status.host_reason || "No host detail reported."}</p>
               ) : (
                 <>
                   <p className="banner banner-warn" role="status">
@@ -515,74 +489,47 @@ export function UpdatesPage() {
                 package-manager success on its own.
               </p>
             </article>
+          ) : null}
+        </div>
 
-            <article className="panel">
-              <h2>Packages</h2>
-              {status.packages.length === 0 ? (
-                <p>Not configured</p>
-              ) : (
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Version</th>
-                        <th>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {status.packages.map((pkg) => (
-                        <tr key={pkg.name}>
-                          <td>{pkg.name}</td>
-                          <td>{pkg.version || "Not reported"}</td>
-                          <td>{packageStatusLabel(pkg.status)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+        <div className="updates-main">
+          {notices.length ? (
+            <article className="panel update-notices">
+              <h2>Before you update to {preview?.version}</h2>
+              <ul>
+                {notices.map((n) => (
+                  <li key={n.id} className={n.applies ? "is-applies" : "muted"}>
+                    <strong>{n.audience}:</strong> {n.text}
+                    {n.version && n.version !== preview?.version ? <span className="meta"> (from {n.version})</span> : null}
+                    {n.detail ? <span className="meta"> {n.detail}</span> : null}
+                    {n.applies ? <span className="chip chip-sm">Affects you</span> : null}
+                  </li>
+                ))}
+              </ul>
             </article>
-
-            {preflight ? (
-              <article className="panel">
-                <h2>Preflight</h2>
-                <dl className="definition-list">
-                  <div>
-                    <dt>Result</dt>
-                    <dd>{preflight.ok ? "Ok" : "Not ready"}</dd>
-                  </div>
-                  <div>
-                    <dt>Kernel</dt>
-                    <dd>{preflight.kernel_ok ? "Ok" : "Not ok"}</dd>
-                  </div>
-                  <div>
-                    <dt>ZFS</dt>
-                    <dd>{preflight.zfs_ok ? "Ok" : "Not ok"}</dd>
-                  </div>
-                  <div>
-                    <dt>NVIDIA</dt>
-                    <dd>{preflight.nvidia_ok ? "Ok" : "Not ok"}</dd>
-                  </div>
-                </dl>
-                {preflight.checks.length === 0 ? (
-                  <p>No checks reported.</p>
+          ) : null}
+          {loadState === "ready" && status ? (
+            <div className="sys-grid">
+              <article className="panel sys-card">
+                <h2>Packages</h2>
+                {status.packages.length === 0 ? (
+                  <p>Not configured</p>
                 ) : (
                   <div className="table-wrap">
                     <table>
                       <thead>
                         <tr>
-                          <th>Check</th>
+                          <th>Name</th>
+                          <th>Version</th>
                           <th>Status</th>
-                          <th>Detail</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {preflight.checks.map((check) => (
-                          <tr key={check.name}>
-                            <td>{check.name}</td>
-                            <td>{checkStatusLabel(check.status)}</td>
-                            <td>{check.detail || "None"}</td>
+                        {status.packages.map((pkg) => (
+                          <tr key={pkg.name}>
+                            <td>{pkg.name}</td>
+                            <td>{pkg.version || "Not reported"}</td>
+                            <td>{packageStatusLabel(pkg.status)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -590,34 +537,83 @@ export function UpdatesPage() {
                   </div>
                 )}
               </article>
-            ) : null}
 
-            {checkpoint ? (
-              <article className="panel">
-                <h2>Checkpoint</h2>
-                <dl className="definition-list">
-                  <div>
-                    <dt>ID</dt>
-                    <dd>{checkpoint.id}</dd>
-                  </div>
-                  <div>
-                    <dt>Locator</dt>
-                    <dd>{checkpoint.locator || "Not reported"}</dd>
-                  </div>
-                  <div>
-                    <dt>Postgres dump</dt>
-                    <dd>{checkpoint.postgres_dump ? "Yes" : "No"}</dd>
-                  </div>
-                  <div>
-                    <dt>Status</dt>
-                    <dd>{checkpointStatusLabel(checkpoint.status)}</dd>
-                  </div>
-                </dl>
-              </article>
-            ) : null}
-          </div>
-        </>
-      ) : null}
+              {preflight ? (
+                <article className="panel sys-card sys-span-all">
+                  <h2>Dry run</h2>
+                  <dl className="definition-list">
+                    <div>
+                      <dt>Result</dt>
+                      <dd>{preflight.ok ? "Ok" : "Not ready"}</dd>
+                    </div>
+                    <div>
+                      <dt>Kernel</dt>
+                      <dd>{preflight.kernel_ok ? "Ok" : "Not ok"}</dd>
+                    </div>
+                    <div>
+                      <dt>ZFS</dt>
+                      <dd>{preflight.zfs_ok ? "Ok" : "Not ok"}</dd>
+                    </div>
+                    <div>
+                      <dt>NVIDIA</dt>
+                      <dd>{preflight.nvidia_ok ? "Ok" : "Not ok"}</dd>
+                    </div>
+                  </dl>
+                  {preflight.checks.length === 0 ? (
+                    <p>No checks reported.</p>
+                  ) : (
+                    <div className="table-wrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Check</th>
+                            <th>Status</th>
+                            <th>Detail</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {preflight.checks.map((check) => (
+                            <tr key={check.name}>
+                              <td>{check.name}</td>
+                              <td>{checkStatusLabel(check.status)}</td>
+                              <td>{check.detail || "None"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </article>
+              ) : null}
+
+              {checkpoint ? (
+                <article className="panel sys-card">
+                  <h2>Checkpoint</h2>
+                  <dl className="definition-list">
+                    <div>
+                      <dt>ID</dt>
+                      <dd>{checkpoint.id}</dd>
+                    </div>
+                    <div>
+                      <dt>Locator</dt>
+                      <dd>{checkpoint.locator || "Not reported"}</dd>
+                    </div>
+                    <div>
+                      <dt>Postgres dump</dt>
+                      <dd>{checkpoint.postgres_dump ? "Yes" : "No"}</dd>
+                    </div>
+                    <div>
+                      <dt>Status</dt>
+                      <dd>{checkpointStatusLabel(checkpoint.status)}</dd>
+                    </div>
+                  </dl>
+                </article>
+              ) : null}
+            </div>
+          ) : null}
+          <LiveUpdatesPanel owner={Boolean(user?.roles?.includes("superadmin"))} />
+        </div>
+      </div>
 
       <Dialog open={detailsOpen && op != null} title="Last operation" onClose={() => setDetailsOpen(false)}>
         {op ? (
@@ -657,7 +653,6 @@ export function UpdatesPage() {
           </dl>
         ) : null}
       </Dialog>
-      <LiveUpdatesPanel owner={Boolean(user?.roles?.includes("superadmin"))} />
     </section>
   );
 }

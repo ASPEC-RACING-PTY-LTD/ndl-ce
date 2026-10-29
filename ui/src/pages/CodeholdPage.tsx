@@ -21,15 +21,17 @@ import { EmptyState, LoadingState } from "../components/EmptyState";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { Link } from "../components/Link";
 import { PageHeader } from "../components/PageHeader";
+import { CodeholdCLIDialog } from "../components/CodeholdCLIDialog";
 import { StatusBadge } from "../components/StatusBadge";
 import { formatRelative, formatWhen } from "../format";
 import { usePoll } from "../query";
-import { hasGrant } from "../rbac";
+import { canMutate, hasGrant } from "../rbac";
 import { navigate } from "../router";
 import { useSession } from "../session";
 import { storageGet, storageSet } from "../storage";
 import { Dialog } from "../ui/Dialog";
 import { ColumnEditor, SortHeader, useTablePrefs, type TableColumn } from "../ui/tablePrefs";
+import { nodeLabel } from "../nodeNames";
 
 // CodeHold runners: No-dal is a CodeHold host controller. Runners are created,
 // started, stopped and removed in CodeHold; this page shows the connection,
@@ -213,8 +215,8 @@ export function CodeholdPage() {
     <section className="page page-wide" aria-labelledby="ch-heading">
       <PageHeader
         id="ch-heading"
-        title="CodeHold Runners"
-        kicker="This node hosts CodeHold Actions runners as one of CodeHold's host controllers. Create, start, stop and remove runners in CodeHold; each gets its own container here."
+        title="CodeHold"
+        kicker="Actions runners this node hosts for CodeHold, and the ch client in system containers. Create and remove runners in CodeHold; each gets its own container here."
         actions={
           <div className="btn-row is-flush">
             <button className="btn btn-secondary" type="button" onClick={() => void reload()}>
@@ -372,6 +374,7 @@ export function CodeholdPage() {
           void reload();
         }}
       />
+      <CodeholdCLIDialog open asPage canChange={canMutate(user?.roles)} onClose={() => undefined} />
     </section>
   );
 }
@@ -458,7 +461,7 @@ function ConnectDialog({ open, current, instances, onClose, onDone }: { open: bo
           <ul className="plain-list">
             {found.map((i) => (
               <li key={i.container_id}>
-                <strong>{i.container_name}</strong> <span className="meta">on {i.machine_name}</span>{" "}
+                <strong>{i.container_name}</strong> <span className="meta">on {nodeLabel(i.machine_id, i.machine_name)}</span>{" "}
                 {i.url ? <code>{i.url}</code> : <span className="meta">no published HTTP port</span>}
                 {!i.has_runner ? <span className="tunnel-reason"> has no runner downloads</span> : null}{" "}
                 {i.url ? (
@@ -707,7 +710,7 @@ function SettingsDialog({
               <option value="">Any CodeHold found on this node</option>
               {usable.map((i) => (
                 <option key={i.container_id} value={`${i.machine_id}|${i.container_name}`}>
-                  {i.container_name} on {i.machine_name}
+                  {i.container_name} on {nodeLabel(i.machine_id, i.machine_name)}
                 </option>
               ))}
             </select>

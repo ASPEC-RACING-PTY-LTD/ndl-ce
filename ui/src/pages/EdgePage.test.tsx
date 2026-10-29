@@ -108,8 +108,8 @@ describe("Edge forwarding page", () => {
     expect(await screen.findByRole("heading", { name: /edge forwarding/i })).toBeVisible();
     const row = screen.getByRole("link", { name: "JvS" }).closest("tr") as HTMLElement;
     expect(within(row).getByText("45.38.149.183:27015")).toBeVisible();
-    expect(within(row).getByText("Passed on")).toBeVisible();
-    expect(within(row).getByText("Leaves through the edge")).toBeVisible();
+    expect(within(row).getByText(/player addresses passed on/)).toBeVisible();
+    expect(within(row).getByText(/outbound through the edge/)).toBeVisible();
     expect(within(row).getByText("Live")).toBeVisible();
     expect(screen.getByText("Connected")).toBeVisible();
   });

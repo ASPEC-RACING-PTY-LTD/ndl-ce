@@ -37,6 +37,7 @@ import { hasGrant } from "../rbac";
 import { useSession } from "../session";
 import { Dialog } from "../ui/Dialog";
 import { Segmented } from "../ui/Segmented";
+import { nodeLabel } from "../nodeNames";
 
 // DDoS protection. Rules are nftables tables on this node's uplink, so
 // floods are dropped before they reach a game server, a workload or the
@@ -141,7 +142,7 @@ function refHref(t: DDoSTarget): string | null {
 }
 
 /** DDoSPage is Network > DDoS Protection. */
-export function DDoSPage() {
+export function DDoSPage({ embedded = false }: { embedded?: boolean } = {}) {
   const session = useSession();
   const user = session.status === "ready" ? session.user : null;
   const canManage = hasGrant(user, "ddos.manage");
@@ -232,11 +233,11 @@ export function DDoSPage() {
   };
 
   return (
-    <section className="page page-wide" aria-labelledby="ddos-heading">
+    <section className={embedded ? "network-section" : "page page-wide"} id="ddos" aria-labelledby="ddos-heading">
       <PageHeader
         id="ddos-heading"
         title="DDoS Protection"
-        kicker="Filters floods on this node's uplink before they reach game servers, workloads or the host. Limits are per source address, so real players keep playing while an attacker is dropped."
+        kicker="Drops floods on the uplink before they reach game servers, workloads or the host. Limits are per source, so players keep playing."
         actions={
           <div className="btn-row is-flush">
             <button className="btn btn-secondary" type="button" onClick={() => void reload()}>
@@ -304,7 +305,7 @@ export function DDoSPage() {
         <div className="ddos-edges">
           {data.edges.map((e) => (
             <p key={e.node_id} className={e.error ? "banner banner-warn" : "meta"}>
-              Also filtering on edge node <strong>{e.name}</strong>
+              Also filtering on edge node <strong>{nodeLabel(e.node_id, e.name)}</strong>
               {e.targets.length ? ` for ${e.targets.join(", ")}` : ""}:{" "}
               {e.error ? e.error : e.active ? `${e.mode === "monitor" ? "monitoring" : "enforcing"}${e.devices?.length ? ` on ${e.devices.join(", ")}` : ""}` : "not loaded"}. Floods to
               its public address are dropped there, before they enter the tunnel.

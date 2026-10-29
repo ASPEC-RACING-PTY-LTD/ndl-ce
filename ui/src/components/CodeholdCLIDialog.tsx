@@ -65,7 +65,7 @@ export function CodeholdCLIDialog({
   open: boolean;
   onClose: () => void;
   canChange: boolean;
-  /** asPage draws the same controls as a page (CodeHold → CodeHold CLI). */
+  /** asPage draws the same controls as a section of the CodeHold page. */
   asPage?: boolean;
 }) {
   const [settings, setSettings] = useState<CodeholdCLISettings | null>(null);
@@ -293,13 +293,13 @@ export function CodeholdCLIDialog({
   );
   if (asPage) {
     return (
-      <section className="page page-wide" aria-labelledby="ch-cli-heading">
-        <header className="page-header">
-          <h1 id="ch-cli-heading">CodeHold CLI</h1>
-          <p className="page-lede">The ch client in system containers.</p>
-        </header>
+      <section className="section-block codehold-cli-section" id="codehold-cli" aria-labelledby="ch-cli-heading">
+        <h2 id="ch-cli-heading" className="section-title">
+          CodeHold CLI
+        </h2>
+        <p className="meta">The ch client in system containers.</p>
         <div className="panel admin-box">{content}</div>
-        <div className="sticky-actions">{buttons}</div>
+        {buttons}
       </section>
     );
   }

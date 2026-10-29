@@ -1,4 +1,5 @@
 import type { HealthResponse } from "../generated/openapi";
+import { nodeLabel, setNodeNicknames, withNickname } from "../nodeNames";
 import type {
   ErrorResponse,
   LoginRequest,
@@ -153,12 +154,46 @@ export async function patchMe(body: {
 }
 
 export async function listNodes(): Promise<import("./phase2").NodeSummary[]> {
+  const names = ensureNodeNicknames();
   const body = await readJson<{ items: import("./phase2").NodeSummary[] }>(await request("/nodes"));
-  return body.items ?? [];
+  await names;
+  return (body.items ?? []).map(withNickname);
 }
 
 export async function getNode(id: string): Promise<import("./phase2").NodeSummary> {
-  return readJson(await request(`/nodes/${id}`));
+  const names = ensureNodeNicknames();
+  const node = await readJson<import("./phase2").NodeSummary>(await request(`/nodes/${id}`));
+  await names;
+  return withNickname(node);
+}
+
+const NICKNAMES_FRESH_MS = 30_000;
+let nicknamesLoad: { at: number; p: Promise<void> } | null = null;
+
+/** ensureNodeNicknames loads the cluster's node nicknames, at most every 30 seconds. A failure leaves names as they are. */
+export function ensureNodeNicknames(force = false): Promise<void> {
+  if (!force && nicknamesLoad && Date.now() - nicknamesLoad.at < NICKNAMES_FRESH_MS) {
+    return nicknamesLoad.p;
+  }
+  const p = request("/node-nicknames")
+    .then((res) => (res.ok ? (res.json() as Promise<unknown>) : null))
+    .then((body) => {
+      const b = body as { nicknames?: unknown; can_edit?: unknown } | null;
+      if (b && b.nicknames && typeof b.nicknames === "object" && !Array.isArray(b.nicknames)) {
+        setNodeNicknames(b.nicknames as Record<string, string>, b.can_edit === true);
+      }
+    })
+    .catch(() => undefined);
+  nicknamesLoad = { at: Date.now(), p };
+  return p;
+}
+
+/** setNodeNickname sets (or, with an empty name, clears) the name the UI shows for a node. */
+export async function setNodeNickname(nodeId: string, nickname: string): Promise<void> {
+  const body = await readJson<{ nicknames?: Record<string, string>; can_edit?: boolean }>(
+    await request("/node-nicknames", { method: "PUT", body: JSON.stringify({ node_id: nodeId, nickname }) }),
+  );
+  setNodeNicknames(body.nicknames ?? {}, body.can_edit);
 }
 
 export type WGPeer = {
@@ -263,7 +298,10 @@ export async function setNodeAgentAddress(id: string, listenAddr: string): Promi
 }
 
 export async function getCluster(): Promise<ClusterInventory> {
-  return readJson(await request("/cluster"));
+  const names = ensureNodeNicknames();
+  const inv = await readJson<ClusterInventory>(await request("/cluster"));
+  await names;
+  return inv.nodes ? { ...inv, nodes: inv.nodes.map(withNickname) } : inv;
 }
 
 export async function createJoinToken(): Promise<JoinTokenCreateResult> {
@@ -4282,23 +4320,34 @@ export type EdgeForwardInput = {
   enabled?: boolean;
 };
 
+/** readEdge reads an edge overview with node nicknames in place of node names. */
+async function readEdge(res: Response): Promise<EdgeOverview> {
+  const names = ensureNodeNicknames();
+  const o = await readJson<EdgeOverview>(res);
+  await names;
+  return {
+    ...o,
+    nodes: (o.nodes ?? []).map(withNickname),
+    forwards: (o.forwards ?? []).map((f) => ({ ...f, edge_name: nodeLabel(f.edge_node_id, f.edge_name), origin_name: nodeLabel(f.origin_node_id, f.origin_name) })),
+  };
+}
 export async function getEdge(): Promise<EdgeOverview> {
-  return readJson(await request("/edge"));
+  return readEdge(await request("/edge"));
 }
 export async function createEdgeForward(body: EdgeForwardInput): Promise<EdgeOverview> {
-  return readJson(await request("/edge/forwards", json(body)));
+  return readEdge(await request("/edge/forwards", json(body)));
 }
 export async function updateEdgeForward(id: string, body: EdgeForwardInput): Promise<EdgeOverview> {
-  return readJson(await request(`/edge/forwards/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(body) }));
+  return readEdge(await request(`/edge/forwards/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(body) }));
 }
 export async function deleteEdgeForward(id: string): Promise<EdgeOverview> {
-  return readJson(await request(`/edge/forwards/${encodeURIComponent(id)}`, { method: "DELETE" }));
+  return readEdge(await request(`/edge/forwards/${encodeURIComponent(id)}`, { method: "DELETE" }));
 }
 export async function putEdgeNode(id: string, publicAddr: string): Promise<EdgeOverview> {
-  return readJson(await request(`/edge/nodes/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify({ public_addr: publicAddr }) }));
+  return readEdge(await request(`/edge/nodes/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify({ public_addr: publicAddr }) }));
 }
 export async function applyEdge(): Promise<EdgeOverview> {
-  return readJson(await request("/edge/apply", { method: "POST" }));
+  return readEdge(await request("/edge/apply", { method: "POST" }));
 }
 /** updateWorkerNode starts a worker's No-dal update from its own package repository. */
 export async function updateWorkerNode(id: string): Promise<{ status: string; reason?: string }> {

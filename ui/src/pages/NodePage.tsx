@@ -15,22 +15,19 @@ import {
   createWGPeer,
 } from "../api/client";
 import type { Capability, EventItem, HardwareResponse, MetricSeries, MetricsResponse, NodeSummary } from "../api/phase2";
-import { MetricChart } from "../components/MetricChart";
 import { Link } from "../components/Link";
 import { Field } from "../components/Field";
 import { PageHeader } from "../components/PageHeader";
 import { PageNav, type PageNavItem } from "../components/PageNav";
-import { FilesBrowser } from "../components/FilesBrowser";
-import { defaultFilesPath } from "../files/workspace";
-import { TerminalPage } from "./TerminalPage";
 import { usePref } from "../prefs";
 import { Segmented } from "../ui/Segmented";
 import { GpuPage } from "./GpuPage";
 import { formatBytes, formatWhen, honestStatus } from "../format";
-import { usePath } from "../router";
+import { navigate, usePath } from "../router";
 import { useSession } from "../session";
 import { SummaryCard } from "../ui/SummaryCard";
 import { ErrorNotice } from "../components/ErrorNotice";
+import { NodeName, NodeNicknameButton } from "../components/NodeNickname";
 
 type Inventory = {
   host?: Record<string, unknown>;
@@ -95,6 +92,10 @@ export function NodePage() {
   }
 
   const tab = nodeTab(path);
+  const elsewhere = nodeElsewhere(path);
+  if (elsewhere) {
+    return <NodeRedirect to={elsewhere} />;
+  }
   return (
     <section className="page page-wide" aria-labelledby="node-heading">
       <PageHeader
@@ -103,56 +104,46 @@ export function NodePage() {
         kicker={`${nodes.host_os || "Host OS not reported"} · ${honestStatus(nodes.status)}${nodes.stale ? " (stale)" : ""}`}
       />
       <PageNav id="node" label="Node" items={NODE_ITEMS} className="is-sub" />
-      {tab === "summary" ? <NodeSummaryView id={id} fallback={nodes} /> : null}
-      {tab === "hardware" ? <NodeHardwareView id={id} /> : null}
-      {tab === "metrics" ? <NodeMetricsView id={id} /> : null}
-      {tab === "activity" ? <NodeActivityView id={id} /> : null}
-      {tab === "terminal" ? <TerminalPage key={id} target={{ kind: "node", id }} embedded /> : null}
-      {tab === "files" ? (
-        <div className="embed-files">
-          <div className="btn-row is-flush embed-actions">
-            <Link className="btn btn-ghost btn-sm" href="/files">
-              Open in Files
-            </Link>
-          </div>
-          <FilesBrowser key={id} kind="node" id={id} initialPath={defaultFilesPath("node")} embedded />
-        </div>
+      {tab === "summary" ? (
+        <>
+          <NodeSummaryView id={id} fallback={nodes} />
+          <NodeHardwareView id={id} />
+        </>
       ) : null}
+      {tab === "metrics" ? <NodeMonitorView id={id} /> : null}
     </section>
   );
 }
 
-export type NodeTab = "summary" | "hardware" | "metrics" | "activity" | "terminal" | "files";
+export type NodeTab = "summary" | "metrics";
 
 const NODE_ITEMS: PageNavItem[] = [
-  { id: "summary", label: "Summary", href: "/node", icon: "node", match: (p) => p === "/node" },
-  { id: "hardware", label: "Hardware", href: "/node/hardware", icon: "diagnostics", match: (p) => nodeTab(p) === "hardware" },
-  { id: "metrics", label: "Metrics", href: "/node/metrics", icon: "activity" },
-  { id: "activity", label: "Events and logs", href: "/node/activity", icon: "events", match: (p) => nodeTab(p) === "activity" },
-  { id: "terminal", label: "Terminal", href: "/node/terminal", icon: "terminal" },
-  { id: "files", label: "Files", href: "/node/files", icon: "files" },
+  { id: "summary", label: "Summary", href: "/node", icon: "node", match: (p) => p.startsWith("/node") && nodeTab(p) === "summary" },
+  { id: "metrics", label: "Metrics and logs", href: "/node/metrics", icon: "activity", match: (p) => nodeTab(p) === "metrics" },
 ];
 
-/** nodeTab maps a /node address to its section; old GPU, logs and events addresses land on their new homes. */
+/**
+ * nodeTab maps a /node address to its section. Hardware and GPUs are part
+ * of Summary; metrics, events and logs share one tab. Terminal and Files
+ * are not node tabs any more (see nodeElsewhere).
+ */
 export function nodeTab(path: string): NodeTab {
   const part = path.split("/")[2] ?? "";
   switch (part) {
-    case "hardware":
-    case "gpu":
-      return "hardware";
     case "metrics":
-      return "metrics";
     case "activity":
     case "logs":
     case "events":
-      return "activity";
-    case "terminal":
-      return "terminal";
-    case "files":
-      return "files";
+      return "metrics";
     default:
       return "summary";
   }
+}
+
+/** nodeElsewhere is where the old Terminal and Files tab addresses open now. */
+export function nodeElsewhere(path: string): string | null {
+  const part = path.split("/")[2] ?? "";
+  return part === "terminal" ? "/terminal" : part === "files" ? "/files" : null;
 }
 
 function NodeSummaryView({ id, fallback }: { id: string; fallback: NodeSummary }) {
@@ -177,48 +168,20 @@ function NodeSummaryView({ id, fallback }: { id: string; fallback: NodeSummary }
   return (
     <div className="stack">
       <div className="summary-grid">
-        <SummaryCard label="Name" value={node.name} meta={node.host_os || "Host OS not reported"} />
+        <SummaryCard
+          label="Name"
+          value={
+            <>
+              <NodeName node={node} /> <NodeNicknameButton node={node} />
+            </>
+          }
+          meta={node.real_name ? `${node.real_name} · ${node.host_os || "Host OS not reported"}` : node.host_os || "Host OS not reported"}
+        />
         <SummaryCard label="CPU" value={node.cpu_model || "Not reported"} meta={`${node.cpu_sockets ?? "?"} sockets, ${node.cpu_cores ?? "?"} cores, ${node.cpu_threads ?? "?"} threads`} />
         <SummaryCard label="Memory" value={formatBytes(node.memory_bytes)} meta={`Observed ${formatWhen(node.observed_at)}`} />
         <SummaryCard label="Support" value={node.support_tier || "Not reported"} meta={honestStatus(node.status)} />
       </div>
       <div className="card-grid">
-      <article className="panel">
-        <h2>Summary</h2>
-        <dl className="definition-list">
-          <div>
-            <dt>Name</dt>
-            <dd>{node.name}</dd>
-          </div>
-          <div>
-            <dt>Host OS</dt>
-            <dd>{node.host_os || "Not reported"}</dd>
-          </div>
-          <div>
-            <dt>Support tier</dt>
-            <dd>{node.support_tier || "Not reported"}</dd>
-          </div>
-          <div>
-            <dt>CPU</dt>
-            <dd>{node.cpu_model || "Not reported"}</dd>
-          </div>
-          <div>
-            <dt>Topology</dt>
-            <dd>
-              {node.cpu_sockets ?? "?"} sockets, {node.cpu_cores ?? "?"} cores,{" "}
-              {node.cpu_threads ?? "?"} threads
-            </dd>
-          </div>
-          <div>
-            <dt>Memory</dt>
-            <dd>{formatBytes(node.memory_bytes)}</dd>
-          </div>
-          <div>
-            <dt>Observed</dt>
-            <dd>{formatWhen(node.observed_at)}</dd>
-          </div>
-        </dl>
-      </article>
       <article className="panel">
         <h2>Capabilities</h2>
         {caps.length === 0 ? (
@@ -234,13 +197,13 @@ function NodeSummaryView({ id, fallback }: { id: string; fallback: NodeSummary }
           </ul>
         )}
       </article>
-      <RemoteNodeHelper />
       </div>
     </div>
   );
 }
 
-function RemoteNodeHelper() {
+/** RemoteNodeHelper adds a worker over WireGuard; it sits on Network > Cluster. */
+export function RemoteNodeHelper() {
   const session = useSession();
   const mutate = Boolean(
     session.status === "ready" && (session.user?.roles.includes("superadmin") || session.user?.roles.includes("admin")),
@@ -408,10 +371,9 @@ function NodeHardwareView({ id }: { id: string }) {
     ),
     firmware: (
       <HardwareTable
-        title="IOMMU groups"
-        rows={iommuRows(inv.iommu)}
-        keys={["id", "devices"]}
-        empty={iommuEmpty(inv.iommu)}
+        title="Firmware"
+        rows={[inv.firmware ?? {}]}
+        keys={["sys_vendor", "product", "board_vendor", "board", "bios_vendor", "bios_version", "bios_date"]}
       />
     ),
     iommu: <HardwareTable title="IOMMU groups" rows={iommuRows(inv.iommu)} keys={["id", "devices"]} empty={iommuEmpty(inv.iommu)} />,
@@ -516,41 +478,41 @@ function shift<T>(list: T[], id: T, delta: number): T[] {
   return next;
 }
 
-function NodeMetricsView({ id }: { id: string }) {
+type MonitorKind = "all" | "metric" | "event" | "log";
+
+type MonitorRow = { key: string; kind: Exclude<MonitorKind, "all">; source: string; detail: string; when: string };
+
+const KIND_LABEL: Record<MonitorRow["kind"], string> = { metric: "Metric", event: "Event", log: "Log" };
+
+/** NodeMonitorView is this node's metrics, events and service logs in one table with a filter. */
+function NodeMonitorView({ id }: { id: string }) {
   const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
-  const [view, setView] = usePref<"table" | "grid">("node.metrics.view", "table");
-  const [rawGrid, setRawGrid] = usePref<unknown>("node.metrics.grid", null);
+  const [events, setEvents] = useState<EventItem[] | null>(null);
+  const [logs, setLogs] = useState<{ status: string; lines: string[]; message?: string } | null>(null);
+  const [kind, setKind] = usePref<MonitorKind>("node.monitor.kind", "all");
   const [range, setRange] = useState("60");
+  const [unit, setUnit] = useState("ndl-agent.service");
+  const [query, setQuery] = useState("");
   const [capacity, setCapacity] = useState<string>("Collecting");
   const [smart, setSmart] = useState<string>("Collecting");
 
   useEffect(() => {
     let cancelled = false;
     void getNodeMetrics(id, { minutes: Number(range) || 60 })
-      .then((value) => {
-        if (!cancelled) {
-          setMetrics(value);
-        }
-      })
+      .then((value) => !cancelled && setMetrics(value))
       .catch(() => undefined);
     void getNodeCapacity(id)
       .then((value) => {
-        if (cancelled) return;
-        if (value.hours_to_zero != null) {
-          setCapacity(`${Math.round(value.hours_to_zero)} hours to zero usable bytes`);
-        } else {
-          setCapacity(value.message || value.status);
+        if (!cancelled) {
+          setCapacity(value.hours_to_zero != null ? `${Math.round(value.hours_to_zero)} hours to zero usable bytes` : value.message || value.status);
         }
       })
       .catch(() => undefined);
     void getNodeSmart(id)
       .then((value) => {
-        if (cancelled) return;
-        if (!value.items?.length) {
-          setSmart(value.status);
-          return;
+        if (!cancelled) {
+          setSmart(value.items?.length ? value.items.map((d) => `${d.name}: ${d.smart_status}`).join(", ") : value.status);
         }
-        setSmart(value.items.map((d) => `${d.name}: ${d.smart_status}`).join(", "));
       })
       .catch(() => undefined);
     return () => {
@@ -558,113 +520,161 @@ function NodeMetricsView({ id }: { id: string }) {
     };
   }, [id, range]);
 
-  const series = metrics?.series ?? [];
-  const gridNames = parseLayout(
-    rawGrid,
-    series.map((x) => x.name),
-  );
+  useEffect(() => {
+    let live = true;
+    listEvents()
+      .then((items) => live && setEvents(items.filter((e) => !e.node_id || e.node_id === id).slice(0, 200)))
+      .catch(() => live && setEvents([]));
+    return () => {
+      live = false;
+    };
+  }, [id]);
+
+  useEffect(() => {
+    let live = true;
+    void getNodeLogs(id, unit)
+      .then((value) => live && setLogs({ status: value.status, lines: value.lines ?? [], message: value.message }))
+      .catch(() => live && setLogs({ status: "unavailable", lines: [] }));
+    return () => {
+      live = false;
+    };
+  }, [id, unit]);
+
+  const rangeLabel = RANGES.find((r) => r.id === range)?.label ?? "";
+  const rows: MonitorRow[] = [
+    ...(metrics?.series ?? []).map((x): MonitorRow => {
+      const st = seriesStats(x);
+      return {
+        key: `m:${x.name}`,
+        kind: "metric",
+        source: x.name,
+        detail: `Now ${metricValue(st.last, x.unit) || "none"} · low ${metricValue(st.min, x.unit) || "none"} · high ${metricValue(st.max, x.unit) || "none"} · average ${metricValue(st.avg, x.unit) || "none"}`,
+        when: rangeLabel,
+      };
+    }),
+    ...(events ?? []).map((e): MonitorRow => ({ key: `e:${e.id}`, kind: "event", source: e.type, detail: eventDetail(e), when: formatWhen(e.created_at) })),
+    ...(logs?.lines ?? []).map((line, i): MonitorRow => ({ key: `l:${i}`, kind: "log", source: unit.replace(/\.service$/, ""), detail: line, when: "" })),
+  ];
+  const q = query.trim().toLowerCase();
+  const shown = rows.filter((r) => (kind === "all" || r.kind === kind) && (!q || r.source.toLowerCase().includes(q) || r.detail.toLowerCase().includes(q)));
+  const count = (k: MonitorRow["kind"]) => rows.filter((r) => r.kind === k).length;
+  const loading = metrics === null || events === null || logs === null;
+
   return (
-    <div className="stack">
+    <div className="stack node-monitor">
       <div className="toolbar">
         <div className="toolbar-group">
-          <label className="field-inline">
-            Range
-            <select className="field-input" value={range} onChange={(e) => setRange(e.target.value)}>
-              <option value="60">Last hour</option>
-              <option value="360">Last 6 hours</option>
-              <option value="1440">Last day</option>
-              <option value="10080">Last week</option>
-            </select>
-          </label>
-          <Segmented<"table" | "grid">
-            ariaLabel="Metrics view"
-            value={view === "grid" ? "grid" : "table"}
-            onChange={(v) => setView(v)}
+          <Segmented<MonitorKind>
+            ariaLabel="Show"
+            value={kind}
+            onChange={(v) => setKind(v)}
             options={[
-              { id: "table", label: "Table" },
-              { id: "grid", label: "Charts" },
+              { id: "all", label: `All (${rows.length})` },
+              { id: "metric", label: `Metrics (${count("metric")})` },
+              { id: "event", label: `Events (${count("event")})` },
+              { id: "log", label: `Logs (${count("log")})` },
             ]}
           />
+          <input className="field-input" type="search" aria-label="Filter rows" placeholder="Filter" value={query} onChange={(e) => setQuery(e.target.value)} />
+          {kind === "all" || kind === "metric" ? (
+            <label className="field-inline">
+              Metrics over
+              <select className="field-input" value={range} onChange={(e) => setRange(e.target.value)}>
+                {RANGES.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          {kind === "all" || kind === "log" ? (
+            <label className="field-inline">
+              Log
+              <select className="field-input" value={unit} onChange={(e) => setUnit(e.target.value)}>
+                <option value="ndl-agent.service">ndl-agent</option>
+                <option value="ndl-control.service">ndl-control</option>
+              </select>
+            </label>
+          ) : null}
         </div>
+        <Link href="/events">All events</Link>
       </div>
       <dl className="kv-compact">
         <dt>Capacity</dt>
         <dd>{capacity}</dd>
         <dt>SMART</dt>
         <dd>{smart}</dd>
+        {metrics && (metrics.status === "stale" || metrics.status === "unavailable") ? (
+          <>
+            <dt>Metrics</dt>
+            <dd>{honestStatus(metrics.status)}</dd>
+          </>
+        ) : null}
+        {logs?.message ? (
+          <>
+            <dt>Logs</dt>
+            <dd>{logs.message}</dd>
+          </>
+        ) : null}
       </dl>
-      {!metrics ? (
-        <p>Collecting data</p>
-      ) : metrics.status === "stale" ? (
-        <p className="chart-empty">Stale</p>
-      ) : metrics.status === "unavailable" ? (
-        <p className="chart-empty">Unavailable</p>
-      ) : !series.length ? (
-        <p className="chart-empty">Collecting data</p>
-      ) : view !== "grid" ? (
+      {loading && shown.length === 0 ? <LoadingState label="Collecting" /> : null}
+      {!loading && shown.length === 0 ? <p className="muted">Nothing matches.</p> : null}
+      {shown.length > 0 ? (
         <div className="table-wrap">
-          <table aria-label="Metrics">
+          <table className="data-table node-monitor-table" aria-label="Metrics, events and logs">
             <thead>
               <tr>
-                <th>Metric</th>
-                <th className="num">Now</th>
-                <th className="num">Lowest</th>
-                <th className="num">Highest</th>
-                <th className="num">Average</th>
+                <th>Type</th>
+                <th>Source</th>
+                <th>Detail</th>
+                <th>When</th>
               </tr>
             </thead>
             <tbody>
-              {series.map((x) => {
-                const st = seriesStats(x);
-                return (
-                  <tr key={x.name}>
-                    <td>{x.name}</td>
-                    <td className="num">{metricValue(st.last, x.unit)}</td>
-                    <td className="num">{metricValue(st.min, x.unit)}</td>
-                    <td className="num">{metricValue(st.max, x.unit)}</td>
-                    <td className="num">{metricValue(st.avg, x.unit)}</td>
-                  </tr>
-                );
-              })}
+              {shown.map((r) => (
+                <tr key={r.key}>
+                  <td>{KIND_LABEL[r.kind]}</td>
+                  <td className="cell-mono">{r.source}</td>
+                  <td className={r.kind === "log" ? "cell-mono node-monitor-log" : undefined}>{r.detail}</td>
+                  <td className="muted">{r.when}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
-      ) : (
-        <>
-          <details className="panel metrics-pick">
-            <summary>Charts shown ({gridNames.length})</summary>
-            <div className="chip-row">
-              {series.map((x) => {
-                const on = gridNames.includes(x.name);
-                return (
-                  <button
-                    key={x.name}
-                    type="button"
-                    className="chip"
-                    aria-pressed={on}
-                    onClick={() => setRawGrid(on ? gridNames.filter((n) => n !== x.name) : [...gridNames, x.name])}
-                  >
-                    {x.name}
-                  </button>
-                );
-              })}
-            </div>
-          </details>
-          <div className="fluid-grid">
-            {gridNames.map((name) => {
-              const x = series.find((v) => v.name === name);
-              return x ? (
-                <article className="panel" key={name}>
-                  <h2>{name}</h2>
-                  <MetricChart series={x} />
-                </article>
-              ) : null;
-            })}
-          </div>
-        </>
-      )}
+      ) : null}
     </div>
   );
+}
+
+const RANGES = [
+  { id: "60", label: "Last hour" },
+  { id: "360", label: "Last 6 hours" },
+  { id: "1440", label: "Last day" },
+  { id: "10080", label: "Last week" },
+];
+
+/** eventDetail is a one-line summary of an event's payload. */
+function eventDetail(e: EventItem): string {
+  const p = e.payload ?? {};
+  for (const k of ["message", "summary", "reason", "detail", "name"]) {
+    if (typeof p[k] === "string" && p[k]) {
+      return p[k] as string;
+    }
+  }
+  const parts = Object.entries(p)
+    .filter(([, v]) => typeof v === "string" || typeof v === "number" || typeof v === "boolean")
+    .slice(0, 4)
+    .map(([k, v]) => `${k.replaceAll("_", " ")} ${String(v)}`);
+  return parts.join(" · ");
+}
+
+function NodeRedirect({ to }: { to: string }) {
+  useEffect(() => {
+    navigate(to);
+  }, [to]);
+  return <LoadingState label="Opening" />;
 }
 
 /** seriesStats is the latest, lowest, highest and average value of a series. */
@@ -695,89 +705,6 @@ function metricValue(v: number | undefined, unit?: string): string {
   }
   const n = Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(2).replace(/\.?0+$/, "");
   return unit && unit !== "count" ? `${n} ${unit === "percent" ? "%" : unit}` : n;
-}
-
-/** NodeActivityView is this node's events and its service logs on one page. */
-function NodeActivityView({ id }: { id: string }) {
-  const [events, setEvents] = useState<EventItem[] | null>(null);
-  useEffect(() => {
-    let live = true;
-    listEvents()
-      .then((items) => live && setEvents(items.filter((e) => !e.node_id || e.node_id === id).slice(0, 100)))
-      .catch(() => live && setEvents([]));
-    return () => {
-      live = false;
-    };
-  }, [id]);
-  return (
-    <div className="node-activity">
-      <article className="panel">
-        <h2>Events</h2>
-        {events === null ? <LoadingState label="Loading events" /> : null}
-        {events && events.length === 0 ? <p className="muted">No events for this node.</p> : null}
-        {events && events.length > 0 ? (
-          <ul className="event-list">
-            {events.map((e) => (
-              <li key={e.id}>
-                <span className="cell-mono">{e.type}</span>
-                <span className="muted">{formatWhen(e.created_at)}</span>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        <Link href="/events">All events</Link>
-      </article>
-      <NodeLogsView id={id} />
-    </div>
-  );
-}
-
-function NodeLogsView({ id }: { id: string }) {
-  const [unit, setUnit] = useState("ndl-agent.service");
-  const [status, setStatus] = useState("collecting");
-  const [lines, setLines] = useState<string[]>([]);
-  const [message, setMessage] = useState<string | undefined>();
-
-  useEffect(() => {
-    let cancelled = false;
-    void getNodeLogs(id, unit)
-      .then((value) => {
-        if (cancelled) return;
-        setStatus(value.status);
-        setLines(value.lines ?? []);
-        setMessage(value.message);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setStatus("unavailable");
-          setLines([]);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [id, unit]);
-
-  return (
-    <article className="panel">
-      <h2>Logs</h2>
-      <label>
-        Unit
-        <select value={unit} onChange={(e) => setUnit(e.target.value)}>
-          <option value="ndl-agent.service">ndl-agent</option>
-          <option value="ndl-control.service">ndl-control</option>
-        </select>
-      </label>
-      {status === "unavailable" ? <p className="chart-empty">Unavailable</p> : null}
-      {message ? <p className="muted">{message}</p> : null}
-      {lines.length === 0 && status !== "unavailable" ? <p className="muted">No log lines in this window</p> : null}
-      {lines.length > 0 ? (
-        <pre className="log-view">
-          {lines.join("\n")}
-        </pre>
-      ) : null}
-    </article>
-  );
 }
 
 function HardwareTable({

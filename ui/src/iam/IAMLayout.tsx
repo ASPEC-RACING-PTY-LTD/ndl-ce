@@ -8,7 +8,8 @@ import { useSession } from "../session";
 type Section = { href: string; label: string; icon: IconName; permissions: string[]; also?: string[] };
 
 const SECTIONS: Section[] = [
-  { href: "/users", label: "Users", icon: "users", permissions: ["users.read"] },
+  // Users holds approval requests too.
+  { href: "/users", label: "Users", icon: "users", permissions: ["users.read", "approvals.view"], also: ["/iam/approvals"] },
   // Access control holds API access too (tokens and service accounts).
   {
     href: "/iam/access",
@@ -17,8 +18,6 @@ const SECTIONS: Section[] = [
     permissions: ["roles.manage", "identity.group.manage", "api_access.manage", "identity.token.create"],
     also: ["/api-access"],
   },
-  { href: "/iam/approvals", label: "Approvals", icon: "check", permissions: ["approvals.view"] },
-  { href: "/audit", label: "Audit log", icon: "activity", permissions: ["audit.read"] },
 ];
 
 /** IAM sections the user may open, in bar order. */

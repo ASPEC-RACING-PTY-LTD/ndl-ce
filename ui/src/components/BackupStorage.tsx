@@ -183,11 +183,12 @@ export function BackupStoragePanel({
   /** refreshKey reloads the report when the page changes backups. */
   refreshKey?: number;
   /**
-   * part splits the panel for the new Backups layout: "actions" is only
-   * its management buttons, "targets" the targets with their buttons
-   * (both with their notices), "info" everything else.
+   * part splits the panel: "actions" is only its management buttons,
+   * "targets" the targets with their buttons (both with their notices),
+   * "alerts" only what needs the operator (the backup key, warnings and a
+   * repository move), "info" everything but the targets and buttons.
    */
-  part?: "all" | "info" | "actions" | "targets";
+  part?: "all" | "info" | "actions" | "targets" | "alerts";
 }) {
   const [report, setReport] = useState<BackupStorageReport | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -337,10 +338,18 @@ export function BackupStoragePanel({
   const objectTargets = targets.filter((t) => ["r2", "s3", "aws", "b2", "minio"].includes(t.kind));
   const failedEvents = (report?.events ?? []).filter((e) => !e.ok);
 
+  const showAlerts = part !== "actions" && part !== "targets";
   const showInfo = part === "all" || part === "info";
   const showActions = part === "all" || part === "actions";
   const showTargets = part === "all" || part === "targets";
   const Wrap = part === "all" ? "article" : "div";
+  if (part === "alerts") {
+    const keyMissing = ws?.key_exported === false && !keySaved;
+    const warnings = report?.warnings ?? [];
+    if (!error && !notice && !keyMissing && !keySaved && warnings.length === 0 && !report?.repository_move?.running && !report?.repository_move?.error) {
+      return null;
+    }
+  }
   return (
     <Wrap
       className={part === "all" ? "panel bk-panel" : "bk-storage-part"}
@@ -359,7 +368,7 @@ export function BackupStoragePanel({
           {notice}
         </p>
       ) : null}
-      {showInfo ? (
+      {showAlerts ? (
       <>
       {ws && ws.key_exported === false && !keySaved ? (
         <div className="banner banner-warn" role="status">
@@ -367,12 +376,10 @@ export function BackupStoragePanel({
             Save the backup key. It decrypts every backup here and in cloud storage. If this host is lost without it,
             no backup can be restored.
           </p>
-          {mutate && part === "all" ? (
+          {mutate ? (
             <button className="btn btn-sm" type="button" disabled={busy} onClick={onExportKey}>
               Download backup key
             </button>
-          ) : mutate ? (
-            <p className="bk-hint">Use Download backup key in Management.</p>
           ) : null}
         </div>
       ) : null}
@@ -397,7 +404,10 @@ export function BackupStoragePanel({
               : `The backup repository moved to ${report.repository_move.to}.`}
         </p>
       ) : null}
-
+      </>
+      ) : null}
+      {showInfo ? (
+      <>
       {ws ? (
         <dl className="bk-dl" aria-label="Local backup repository">
           <dt>On this host</dt>

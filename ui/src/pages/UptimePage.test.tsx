@@ -169,15 +169,17 @@ describe("Uptime page", () => {
     });
     window.history.replaceState({}, "", "/uptime");
     render(<App />);
-    const cards = await screen.findAllByRole("article", { name: /^monitor /i });
-    expect(cards[0]).toHaveAccessibleName(/monitor shop/i);
-    expect(within(cards[0]).getByText(/tunnel or proxy could not reach/i)).toBeVisible();
-    expect(within(cards[0]).getByText(/restarts apps\/shop-web-1/i)).toBeVisible();
-
-    fireEvent.click(within(cards[0]).getByRole("button", { name: /actions/i }));
+    const sites = await screen.findByRole("table", { name: /^sites$/i });
+    const rows = within(sites).getAllByRole("row", { name: /^site [a-z]+$/i });
+    expect(rows[0]).toHaveAccessibleName(/site shop/i);
+    expect(within(rows[0]).getByText(/tunnel or proxy could not reach/i)).toBeVisible();
+    expect(within(rows[0]).getByText(/apps\/shop-web-1/i)).toBeVisible();
+    // A container whose site is down counts as unhealthy, with the reason.
+    const containers = screen.getByRole("table", { name: /^containers$/i });
+    expect(within(containers).getByRole("row", { name: /container shop-web-1/i })).toHaveTextContent(/site shop is down/i);
+    fireEvent.click(within(rows[0]).getByRole("button", { name: /actions/i }));
     fireEvent.click(await screen.findByRole("menuitem", { name: /^check now$/i }));
     await waitFor(() => expect(sent.check).toBe("yes"));
-
     fireEvent.click(screen.getByRole("button", { name: /^new monitor$/i }));
     const dialog = await screen.findByRole("dialog", { name: /new monitor/i });
     fireEvent.change(within(dialog).getByLabelText(/^name$/i), { target: { value: "api" } });
@@ -192,7 +194,8 @@ describe("Uptime page", () => {
       auto_restart: true,
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /^json$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^site tools$/i }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /^edit as json$/i }));
     const json = await screen.findByRole("dialog", { name: /uptime monitors as json/i });
     fireEvent.change(await within(json).findByLabelText(/saved scripts/i), { target: { value: "s1" } });
     expect((within(json).getByLabelText(/^json$/i) as HTMLTextAreaElement).value).toContain("a.example.com");
@@ -202,8 +205,24 @@ describe("Uptime page", () => {
   });
 });
 
-describe("Uptime on the Docker page", () => {
-  it("lives under Docker, and Scan Docker adds every new tunnel site with its container", async () => {
+describe("Sites on the Docker page", () => {
+  it("shows only down sites by default on /docker", async () => {
+    mockApi({
+      ...baseRoutes,
+      "GET /api/v1/uptime/monitors": { status: 200, body: { items: monitors } },
+      "/api/v1/docker": { status: 200, body: dockerInv },
+    });
+    window.history.replaceState({}, "", "/docker");
+    render(<App />);
+    const sites = await screen.findByRole("table", { name: /^sites$/i });
+    expect(within(sites).getByRole("row", { name: /site shop/i })).toBeVisible();
+    expect(within(sites).queryByRole("row", { name: /site blog/i })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^all \(2\)$/i }));
+    expect(within(screen.getByRole("table", { name: /^sites$/i })).getByRole("row", { name: /site blog/i })).toBeVisible();
+  });
+
+
+  it("lives on the Docker page, and Find sites adds every new site with its container", async () => {
     let imported = "";
     mockApi({
       ...baseRoutes,
@@ -234,15 +253,19 @@ describe("Uptime on the Docker page", () => {
     });
     window.history.replaceState({}, "", "/uptime");
     render(<App />);
-    await screen.findAllByRole("article", { name: /^monitor /i });
+    await screen.findByRole("table", { name: /^sites$/i });
     expect(window.location.pathname).toBe("/docker/uptime");
     const sections = screen.getByRole("navigation", { name: /^docker$/i });
-    expect(within(sections).getByRole("link", { name: /^uptime$/i })).toHaveAttribute("aria-current", "page");
+    // Uptime is part of the Docker page: no tab of its own.
+    expect(within(sections).queryByRole("link", { name: /^uptime$/i })).toBeNull();
+    expect(within(sections).getByRole("link", { name: /^docker$/i })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("table", { name: /^containers$/i })).toBeVisible();
     // Uptime has no sidebar entry of its own.
     expect(within(screen.getByRole("navigation", { name: /^appliance$/i })).queryByRole("link", { name: /^uptime$/i })).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: /^scan docker$/i }));
-    const dialog = await screen.findByRole("dialog", { name: /scan docker for sites/i });
+    fireEvent.click(screen.getByRole("button", { name: /^site tools$/i }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /^find sites$/i }));
+    const dialog = await screen.findByRole("dialog", { name: /^find sites$/i });
     expect(await within(dialog).findByText(/already watched by shop/i)).toBeVisible();
     expect(within(dialog).queryByText(/ssh\.example\.com/i)).toBeNull();
     fireEvent.click(within(dialog).getByRole("button", { name: /^add 1 monitor$/i }));
@@ -255,8 +278,8 @@ describe("Uptime on the Docker page", () => {
     });
     expect(await within(dialog).findByText(/^saved\.$/i)).toBeVisible();
 
-    fireEvent.click(within(sections).getByRole("link", { name: /^docker$/i }));
-    expect(window.location.pathname).toBe("/docker");
+    fireEvent.click(within(sections).getByRole("link", { name: /^deployments$/i }));
+    expect(window.location.pathname).toBe("/docker/deploy");
   });
 });
 

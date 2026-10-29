@@ -48,6 +48,7 @@ import { kindLabel } from "../labels";
 import { canMutate } from "../rbac";
 import { currentPath, navigate, usePath } from "../router";
 import { useSession } from "../session";
+import { nodeLabel } from "../nodeNames";
 
 function workloadIDFromPath(): string {
   const parts = currentPath().split("/").filter(Boolean);
@@ -478,7 +479,7 @@ export function WorkloadDetailPage() {
               </div>
               <div>
                 <dt>Node</dt>
-                <dd>{item.node_id || "Not reported"}</dd>
+                <dd>{nodeLabel(item.node_id) || "Not reported"}</dd>
               </div>
               <div>
                 <dt>Firmware</dt>

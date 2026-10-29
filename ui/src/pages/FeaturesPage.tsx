@@ -9,12 +9,12 @@ import { useNavDisclosure } from "../nav/NavDisclosure";
 import { CAPABILITIES, moduleById } from "../nav/modules";
 import { useSession } from "../session";
 import { hasGrant } from "../rbac";
-import { ResultsToolbar, useResultsView } from "../components/ResultsToolbar";
 import { ResourceTable } from "../components/ResourceTable";
 import { featureRuntimeLabel } from "../labels";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { LoadingState } from "../components/EmptyState";
 import { CodeholdDisableDialog } from "../components/CodeholdDisableDialog";
+import "../system-pages.css";
 
 function capabilityHref(id: string): string | undefined {
   const cap = CAPABILITIES.find((item) => item.id === id);
@@ -130,7 +130,6 @@ export function FeaturesPage() {
   const [status, setStatus] = useState("all");
   const [category, setCategory] = useState("all");
   const [sort, setSort] = useState("popular");
-  const [view, setView] = useResultsView("ndl-features-view", "grid");
   const [codeholdOff, setCodeholdOff] = useState(false);
   const focus = useMemo(() => new URLSearchParams(window.location.search).get("focus"), []);
 
@@ -337,15 +336,17 @@ export function FeaturesPage() {
         </div>
         {rowsIn.length === 0 ? (
           <p className="muted">{emptyText}</p>
-        ) : view === "table" ? (
+        ) : (
           <article className="panel">
             <ResourceTable
-              className="docker-table-flat feature-table"
+              className="docker-table-flat feature-table features-table"
               headers={["Feature", "Category", "Status", ""]}
               rows={rowsIn.map((row) => [
                 <div key="t" id={`feature-${row.cap.id}`} className={focus === row.cap.id ? "is-focused" : undefined}>
                   <strong>{row.title}</strong>
-                  <p className="feature-summary">{row.cap.summary}</p>
+                  <p className="feature-summary" title={row.cap.summary}>
+                    {row.cap.summary}
+                  </p>
                   {details(row)}
                 </div>,
                 row.category,
@@ -358,27 +359,6 @@ export function FeaturesPage() {
               ])}
             />
           </article>
-        ) : (
-          <ul className="feature-list">
-            {rowsIn.map((row) => (
-              <li key={row.cap.id} id={`feature-${row.cap.id}`}>
-                <article className={"feature-row is-" + row.state + (focus === row.cap.id ? " is-focused" : "")}>
-                  <div className="feature-main">
-                    <div className="feature-title">
-                      <h3>{row.title}</h3>
-                      <span className="tag-inline">{row.category}</span>
-                    </div>
-                    <p className="feature-summary">{row.cap.summary}</p>
-                    {details(row)}
-                  </div>
-                  <span className={"feature-state is-" + row.state}>
-                    {busy === row.pack?.id ? "Working" : STATE_LABEL[row.state]}
-                  </span>
-                  <div className="feature-actions">{actions(row)}</div>
-                </article>
-              </li>
-            ))}
-          </ul>
         )}
       </article>
     );
@@ -412,21 +392,22 @@ export function FeaturesPage() {
           {enabledCount} of {rows.length} on
         </span>
       </div>
-      <ResultsToolbar
-        label="Features"
-        query={query}
-        onQuery={setQuery}
-        placeholder="Search features"
-        filter={status}
-        filters={STATUS_FILTERS}
-        onFilter={setStatus}
-        filterLabel="Status"
-        sort={sort}
-        sorts={SORTS}
-        onSort={setSort}
-        view={view}
-        onView={setView}
-      >
+      <div className="docker-toolbar results-toolbar" role="group" aria-label="Features">
+        <input
+          className="field-input"
+          type="search"
+          aria-label="Search features"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search features"
+        />
+        <select className="field-input" aria-label="Status" value={status} onChange={(e) => setStatus(e.target.value)}>
+          {STATUS_FILTERS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
         <select className="field-input" aria-label="Category" value={category} onChange={(e) => setCategory(e.target.value)}>
           <option value="all">All categories</option>
           {categories.map((c) => (
@@ -435,7 +416,14 @@ export function FeaturesPage() {
             </option>
           ))}
         </select>
-      </ResultsToolbar>
+        <select className="field-input" aria-label="Sort by" value={sort} onChange={(e) => setSort(e.target.value)}>
+          {SORTS.map((o) => (
+            <option key={o.value} value={o.value}>
+              Sort: {o.label}
+            </option>
+          ))}
+        </select>
+      </div>
 
       {!list && !error ? <LoadingState label="Loading features" /> : null}
       {list ? (

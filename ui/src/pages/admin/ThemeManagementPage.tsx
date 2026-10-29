@@ -97,9 +97,9 @@ export function ThemeManagementPage() {
   const groupThemes = (data?.group_themes as Record<string, unknown> | undefined) ?? {};
   const has = Boolean(themeFor(target, data));
   return (
-    <section className="page page-wide" aria-labelledby="theme-mgmt-heading">
+    <section className="page page-wide appearance-admin" aria-labelledby="theme-mgmt-heading">
       <header className="page-header">
-        <h1 id="theme-mgmt-heading">Theme management</h1>
+        <h1 id="theme-mgmt-heading">Appearance</h1>
         <p className="page-lede">
           The look people start from. A person&apos;s own choice wins, then their group&apos;s theme, then their role&apos;s, then the global one.
         </p>
@@ -113,8 +113,89 @@ export function ThemeManagementPage() {
       {!data ? (
         <p className="muted">Loading</p>
       ) : (
-        <>
-          <div className="admin-grid">
+        <div className="appearance-layout">
+          <div className="panel admin-box appearance-themes">
+            <div className="appearance-head">
+              <h2>Themes</h2>
+              <Segmented<"pick" | "code">
+                ariaLabel="Editor"
+                value={mode}
+                onChange={setMode}
+                options={[
+                  { id: "pick", label: "Pick" },
+                  { id: "code", label: "Code editor" },
+                ]}
+              />
+              <span className="theme-spacer" />
+              <span className="meta">{has ? "A theme is set here." : "Nothing set here; it inherits."}</span>
+            </div>
+            <div className="theme-targets" role="tablist" aria-label="Whose theme">
+              <button type="button" role="tab" aria-selected={target.kind === "global"} className="chip" onClick={() => setTarget({ kind: "global" })}>
+                Global{data.theme ? " ●" : ""}
+              </button>
+              {(iam?.roles ?? []).map((r) => (
+                <button
+                  key={r.name}
+                  type="button"
+                  role="tab"
+                  aria-selected={target.kind === "role" && target.id === r.name}
+                  className="chip"
+                  onClick={() => setTarget({ kind: "role", id: r.name, label: r.title || r.name })}
+                >
+                  Role: {r.title || r.name}
+                  {roleThemes[r.name] ? " ●" : ""}
+                </button>
+              ))}
+              {(iam?.groups ?? []).map((g) => (
+                <button
+                  key={g.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={target.kind === "group" && target.id === g.id}
+                  className="chip"
+                  onClick={() => setTarget({ kind: "group", id: g.id, label: g.name })}
+                >
+                  Group: {g.name}
+                  {groupThemes[g.id] ? " ●" : ""}
+                </button>
+              ))}
+            </div>
+            {mode === "pick" ? (
+              <div className="appearance-editor">
+                <section className="appearance-col" aria-label="Colours">
+                  <h3>Colours</h3>
+                  <ColourEditor draft={draft} onChange={setDraft} />
+                </section>
+                <section className="appearance-col" aria-label="Style">
+                  <h3>Style</h3>
+                  <StyleEditor draft={draft} onChange={setDraft} />
+                </section>
+              </div>
+            ) : (
+              <CodeThemeEditor live={has ? draft : savedTheme()} onPreview={(t) => previewTheme(t)} onApply={(t) => saveTheme(t)} applyLabel="Save" />
+            )}
+          </div>
+          <aside className="appearance-aside">
+            {mode === "pick" ? (
+              <div className="panel admin-box">
+                <h2>Preview</h2>
+                <ThemePreview theme={draft} />
+                <div className="appearance-apply">
+                  <button className="btn btn-ghost btn-sm" type="button" disabled={busy || !has} onClick={() => saveTheme(null)}>
+                    Clear
+                  </button>
+                  <button className="btn btn-secondary btn-sm" type="button" onClick={() => previewTheme(draft)}>
+                    Preview on me
+                  </button>
+                  <button className="btn btn-secondary btn-sm" type="button" onClick={() => previewTheme(null)}>
+                    Stop preview
+                  </button>
+                  <button className="btn btn-primary btn-sm" type="button" disabled={busy} onClick={() => saveTheme(draft)}>
+                    Save
+                  </button>
+                </div>
+              </div>
+            ) : null}
             <div className="panel admin-box">
               <h2>Defaults</h2>
               <div className="theme-row">
@@ -159,83 +240,8 @@ export function ThemeManagementPage() {
                 </p>
               </div>
             </div>
-          </div>
-          <div className="panel admin-box">
-            <h2>Themes</h2>
-            <div className="theme-targets" role="tablist" aria-label="Whose theme">
-              <button type="button" role="tab" aria-selected={target.kind === "global"} className="chip" onClick={() => setTarget({ kind: "global" })}>
-                Global{data.theme ? " ●" : ""}
-              </button>
-              {(iam?.roles ?? []).map((r) => (
-                <button
-                  key={r.name}
-                  type="button"
-                  role="tab"
-                  aria-selected={target.kind === "role" && target.id === r.name}
-                  className="chip"
-                  onClick={() => setTarget({ kind: "role", id: r.name, label: r.title || r.name })}
-                >
-                  Role: {r.title || r.name}
-                  {roleThemes[r.name] ? " ●" : ""}
-                </button>
-              ))}
-              {(iam?.groups ?? []).map((g) => (
-                <button
-                  key={g.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={target.kind === "group" && target.id === g.id}
-                  className="chip"
-                  onClick={() => setTarget({ kind: "group", id: g.id, label: g.name })}
-                >
-                  Group: {g.name}
-                  {groupThemes[g.id] ? " ●" : ""}
-                </button>
-              ))}
-            </div>
-            <div className="theme-code-bar">
-              <Segmented<"pick" | "code">
-                ariaLabel="Editor"
-                value={mode}
-                onChange={setMode}
-                options={[
-                  { id: "pick", label: "Pick" },
-                  { id: "code", label: "Code editor" },
-                ]}
-              />
-              <span className="theme-spacer" />
-              <span className="meta">{has ? "A theme is set here." : "Nothing set here; it inherits."}</span>
-            </div>
-            {mode === "pick" ? (
-              <div className="theme-layout">
-                <div className="theme-editor">
-                  <ColourEditor draft={draft} onChange={setDraft} />
-                  <StyleEditor draft={draft} onChange={setDraft} />
-                </div>
-                <aside className="theme-aside">
-                  <ThemePreview theme={draft} />
-                  <div className="theme-apply-bar">
-                    <button className="btn btn-ghost btn-sm" type="button" disabled={busy || !has} onClick={() => saveTheme(null)}>
-                      Clear
-                    </button>
-                    <span className="theme-spacer" />
-                    <button className="btn btn-secondary btn-sm" type="button" onClick={() => previewTheme(draft)}>
-                      Preview on me
-                    </button>
-                    <button className="btn btn-secondary btn-sm" type="button" onClick={() => previewTheme(null)}>
-                      Stop preview
-                    </button>
-                    <button className="btn btn-primary btn-sm" type="button" disabled={busy} onClick={() => saveTheme(draft)}>
-                      Save
-                    </button>
-                  </div>
-                </aside>
-              </div>
-            ) : (
-              <CodeThemeEditor live={has ? draft : savedTheme()} onPreview={(t) => previewTheme(t)} onApply={(t) => saveTheme(t)} applyLabel="Save" />
-            )}
-          </div>
-        </>
+          </aside>
+        </div>
       )}
     </section>
   );

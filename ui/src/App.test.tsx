@@ -211,7 +211,7 @@ describe("App", () => {
     expect(screen.getByText(/^CE$/)).toBeVisible();
     expect(screen.getByRole("navigation", { name: /appliance/i })).toBeVisible();
     expect(screen.getByRole("link", { name: /^workloads$/i })).toBeVisible();
-    expect(screen.getByRole("link", { name: /^add features$/i })).toBeVisible();
+    expect(screen.getAllByRole("link", { name: /^add features$/i })[0]).toBeVisible();
     expect(screen.queryByRole("link", { name: /^cluster$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /^automation$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /^ask$/i })).not.toBeInTheDocument();
@@ -445,7 +445,7 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: /first-run guest network/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /create network/i })).toBeVisible();
     expect(await screen.findByText(/eth0/)).toBeVisible();
-    expect(screen.getByText(/ifindex 2/i)).toBeVisible();
+    expect(screen.getByText("192.168.1.10/24")).toBeVisible();
   });
 
   it("creates a management-NIC LAN bridge by sending X-Nodal-Confirm after typing the interface", async () => {
@@ -539,7 +539,8 @@ describe("App", () => {
   });
 
   it("shows the remote worker WireGuard helper", async () => {
-    window.history.replaceState({}, "", "/node");
+    // It sits on Network > Cluster, next to the other ways to add a node.
+    window.history.replaceState({}, "", "/network/cluster");
     mockApi({
       ...defaultRoutes,
       "/api/v1/me": { status: 200, body: admin },
@@ -816,7 +817,7 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: /^certificates$/i })).toBeVisible();
-    expect(screen.getByRole("link", { name: /^certificates$/i })).toBeVisible();
+    expect(screen.getAllByRole("link", { name: /^certificates$/i })[0]).toBeVisible();
     expect(await screen.findByRole("heading", { name: /^status$/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /generate self-signed/i })).toBeVisible();
     expect(screen.queryByRole("button", { name: /download.*key/i })).not.toBeInTheDocument();
@@ -955,10 +956,11 @@ describe("App", () => {
     });
     render(<App />);
     expect(await screen.findByRole("heading", { name: /^add features$/i })).toBeVisible();
-    expect(screen.getByRole("link", { name: /^add features$/i })).toBeVisible();
+    expect(screen.getAllByRole("link", { name: /^add features$/i })[0]).toBeVisible();
     expect(await screen.findByText(/enabling kubernetes does not start kubelet/i)).toBeVisible();
-    expect(await screen.findByRole("heading", { name: /^gpu services$/i })).toBeVisible();
-    expect(await screen.findByRole("heading", { name: /^kubernetes$/i })).toBeVisible();
+    // Each feature is a table row with its title in bold.
+    expect(await screen.findByText(/^gpu services$/i, { selector: "strong" })).toBeVisible();
+    expect(await screen.findByText(/^kubernetes$/i, { selector: "strong" })).toBeVisible();
     expect(screen.getAllByRole("button", { name: /^install$/i }).length).toBeGreaterThan(0);
     expect(screen.queryByText(/kubelet started yes/i)).not.toBeInTheDocument();
   });
@@ -976,14 +978,15 @@ describe("App", () => {
     });
     render(<App />);
     expect(await screen.findByRole("heading", { name: /^add features$/i })).toBeVisible();
-    expect(screen.queryByRole("link", { name: /^cluster$/i })).not.toBeInTheDocument();
-    const clustering = (await screen.findByRole("heading", { name: /^clustering$/i })).closest("article");
+    // Add Features lists each feature as a table row; Clustering adds the Cluster tab to Network.
+    const clustering = (await screen.findByText(/^clustering$/i, { selector: "strong" })).closest("tr");
     expect(clustering).toBeTruthy();
     expect(within(clustering as HTMLElement).getByText(/^disabled$/i)).toBeVisible();
     fireEvent.click(within(clustering as HTMLElement).getByRole("button", { name: /^enable$/i }));
-    expect(await screen.findByRole("link", { name: /^cluster$/i })).toBeVisible();
-    const after = screen.getByRole("heading", { name: /^clustering$/i }).closest("article");
-    expect(within(after as HTMLElement).getByText(/^enabled$/i)).toBeVisible();
+    await waitFor(() => {
+      const after = screen.getByText(/^clustering$/i, { selector: "strong" }).closest("tr");
+      expect(within(after as HTMLElement).getByText(/^enabled$/i)).toBeVisible();
+    });
   });
 
   it("shows a disabled feature's address as a disabled page with a way back", async () => {
@@ -1022,7 +1025,7 @@ describe("App", () => {
     });
     render(<App />);
     expect(await screen.findByRole("heading", { name: /^kubernetes$/i })).toBeVisible();
-    expect(screen.getByRole("link", { name: /^kubernetes$/i })).toBeVisible();
+    expect(screen.getAllByRole("link", { name: /^kubernetes$/i })[0]).toBeVisible();
     expect(await screen.findByText(/kubelet started no/i)).toBeVisible();
     expect(screen.getByText(/kube process no/i)).toBeVisible();
     expect(screen.queryByText(/kubelet started yes/i)).not.toBeInTheDocument();
@@ -1055,7 +1058,7 @@ describe("App", () => {
     });
     render(<App />);
     expect(await screen.findByRole("heading", { name: /^store$/i })).toBeVisible();
-    expect(screen.getByRole("link", { name: /^store$/i })).toBeVisible();
+    expect(screen.getAllByRole("link", { name: /^store$/i })[0]).toBeVisible();
     expect(await screen.findByRole("heading", { name: /^sample web$/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /^install$/i })).toBeVisible();
     expect(screen.getByText(/official badge/i)).toBeVisible();
@@ -1175,7 +1178,7 @@ describe("App", () => {
     render(<App />);
     expect(await screen.findByRole("heading", { name: /^license$/i })).toBeVisible();
     // The sidebar link waits on the session's grants, which can land after the heading.
-    expect(await screen.findByRole("link", { name: /^license$/i })).toBeVisible();
+    expect((await screen.findAllByRole("link", { name: /^license$/i }))[0]).toBeVisible();
     expect(screen.getByText(/does not require a key/i)).toBeVisible();
     expect(screen.getByText(/does not download ee blobs/i)).toBeVisible();
     expect(screen.getByText(/hardware gates are not proven on this host/i)).toBeVisible();
@@ -1192,7 +1195,7 @@ describe("App", () => {
     });
     render(<App />);
     expect(await screen.findByRole("heading", { name: /^docs$/i })).toBeVisible();
-    expect(screen.getByRole("link", { name: /^docs$/i })).toBeVisible();
+    expect(screen.getAllByRole("link", { name: /^docs$/i })[0]).toBeVisible();
     expect(screen.getByText(/operator runbooks shipped/i)).toBeVisible();
     expect(screen.getByText(/no cloud or ee key required/i)).toBeVisible();
     expect(screen.getAllByText(/hardware gates are not proven on this host/i).length).toBeGreaterThan(0);
@@ -1309,7 +1312,7 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: /^updates$/i })).toBeVisible();
-    expect(screen.getByRole("link", { name: /^updates$/i })).toBeVisible();
+    expect(screen.getAllByRole("link", { name: /^updates$/i })[0]).toBeVisible();
     expect(
       screen.getByText(/control-plane package bumps must not stop guests/i),
     ).toBeVisible();
@@ -1322,7 +1325,11 @@ describe("App", () => {
       "href",
       "https://github.com/ASPEC-RACING-PTY-LTD/ndl-ce/releases/tag/v1.0.2",
     );
-    expect(screen.queryByRole("heading", { name: /^actions$/i })).not.toBeInTheDocument();
+    // The actions sit together in this order.
+    const order = ["check for updates", "dry run", "create checkpoint", "roll back", "apply update"].map((n) => screen.getByRole("button", { name: new RegExp(`^${n}$`, "i") }));
+    for (let i = 1; i < order.length; i++) {
+      expect(order[i - 1].compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
     expect(screen.queryByRole("heading", { name: /^last operation$/i })).not.toBeInTheDocument();
 
     const lastOpCard = screen.getByRole("button", { name: /last operation/i });
@@ -1547,22 +1554,41 @@ describe("App", () => {
     expect(screen.getByText(/backups are independent copies\. snapshots are not backups\./i)).toBeVisible();
     expect(screen.queryByRole("button", { name: /^create snapshot$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: /^run backup$/i })).not.toBeInTheDocument();
-    expect(await screen.findByText(/^Running$/)).toBeVisible();
-    expect(screen.getByText(/no backup policies yet/i)).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: /^restore points$/i }));
-    fireEvent.click(await screen.findByRole("button", { name: /^restore or verify$/i }));
+    await screen.findByRole("table", { name: /^workload backups$/i });
+    const more = (label: RegExp) => {
+      fireEvent.click(screen.getByRole("button", { name: /^more backup actions$/i }));
+      fireEvent.click(screen.getByRole("menuitem", { name: label }));
+    };
+    // The running run shows in Run history.
+    more(/^run history$/i);
+    const runs = await screen.findByRole("dialog", { name: /^backup runs$/i });
+    expect(within(runs).getByText(/^Running$/)).toBeVisible();
+    fireEvent.click(within(runs).getByRole("button", { name: /^close$/i }));
+    // Restore copy is honest about what each restore does.
+    more(/^restore points$/i);
+    const points = await screen.findByRole("dialog", { name: /^restore points$/i });
+    fireEvent.click(await within(points).findByRole("button", { name: /^restore or verify$/i }));
+    const detail = await screen.findByRole("dialog", { name: /^restore or verify$/i });
     expect(
-      await screen.findByText(/restore as new creates a new workload uuid\. restore replace overwrites the existing workload/i),
+      within(detail).getByText(/restore as new creates a new workload uuid\. restore replace overwrites the existing workload/i),
     ).toBeVisible();
-    expect(screen.getByLabelText(/^restore dest node$/i)).toBeVisible();
-    expect(screen.getByRole("button", { name: /^export dr metadata$/i })).toBeVisible();
-    expect(screen.getByRole("button", { name: /^restore as new$/i })).toBeVisible();
-    expect(screen.getByRole("button", { name: /^restore replace$/i })).toBeVisible();
-    expect(screen.getByRole("button", { name: /^verify$/i })).toBeVisible();
-    expect(screen.getByText(/^Unverified$/)).toBeVisible();
+    expect(within(detail).getByLabelText(/^restore dest node$/i)).toBeVisible();
+    expect(within(detail).getByRole("button", { name: /^restore as new$/i })).toBeVisible();
+    expect(within(detail).getByRole("button", { name: /^restore replace$/i })).toBeVisible();
+    expect(within(detail).getByRole("button", { name: /^verify$/i })).toBeVisible();
+    expect(within(detail).getByText(/^Unverified$/)).toBeVisible();
+    fireEvent.click(within(detail).getByRole("button", { name: /^close$/i }));
+    fireEvent.click(within(points).getByRole("button", { name: /^close$/i }));
+    more(/^disaster recovery$/i);
+    const dr = await screen.findByRole("dialog", { name: /^disaster recovery$/i });
+    expect(within(dr).getByRole("button", { name: /^export dr metadata$/i })).toBeVisible();
+    fireEvent.click(within(dr).getByRole("button", { name: /^close$/i }));
     expect(screen.getAllByText("local-disk").length).toBeGreaterThan(0);
     expect(screen.queryByLabelText(/^password$/i)).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /^create policy$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^policies$/i }));
+    const policies = await screen.findByRole("dialog", { name: /^backup policies$/i });
+    expect(within(policies).getByText(/no backup policies yet/i)).toBeVisible();
+    fireEvent.click(within(policies).getByRole("button", { name: /^create policy$/i }));
     const policyDialog = await screen.findByRole("dialog", { name: /create backup policy/i });
     expect(within(policyDialog).getByLabelText(/^selected workloads$/i)).toBeChecked();
     expect(within(policyDialog).getByLabelText(/^full machine \/ full lxc$/i)).toBeChecked();
@@ -1638,9 +1664,20 @@ describe("App", () => {
 
     expect(await screen.findByRole("heading", { name: /^backups$/i })).toBeVisible();
     expect((await screen.findAllByText("r2-offsite"))[0]).toBeVisible();
-    expect(screen.getByText(/ndl-backups/)).toBeVisible();
-    expect(screen.getAllByText(/incremental/).length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole("button", { name: /^add target$/i }));
+    expect(screen.getAllByText(/not configured/i).length).toBeGreaterThan(0);
+    // The run's transferred bytes and incremental flag show in Run history.
+    fireEvent.click(screen.getByRole("button", { name: /^more backup actions$/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^run history$/i }));
+    const runs = await screen.findByRole("dialog", { name: /^backup runs$/i });
+    fireEvent.change(within(runs).getByLabelText(/^which runs to show$/i), { target: { value: "all" } });
+    expect(within(runs).getByText("2.0 KiB")).toBeVisible();
+    expect(within(runs).getAllByText(/incremental/).length).toBeGreaterThan(0);
+    fireEvent.click(within(runs).getByRole("button", { name: /^close$/i }));
+    // The bucket and the add form live in the Targets window.
+    fireEvent.click(screen.getByRole("button", { name: /^targets$/i }));
+    const targets = await screen.findByRole("dialog", { name: /^backup targets$/i });
+    expect(within(targets).getByText(/ndl-backups/)).toBeVisible();
+    fireEvent.click(within(targets).getByRole("button", { name: /^add target$/i }));
     const targetDialog = await screen.findByRole("dialog", { name: /add backup target/i });
     fireEvent.change(within(targetDialog).getByLabelText(/^kind$/i), { target: { value: "r2" } });
     expect(within(targetDialog).getByLabelText(/^endpoint$/i)).toBeVisible();
@@ -1649,7 +1686,6 @@ describe("App", () => {
     expect(within(targetDialog).getByLabelText(/^secret access key$/i)).toBeVisible();
     expect(within(targetDialog).getByLabelText(/skip bucket probe/i)).toBeVisible();
     expect(within(targetDialog).queryByLabelText(/^locator$/i)).not.toBeInTheDocument();
-    expect(screen.getAllByText(/not configured/i).length).toBeGreaterThan(0);
   });
 
   it("renders MFA, groups, and audit pages from the shell", async () => {
@@ -1817,9 +1853,9 @@ describe("App", () => {
 
     render(<App />);
 
-    // GPU moved into Hardware; the old address lands there.
-    const hw = await screen.findByRole("link", { name: /^hardware$/i });
-    expect(hw).toHaveAttribute("aria-current", "page");
+    // GPU is part of Summary's hardware; the old address lands there.
+    const summary = await screen.findByRole("link", { name: /^summary$/i });
+    expect(summary).toHaveAttribute("aria-current", "page");
     expect(await screen.findByText(/0000:02:00.1 audio/i)).toBeVisible();
     expect(await screen.findByText(/creating a workload without a gpu does not attach \/dev\/dri/i)).toBeVisible();
     expect(screen.queryByRole("button", { name: /^assign gpu$/i })).not.toBeInTheDocument();

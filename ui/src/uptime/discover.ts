@@ -1,5 +1,6 @@
 import type { UptimeMonitor, UptimeMonitorIn } from "../api/client";
 import type { DockerTunnel } from "../generated/openapi";
+import { nodeLabel } from "../nodeNames";
 
 /** A monitor proposed from a Cloudflare tunnel route, before it is saved. */
 export type UptimeCandidate = {
@@ -47,7 +48,7 @@ export function discoverMonitors(tunnels: DockerTunnel[], monitors: UptimeMonito
   }
   const byHost = new Map<string, UptimeCandidate>();
   for (const t of tunnels) {
-    const machine = t.machine_name || t.machine_id || "";
+    const machine = nodeLabel(t.machine_id, t.machine_name) || t.machine_id || "";
     const links = (t.links ?? []) as Link[];
     for (const rule of (t.ingress ?? []) as Rule[]) {
       const hostname = (rule.hostname ?? "").trim().toLowerCase();
