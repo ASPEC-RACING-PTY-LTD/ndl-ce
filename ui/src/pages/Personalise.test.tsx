@@ -177,11 +177,11 @@ describe("Sidebar", () => {
     fireEvent.click(await screen.findByRole("menuitem", { name: /^move up$/i }));
     fireEvent.contextMenu(within(nav).getByRole("link", { name: "Files" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: /^move up$/i }));
+    await waitFor(() => expect(names().indexOf("Files")).toBeLessThan(names().indexOf("Workloads")));
     expect(names().indexOf("Files")).toBeLessThan(names().indexOf("Terminal"));
-    expect(names().indexOf("Files")).toBeLessThan(names().indexOf("Workloads"));
     // Keyboard: Alt+ArrowDown moves it one place down.
     fireEvent.keyDown(within(nav).getByRole("link", { name: "Files" }), { key: "ArrowDown", altKey: true });
-    expect(names().indexOf("Files")).toBe(names().indexOf("Workloads") + 1);
+    await waitFor(() => expect(names().indexOf("Files")).toBe(names().indexOf("Workloads") + 1));
     await waitFor(() => expect(saved.some((b) => b.includes('"nav.order"'))).toBe(true), { timeout: 3000 });
   });
 
