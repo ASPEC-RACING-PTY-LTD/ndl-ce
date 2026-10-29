@@ -6,9 +6,8 @@ import { PageHeader } from "../components/PageHeader";
 import { TerminalPane } from "../components/TerminalPane";
 import { workloadGuestIO } from "../guestIO";
 import { currentPath } from "../router";
-import { canMutate, isAdmin } from "../rbac";
 import { useSession } from "../session";
-import { targetFromNode, targetFromWorkload } from "../terminal/catalog";
+import { mayOpenTerminal, targetFromNode, targetFromWorkload } from "../terminal/catalog";
 import { useTerminalWorkspace } from "../terminal/workspace";
 import { ErrorNotice } from "../components/ErrorNotice";
 
@@ -34,12 +33,13 @@ export function TerminalPage({
   embedded?: boolean;
 } = {}) {
   const session = useSession();
-  const roles = session.status === "ready" ? session.user?.roles : undefined;
+  const user = session.status === "ready" ? session.user : null;
+  const roles = user?.roles;
   const fromPath = idsFromPath();
   const kind = fixed?.kind ?? fromPath.kind;
   const id = fixed?.id ?? fromPath.id;
   const host = kind === "node";
-  const canOpen = host ? isAdmin(roles) : canMutate(roles);
+  const canOpen = mayOpenTerminal(kind, id, roles, user);
   const cwdParam = cwdFromQuery();
   const { openOrFocus, tabs, setActive } = useTerminalWorkspace();
   const [error, setError] = useState<string | null>(null);

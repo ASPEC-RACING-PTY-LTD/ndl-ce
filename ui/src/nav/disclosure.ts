@@ -1,5 +1,5 @@
 import { paletteAllowed, type PaletteRequire } from "../palette";
-import { hasGrant } from "../rbac";
+import { hasGrant, hasRoleAccess, itemGateOpen, type ItemUser } from "../rbac";
 import { CAPABILITIES, NAV_MODULES, type NavModule } from "./modules";
 
 /** DisclosurePrefs holds the UI-only capabilities a person turned on. */
@@ -37,7 +37,15 @@ export function isCapabilityEnabled(
   return prefs.enabled.includes(id);
 }
 
-export function allowedByRbac(mod: NavModule, roles: string[] | undefined, grants?: string[]): boolean {
+export function allowedByRbac(mod: NavModule, roles: string[] | undefined, grants?: string[], user?: ItemUser | null): boolean {
+  const byItem = itemGateOpen(user, mod.items);
+  // People without a role see only the areas of the items shared with them.
+  if (!hasRoleAccess({ roles, grants })) {
+    return byItem;
+  }
+  if (byItem) {
+    return true;
+  }
   if (mod.anyPermission) {
     return mod.anyPermission.some((perm) => hasGrant({ roles, grants }, perm));
   }
@@ -63,8 +71,13 @@ export function visibleModules(
   featureEnabled: Record<string, boolean>,
   roles: string[] | undefined,
   grants?: string[],
+  /** user adds the item grants (item_access, item_grants) to the check. */
+  user?: ItemUser | null,
 ): NavModule[] {
-  return NAV_MODULES.filter((mod) => allowedByRbac(mod, roles, grants) && capabilityOn(mod, prefs, featureEnabled));
+  return NAV_MODULES.filter(
+    // The feature list is closed to people without a role, so their item grants stand in for it.
+    (mod) => allowedByRbac(mod, roles, grants, user) && (capabilityOn(mod, prefs, featureEnabled) || itemGateOpen(user, mod.items)),
+  );
 }
 
 export function groupedModules(items: NavModule[]): { label: string; items: NavModule[] }[] {

@@ -228,6 +228,10 @@ type Store interface {
 	PutDDoSEvent(ctx context.Context, ev DDoSEvent) error
 	// ListDDoSEvents returns the newest attacks first.
 	ListDDoSEvents(ctx context.Context, clusterID string, limit int) ([]DDoSEvent, error)
+	// ResourceAccess returns the per-item grants document; nil when never saved.
+	ResourceAccess(ctx context.Context, clusterID string) ([]byte, error)
+	// PutResourceAccess replaces the per-item grants document.
+	PutResourceAccess(ctx context.Context, clusterID string, body []byte, by string) error
 	// EdgeConfig returns the edge forwarding document; nil when never saved.
 	EdgeConfig(ctx context.Context, clusterID string) ([]byte, error)
 	// PutEdgeConfig replaces the edge forwarding document.

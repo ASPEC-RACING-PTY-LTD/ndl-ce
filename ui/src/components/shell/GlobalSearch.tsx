@@ -3,6 +3,7 @@ import { searchAll, type SearchResults } from "../../api/client";
 import type { SearchFilter, SearchResult } from "../../generated/openapi";
 import { useNavDisclosure } from "../../nav/NavDisclosure";
 import { filterPaletteActions, visiblePaletteActions } from "../../palette";
+import { hasRoleAccess } from "../../rbac";
 import { navigate } from "../../router";
 import { useSession } from "../../session";
 import { Icon } from "../Icon";
@@ -71,7 +72,8 @@ export function mergeRows(pages: SearchRow[], items: SearchResult[]): SearchRow[
  */
 export function GlobalSearch() {
   const session = useSession();
-  const roles = session.status === "ready" ? session.user?.roles : undefined;
+  const user = session.status === "ready" ? session.user : null;
+  const roles = user?.roles;
   const { featureEnabled } = useNavDisclosure();
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
@@ -84,8 +86,8 @@ export function GlobalSearch() {
   const root = useRef<HTMLDivElement>(null);
 
   const actions = useMemo(
-    () => visiblePaletteActions(roles).filter((a) => !a.feature || featureEnabled[a.feature]),
-    [roles, featureEnabled],
+    () => visiblePaletteActions(roles, user).filter((a) => !a.feature || featureEnabled[a.feature]),
+    [roles, user, featureEnabled],
   );
 
   useEffect(() => {
@@ -123,8 +125,10 @@ export function GlobalSearch() {
   }, [open]);
 
   const term = [q.trim(), filter?.query ?? ""].filter(Boolean).join(" ");
+  // Server search is closed to people without a role; they get page suggestions only.
+  const serverSearch = hasRoleAccess(user);
   useEffect(() => {
-    if (!open || (term.length < 2 && !filter)) {
+    if (!open || !serverSearch || (term.length < 2 && !filter)) {
       setRes((cur) => (cur && !filter ? { ...cur, items: [] } : cur));
       return;
     }
@@ -147,16 +151,16 @@ export function GlobalSearch() {
       ctl.abort();
       window.clearTimeout(id);
     };
-  }, [term, filter, open]);
+  }, [term, filter, open, serverSearch]);
 
   // The saved filters come with any result; fetch them once on first open.
   useEffect(() => {
-    if (open && !res) {
+    if (open && !res && serverSearch) {
       searchAll("", { limit: 1 })
         .then((r) => setRes((cur) => cur ?? { ...r, items: [] }))
         .catch(() => undefined);
     }
-  }, [open, res]);
+  }, [open, res, serverSearch]);
 
   const pages: SearchRow[] =
     filter || !q.trim()

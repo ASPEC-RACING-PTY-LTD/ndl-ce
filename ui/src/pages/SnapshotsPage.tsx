@@ -14,6 +14,7 @@ import { Field } from "../components/Field";
 import { formatWhen, honestStatus } from "../format";
 import { currentPath } from "../router";
 import { useSession } from "../session";
+import { canOnItem } from "../rbac";
 import { DeleteButton } from "../components/DeleteButton";
 import { ErrorNotice } from "../components/ErrorNotice";
 
@@ -42,9 +43,11 @@ function capabilityBanner(capability: SnapshotCapability | null): string | null 
 
 export function SnapshotsPage() {
   const session = useSession();
-  const roles = session.status === "ready" ? session.user?.roles : undefined;
-  const mutate = canMutate(roles);
+  const user = session.status === "ready" ? session.user : null;
+  const mutate = canMutate(user?.roles);
   const id = workloadIDFromPath();
+  // Creating snapshots can come from a grant on this workload; rollback and delete stay with roles.
+  const canSnapshot = mutate || canOnItem(user, "workload", id, "compute.snapshot");
 
   const [items, setItems] = useState<Snapshot[] | null>(null);
   const [capability, setCapability] = useState<SnapshotCapability | null>(null);
@@ -198,7 +201,7 @@ export function SnapshotsPage() {
         </article>
       ) : null}
 
-      {loadState === "ready" && supported && mutate ? (
+      {loadState === "ready" && supported && canSnapshot ? (
         <article className="panel">
           <h2>Create</h2>
           <Field

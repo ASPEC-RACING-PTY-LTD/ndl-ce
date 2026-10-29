@@ -21,6 +21,18 @@ export function isOperationsLeaf(leaf: string): boolean {
   return leaf === "operations" || leaf === "clone" || leaf === "migrate";
 }
 
+/**
+ * itemWorkloadPage maps a workload page to the permission a single-item
+ * grant needs to open it. Pages missing here need a role.
+ */
+export const ITEM_WORKLOAD_PAGES: Record<string, string> = {
+  summary: "compute.read",
+  terminal: "terminal.open",
+  files: "files.read",
+  console: "compute.console",
+  snapshots: "compute.read",
+};
+
 export function buildWorkloadNav(opts: {
   id: string;
   kind: string;
@@ -28,8 +40,23 @@ export function buildWorkloadNav(opts: {
   guestOk: boolean;
   mutate: boolean;
   dockerOn: boolean;
+  /**
+   * allow narrows the pages to those the person may open (by the page's
+   * last address part, such as "terminal"). Left out, every page shows.
+   */
+  allow?: (leaf: string) => boolean;
 }): WorkloadNavGroup[] {
-  const { id, kind, leaf, guestOk, mutate, dockerOn } = opts;
+  const { id, kind, leaf, guestOk, mutate, dockerOn, allow } = opts;
+  const groups = buildAll(id, kind, leaf, guestOk, mutate, dockerOn);
+  if (!allow) {
+    return groups;
+  }
+  return groups
+    .map((g) => ({ ...g, items: g.items.filter((item) => item.href === "/docker" || allow(leafFromWorkloadPath(item.href))) }))
+    .filter((g) => g.items.length > 0);
+}
+
+function buildAll(id: string, kind: string, leaf: string, guestOk: boolean, mutate: boolean, dockerOn: boolean): WorkloadNavGroup[] {
   const groups: WorkloadNavGroup[] = [];
   const summaryCurrent = leaf === "summary";
 

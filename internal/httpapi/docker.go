@@ -175,6 +175,9 @@ func (s *Server) getDocker(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadGateway, err.Error())
 		return
 	}
+	if ids, limited := s.scopedIDs(r.Context(), p, accessDocker); limited {
+		inv = scopedDockerInventory(inv, ids)
+	}
 	writeJSON(w, http.StatusOK, inv)
 }
 

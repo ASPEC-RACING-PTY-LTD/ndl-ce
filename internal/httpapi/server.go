@@ -218,6 +218,10 @@ type principal struct {
 	SessID  string
 	AAL     int
 	TokenID string
+	// Scoped is true when this request was let through by a grant on one
+	// item (resource_access.go); base keeps the role grants it started with.
+	Scoped bool
+	base   []string
 }
 
 func (s *Server) now() time.Time {
@@ -304,6 +308,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/placement/preview", s.previewPlacement)
 	mux.HandleFunc("POST /api/v1/cluster/agent-tunnels", s.createAgentTunnel)
 	mux.HandleFunc("GET /api/v1/agent-tunnel-install/{ticket}", s.agentTunnelInstall)
+	mux.HandleFunc("GET /api/v1/iam/resource-access", s.listResourceAccess)
+	mux.HandleFunc("PUT /api/v1/iam/resource-access", s.putResourceAccess)
+	mux.HandleFunc("DELETE /api/v1/iam/resource-access/{id}", s.deleteResourceAccess)
+	mux.HandleFunc("GET /api/v1/me/resource-access", s.myResourceAccess)
 	mux.HandleFunc("GET /api/v1/node-nicknames", s.getNodeNicknames)
 	mux.HandleFunc("PUT /api/v1/node-nicknames", s.putNodeNickname)
 	mux.HandleFunc("GET /api/v1/node-groups", s.listNodeGroups)
@@ -1328,7 +1336,7 @@ func (s *Server) require(w http.ResponseWriter, r *http.Request, perm string) (*
 		writeErr(w, http.StatusUnauthorized, "not authenticated")
 		return nil, err
 	}
-	if !rbac.Authorize(p.Grants, perm) {
+	if !rbac.Authorize(p.Grants, perm) && !s.scopedAllow(r, p, perm) {
 		writeErr(w, http.StatusForbidden, "forbidden")
 		return nil, errors.New("forbidden")
 	}
@@ -1399,6 +1407,11 @@ func (s *Server) asPrincipal(ctx context.Context, u appdb.User, sessID string, a
 		return nil, err
 	}
 	grants := s.grantsForUser(ctx, u, roles)
+	for _, g := range baseGrants {
+		if !rbac.Authorize(grants, g) {
+			grants = append(grants, g)
+		}
+	}
 	if len(tokenPerms) > 0 {
 		filtered := make([]string, 0, len(tokenPerms))
 		for _, perm := range tokenPerms {
@@ -1460,6 +1473,19 @@ func (s *Server) writeMe(w http.ResponseWriter, r *http.Request, user appdb.User
 	prefs, _ := s.Store.GetUserPrefs(r.Context(), user.ID)
 	level, ack, ackAt := prefsJSON(prefs)
 	grants := s.grantsForUser(r.Context(), user, roles)
+	for _, g := range baseGrants {
+		if !rbac.Authorize(grants, g) {
+			grants = append(grants, g)
+		}
+	}
+	// item_access lists the permissions held on single items, by kind, so
+	// the UI can show those pages to people without a role that grants them.
+	itemAccess := map[string][]string{}
+	itemGrants := []map[string]any{}
+	for _, g := range s.subjectGrants(r.Context(), &principal{User: user}) {
+		itemAccess[g.ResourceKind] = uniqueStrings(append(itemAccess[g.ResourceKind], g.Permissions...))
+		itemGrants = append(itemGrants, map[string]any{"kind": g.ResourceKind, "id": g.ResourceID, "permissions": g.Permissions})
+	}
 	clusterMFA := false
 	if c, err := s.Store.GetCluster(r.Context()); err == nil && c != nil {
 		clusterMFA = c.MFARequired
@@ -1470,6 +1496,8 @@ func (s *Server) writeMe(w http.ResponseWriter, r *http.Request, user appdb.User
 		"display_name":            user.DisplayName,
 		"roles":                   roles,
 		"grants":                  grants,
+		"item_access":             itemAccess,
+		"item_grants":             itemGrants,
 		"edition":                 edition,
 		"cluster_id":              user.ClusterID,
 		"aal":                     aal,

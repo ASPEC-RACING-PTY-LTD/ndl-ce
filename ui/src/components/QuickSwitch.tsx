@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { listNodes, listStacks, listWorkloads, workloadAction } from "../api/client";
-import { canMutate } from "../rbac";
+import { canMutate, itemAllows } from "../rbac";
 import { useSession } from "../session";
 import {
   buildTermCatalog,
@@ -78,8 +78,11 @@ export function QuickSwitch({
   onCatalog?: (live: TermTarget[]) => void;
 }) {
   const session = useSession();
-  const roles = session.status === "ready" ? session.user?.roles : undefined;
-  const mutate = canMutate(roles);
+  const user = session.status === "ready" ? session.user : null;
+  const roles = user?.roles;
+  // Starting a stopped workload needs power on it, from a role or a grant on that workload.
+  const mayStart = (t: TermTarget) =>
+    t.kind === "workload" && (canMutate(roles) || itemAllows(user, "workload", t.id, "compute.lifecycle") || itemAllows(user, "workload", t.id, "compute.start"));
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const [catalog, setCatalog] = useState<TermTarget[]>([]);
@@ -122,6 +125,7 @@ export function QuickSwitch({
         setLocalNodeId((nodes.find((n) => n.local) ?? (nodes.length === 1 ? nodes[0] : undefined))?.id ?? null);
         const live = buildTermCatalog({
           roles,
+          user,
           nodes,
           workloads: workloads?.items ?? [],
           stacks: stacks.items ?? [],
@@ -141,7 +145,7 @@ export function QuickSwitch({
     return () => {
       cancelled = true;
     };
-  }, [open, roles]);
+  }, [open, roles, user]);
 
   const filtered = useMemo(() => filterTermTargets(catalog, query), [catalog, query]);
   const searching = query.trim().length > 0;
@@ -201,8 +205,8 @@ export function QuickSwitch({
   }
 
   function choose(target: TermTarget) {
-    if (!canOpenTermTarget(target, roles)) {
-      if (target.kind === "workload" && !target.terminalReady && mutate) {
+    if (!canOpenTermTarget(target, roles, user)) {
+      if (target.kind === "workload" && !target.terminalReady && mayStart(target)) {
         setStartTarget(target);
       }
       return;
@@ -212,7 +216,7 @@ export function QuickSwitch({
   }
 
   function confirmReplace(target: TermTarget) {
-    if (!canOpenTermTarget(target, roles)) {
+    if (!canOpenTermTarget(target, roles, user)) {
       return;
     }
     if (currentLive) {
@@ -305,8 +309,8 @@ export function QuickSwitch({
                 <div className="qs-grid" ref={sec.first ? gridRef : undefined}>
                   {sec.items.map(({ row, index }) => {
                     const t = row.target!;
-                    const openable = canOpenTermTarget(t, roles);
-                    const startable = !t.terminalReady && t.kind === "workload" && mutate;
+                    const openable = canOpenTermTarget(t, roles, user);
+                    const startable = !t.terminalReady && mayStart(t);
                     return (
                       <div key={row.key} className={"qs-tile" + (index === active ? " is-active" : "")}>
                         <button
@@ -353,7 +357,7 @@ export function QuickSwitch({
                       data-target={`${row.target.kind}:${row.target.id}`}
                       onMouseEnter={() => setActive(index)}
                       onClick={() => choose(row.target!)}
-                      disabled={!canOpenTermTarget(row.target, roles) && !(row.target.kind === "workload" && !row.target.terminalReady && mutate)}
+                      disabled={!canOpenTermTarget(row.target, roles, user) && !(!row.target.terminalReady && mayStart(row.target))}
                     >
                       <span className="qs-name">{row.target.name}</span>
                       <span className="qs-meta">
@@ -362,7 +366,7 @@ export function QuickSwitch({
                       </span>
                       <StatusBadge status={row.target.status} />
                     </button>
-                    {canOpenTermTarget(row.target, roles) && hasCurrent ? (
+                    {canOpenTermTarget(row.target, roles, user) && hasCurrent ? (
                       <button
                         type="button"
                         className="btn btn-ghost btn-sm"
@@ -371,7 +375,7 @@ export function QuickSwitch({
                         Replace current
                       </button>
                     ) : null}
-                    {!row.target.terminalReady && row.target.kind === "workload" && mutate ? (
+                    {!row.target.terminalReady && mayStart(row.target) ? (
                       <button
                         type="button"
                         className="btn btn-ghost btn-sm"

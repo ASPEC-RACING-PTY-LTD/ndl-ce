@@ -8,11 +8,11 @@ import type { GameServer } from "../gameservers/types";
 import { Icon } from "../components/Icon";
 import { Link } from "../components/Link";
 import { useQuery } from "../query";
-import { canMutate } from "../rbac";
+import { canMutate, canOnItem, hasRoleAccess } from "../rbac";
 import { usePath } from "../router";
 import { useSession } from "../session";
 import { GS_ROOT, gameServerIdFromPath, gameServerSectionFromPath } from "./gameServers";
-import { buildGameServerNav } from "./gameServersNav";
+import { buildGameServerNav, gameTabAllow } from "./gameServersNav";
 
 /** The query key a server's page and its bar share, so both show one copy. */
 export const gameServerQueryKey = (id: string) => `game-server:${id}`;
@@ -28,7 +28,10 @@ export function GameServerFrame({ children }: { children: ReactNode }) {
   const section = gameServerSectionFromPath(path) || "overview";
   const q = useQuery(gameServerQueryKey(id), () => getGameServer(id), 4000);
   const server = q.data?.id === id ? q.data : undefined;
-  const links = buildGameServerNav(id, server, section).flatMap((g) => g.items);
+  const session = useSession();
+  const user = session.status === "ready" ? session.user : null;
+  const allow = gameTabAllow(hasRoleAccess(user), (perm) => canOnItem(user, "gameserver", id, perm));
+  const links = buildGameServerNav(id, server, section, allow).flatMap((g) => g.items);
   const [error, setError] = useState<string | null>(null);
   return (
     <div className="wl-frame gs-frame">
@@ -62,7 +65,9 @@ export function GameServerFrame({ children }: { children: ReactNode }) {
 
 function PowerActions({ server, onDone, onError }: { server: GameServer; onDone: () => Promise<unknown>; onError: (msg: string | null) => void }) {
   const session = useSession();
-  const mutate = canMutate(session.status === "ready" ? session.user?.roles : undefined);
+  const user = session.status === "ready" ? session.user : null;
+  // Power comes from a role or from a grant on this one server.
+  const mutate = canMutate(user?.roles) || canOnItem(user, "gameserver", server.id, "gameserver.power");
   const [busy, setBusy] = useState(false);
   if (!mutate) {
     return null;

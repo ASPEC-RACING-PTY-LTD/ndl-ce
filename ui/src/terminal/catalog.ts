@@ -1,16 +1,32 @@
 import type { NodeSummary } from "../api/phase2";
 import type { Workload } from "../api/phase5";
 import type { Stack } from "../api/client";
-import { isAdmin, canMutate } from "../rbac";
+import { isAdmin, canMutate, dockerItemId, itemAllows, type ItemUser } from "../rbac";
 import { kindLabel } from "../labels";
-import type { TermGroup, TermTarget } from "./types";
+import type { TermGroup, TermKind, TermTarget } from "./types";
 
-export function canOpenTermTarget(target: TermTarget, roles: string[] | undefined): boolean {
-  if (!canMutate(roles)) {
+/**
+ * mayOpenTerminal reports whether the person may open a terminal on a host
+ * or workload: through their role, or a terminal.open grant on that item.
+ */
+export function mayOpenTerminal(kind: TermKind, id: string, roles: string[] | undefined, user?: ItemUser | null, name?: string): boolean {
+  if (kind === "node") {
+    return isAdmin(roles) || itemAllows(user, "node", id, "terminal.open");
+  }
+  if (kind === "docker") {
+    // A Docker target is "machine/container id"; its grant is on "machine/container name".
+    const machine = id.split("/")[0] ?? "";
+    return canMutate(roles) || (Boolean(name) && itemAllows(user, "docker", dockerItemId(machine, name ?? ""), "terminal.open"));
+  }
+  return canMutate(roles) || itemAllows(user, "workload", id, "terminal.open");
+}
+
+export function canOpenTermTarget(target: TermTarget, roles: string[] | undefined, user?: ItemUser | null): boolean {
+  if (!mayOpenTerminal(target.kind, target.id, roles, user, target.name)) {
     return false;
   }
   if (target.kind === "node") {
-    return isAdmin(roles);
+    return true;
   }
   return target.terminalReady;
 }
@@ -28,14 +44,16 @@ export function filterTermTargets(targets: TermTarget[], query: string): TermTar
 
 export function buildTermCatalog(input: {
   roles?: string[];
+  /** user adds the hosts and workloads the person holds a terminal grant on. */
+  user?: ItemUser | null;
   nodes: NodeSummary[];
   workloads: Workload[];
   stacks?: Stack[];
 }): TermTarget[] {
   const nodeName = new Map(input.nodes.map((n) => [n.id, n.name]));
   const out: TermTarget[] = [];
-  if (isAdmin(input.roles)) {
-    for (const node of input.nodes) {
+  for (const node of input.nodes) {
+    if (mayOpenTerminal("node", node.id, input.roles, input.user)) {
       out.push({
         kind: "node",
         id: node.id,
@@ -49,12 +67,9 @@ export function buildTermCatalog(input: {
       });
     }
   }
-  if (!canMutate(input.roles)) {
-    return out;
-  }
   for (const w of input.workloads) {
     const group = groupForKind(w.kind);
-    if (!group || group === "host") {
+    if (!group || group === "host" || !mayOpenTerminal("workload", w.id, input.roles, input.user)) {
       continue;
     }
     const running = (w.status || "").toLowerCase() === "running";
@@ -77,7 +92,7 @@ export function buildTermCatalog(input: {
         continue;
       }
       const group = groupForKind(wl.kind);
-      if (group !== "system-container" && group !== "vm") {
+      if ((group !== "system-container" && group !== "vm") || !mayOpenTerminal("workload", wl.id, input.roles, input.user)) {
         continue;
       }
       if (out.some((t) => t.kind === "workload" && t.id === wl.id)) {

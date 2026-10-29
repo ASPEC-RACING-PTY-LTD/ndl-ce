@@ -1,3 +1,5 @@
+import type { ItemGate } from "../rbac";
+
 export type NavRequire = "audit" | "groups" | "update";
 
 export type NavModule = {
@@ -11,6 +13,8 @@ export type NavModule = {
   permission?: string;
   /** Shown when the user holds any of these grants. */
   anyPermission?: string[];
+  /** Also shown for a grant on a single item of these kinds; people without a role see only these. */
+  items?: ItemGate[];
 };
 
 /** Grants that open at least one IAM section. */
@@ -57,6 +61,7 @@ export const NAV_MODULES: NavModule[] = [
     match: (p) =>
       (p === "/workloads" || p.startsWith("/workloads/")) &&
       !p.startsWith("/workloads/game-servers"),
+    items: [{ kind: "workload" }],
   },
   {
     id: "game-servers",
@@ -69,9 +74,30 @@ export const NAV_MODULES: NavModule[] = [
       p === "/workloads/game-servers" ||
       p.startsWith("/workloads/game-servers/"),
     capability: "gameservers",
+    items: [{ kind: "gameserver" }],
   },
-  { id: "terminal", href: "/terminal", label: "Terminal", group: "Compute", match: (p) => p === "/terminal" },
-  { id: "files", href: "/files", label: "Files", group: "Compute", match: (p) => p === "/files" },
+  {
+    id: "terminal",
+    href: "/terminal",
+    label: "Terminal",
+    group: "Compute",
+    match: (p) => p === "/terminal",
+    items: [
+      { kind: "workload", perm: "terminal.open" },
+      { kind: "node", perm: "terminal.open" },
+    ],
+  },
+  {
+    id: "files",
+    href: "/files",
+    label: "Files",
+    group: "Compute",
+    match: (p) => p === "/files",
+    items: [
+      { kind: "workload", perm: "files.read" },
+      { kind: "node", perm: "files.read" },
+    ],
+  },
   {
     id: "oci",
     href: "/oci",
@@ -87,6 +113,7 @@ export const NAV_MODULES: NavModule[] = [
     group: "Infrastructure",
     match: (p) => p === "/docker" || p.startsWith("/docker/"),
     capability: "docker",
+    items: [{ kind: "docker" }],
   },
   {
     id: "codehold",
@@ -112,6 +139,7 @@ export const NAV_MODULES: NavModule[] = [
     label: "Node",
     group: "Infrastructure",
     match: (p) => p === "/node" || (p.startsWith("/node/") && !p.startsWith("/nodes/")),
+    items: [{ kind: "node" }],
   },
   {
     id: "storage",

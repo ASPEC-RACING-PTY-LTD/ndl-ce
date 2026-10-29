@@ -104,10 +104,9 @@ export function useNavDisclosure(): NavDisclosureValue {
 
 export function useVisibleNav() {
   const session = useSession();
-  const roles = session.status === "ready" ? session.user?.roles : undefined;
-  const grants = session.status === "ready" ? session.user?.grants : undefined;
+  const user = session.status === "ready" ? session.user : null;
   const { prefs, featureEnabled } = useNavDisclosure();
-  const items = visibleModules(prefs, featureEnabled, roles, grants);
+  const items = visibleModules(prefs, featureEnabled, user?.roles, user?.grants, user);
   return groupedModules(items);
 }
 

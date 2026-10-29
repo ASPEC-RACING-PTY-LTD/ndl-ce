@@ -290,6 +290,34 @@ export async function checkNode(id: string): Promise<WorkerLinkCheck> {
   return readJson(await request(`/nodes/${encodeURIComponent(id)}/check`, { method: "POST", body: JSON.stringify({}) }));
 }
 
+export type ItemKind = "workload" | "gameserver" | "docker" | "node";
+export type ResourceGrant = import("../generated/openapi").ResourceGrant;
+export type ResourceAccess = { grants: ResourceGrant[]; grantable: Record<ItemKind, string[]> };
+export type ResourceGrantBody = {
+  id?: string;
+  subject_kind: "user" | "group";
+  subject_id: string;
+  resource_kind: ItemKind;
+  /** Workload, game server or node ID; for Docker, machine_id/container_name. */
+  resource_id: string;
+  /** Empty removes the grant. */
+  permissions: string[];
+};
+
+/** listResourceAccess returns every grant on single items and what each kind can grant. */
+export async function listResourceAccess(): Promise<ResourceAccess> {
+  return readJson(await request("/iam/resource-access"));
+}
+
+/** putResourceAccess creates or replaces a grant on one item for a user or group. */
+export async function putResourceAccess(body: ResourceGrantBody): Promise<ResourceAccess> {
+  return readJson(await request("/iam/resource-access", { method: "PUT", body: JSON.stringify(body) }));
+}
+
+export async function deleteResourceAccess(id: string): Promise<ResourceAccess> {
+  return readJson(await request(`/iam/resource-access/${encodeURIComponent(id)}`, { method: "DELETE" }));
+}
+
 export type AgentTunnel = {
   /** The agent address to save: cloudflare:<hostname>. */
   address: string;
@@ -2876,9 +2904,10 @@ export type SecuritySettings = {
   recover_admin: string;
 };
 
-export async function listManagedUsers(opts: { q?: string; role?: string; status?: string; sort?: string } = {}) {
+export async function listManagedUsers(opts: { q?: string; role?: string; status?: string; sort?: string; perPage?: number } = {}) {
   const params = new URLSearchParams();
   if (opts.q) params.set("q", opts.q);
+  if (opts.perPage) params.set("per_page", String(opts.perPage));
   if (opts.role) params.set("role", opts.role);
   if (opts.status) params.set("status", opts.status);
   if (opts.sort) params.set("sort", opts.sort);

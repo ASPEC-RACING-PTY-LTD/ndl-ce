@@ -6061,6 +6061,41 @@ thead th[data-autosort="desc"]::after {
   border-top: 1px solid var(--line);
   padding-top: var(--space-3, 1rem);
 }
+.users-area-section {
+  border-top: 1px solid var(--line);
+  padding-top: var(--space-3, 1rem);
+}
+
+/* IAM > Users > Item access: grants on single items, one compact table. */
+.item-access .toolbar {
+  margin: 0;
+}
+.item-access-table td {
+  padding-top: 0.3rem;
+  padding-bottom: 0.3rem;
+  vertical-align: middle;
+}
+.item-access-kind {
+  color: var(--fg-secondary);
+  font-size: 0.85em;
+}
+.item-access-missing {
+  color: var(--fg-secondary);
+}
+.item-access-perms {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  gap: 0.25rem var(--space-3, 1rem);
+  margin: var(--space-2, 0.5rem) 0 0;
+  padding: var(--space-2, 0.5rem) 0 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+.item-access-perms legend {
+  padding: 0 0.4rem 0 0;
+  font-size: 0.8rem;
+  color: var(--fg-secondary);
+}
 
 /* System sub-bar sits above each System page's own header. */
 .system-subnav {

@@ -13,14 +13,13 @@ import {
   type ReactNode,
 } from "react";
 import { ApiError, attachTerminalSession, createTerminalSession, endTerminalSession } from "../api/client";
-import { canMutate, isAdmin } from "../rbac";
 import { storageGet, storageSet } from "../storage";
 import { useSession } from "../session";
 import "@xterm/xterm/css/xterm.css";
 import { TERMINAL_FONT_KEY, clampTerminalFont, stepTerminalFont } from "../appearance/state";
 import { getPref, setPref, subscribePrefs } from "../prefs";
 import { terminalColors } from "../theme";
-import { pushRecent } from "./catalog";
+import { mayOpenTerminal, pushRecent } from "./catalog";
 import { decodeFrame, encodeFrame, encodeResize } from "./frames";
 import { defaultTabTitle } from "./names";
 import { isTermCopyChord, isTermPasteChord, normalizePasteText, shouldConfirmPaste } from "./paste";
@@ -224,7 +223,8 @@ function sendPtySize(tabId: string, force = false): void {
 export function TerminalWorkspaceProvider({ children }: { children: ReactNode }) {
   const session = useSession();
   const userId = session.status === "ready" ? session.user?.user_id ?? "" : "";
-  const roles = session.status === "ready" ? session.user?.roles : undefined;
+  const user = session.status === "ready" ? session.user : null;
+  const roles = user?.roles;
   const seeded = useRef(false);
   const [tabs, setTabs] = useState<TermTab[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -241,28 +241,12 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
     const stored = loadStore(userId);
     if (stored.recents?.length) {
       setRecents(
-        stored.recents.filter((t) => {
-          if (!canMutate(roles)) {
-            return false;
-          }
-          if (t.kind === "node") {
-            return isAdmin(roles);
-          }
-          return true;
-        }),
+        stored.recents.filter((t) => mayOpenTerminal(t.kind, t.id, roles, user, t.name)),
       );
     }
     if (stored.tabs?.length) {
       const restored = stored.tabs
-        .filter((t) => {
-          if (!canMutate(roles)) {
-            return false;
-          }
-          if (t.target.kind === "node") {
-            return isAdmin(roles);
-          }
-          return true;
-        })
+        .filter((t) => mayOpenTerminal(t.target.kind, t.target.id, roles, user, t.target.name))
         .map((t) => ({
           ...t,
           state: "disconnected" as TermConnState,
@@ -274,7 +258,7 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
       setActiveId(stored.activeId && restored.some((t) => t.tabId === stored.activeId) ? stored.activeId : restored[0]?.tabId ?? null);
     }
     setHydrated(true);
-  }, [userId, roles]);
+  }, [userId, roles, user]);
 
   useEffect(() => {
     if (!userId || !hydrated) {

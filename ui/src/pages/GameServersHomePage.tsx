@@ -19,7 +19,7 @@ import {
   searchGameServers,
 } from "../gameservers/api";
 import type { GameServer, GameView } from "../gameservers/types";
-import { canMutate } from "../rbac";
+import { canMutate, canOnItem, hasRoleAccess } from "../rbac";
 import { useSession } from "../session";
 import { useNavDisclosure } from "../nav/NavDisclosure";
 import { gameServerHref, gameServersHomeFilter, gameServersHomeHref } from "../nav/gameServers";
@@ -43,7 +43,12 @@ export function GameServersHomePage() {
   // In the Instance layout creating lives in "Create +" in the page bar.
   const [layout] = useInstanceLayout();
   const { featureEnabled } = useNavDisclosure();
-  const mutate = canMutate(session.status === "ready" ? session.user?.roles : undefined);
+  const user = session.status === "ready" ? session.user : null;
+  const mutate = canMutate(user?.roles);
+  const roleAccess = hasRoleAccess(user);
+  // Per-server actions come from a role or from a grant on that one server.
+  const canPower = (id: string) => mutate || canOnItem(user, "gameserver", id, "gameserver.power");
+  const canOpen = (id: string, perm: string) => roleAccess || canOnItem(user, "gameserver", id, perm);
   const [items, setItems] = useState<GameServer[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState("");
@@ -70,8 +75,9 @@ export function GameServersHomePage() {
     }
     void (async () => {
       try {
-        const prefs = await getGamePrefs();
-        if (prefs.view) {
+        // Saved view settings are optional: without them the list still loads.
+        const prefs = await getGamePrefs().catch(() => null);
+        if (prefs?.view) {
           setView(prefs.view);
         }
         const list = await listGameServers();
@@ -111,19 +117,30 @@ export function GameServersHomePage() {
     }
   }
 
+  /** findServers searches on the server, or filters the list here when search is closed to this person. */
+  async function findServers(value: string): Promise<GameServer[]> {
+    const needle = value.trim();
+    if (!needle) {
+      return (await listGameServers()).items ?? [];
+    }
+    if (roleAccess) {
+      return (await searchGameServers(needle)).items ?? [];
+    }
+    const lower = needle.toLowerCase();
+    return ((await listGameServers()).items ?? []).filter((row) => `${row.name} ${row.game} ${row.template_name ?? ""}`.toLowerCase().includes(lower));
+  }
+
   async function runSearch(value: string) {
     setQ(value);
     try {
-      const list = value.trim() ? await searchGameServers(value) : await listGameServers();
-      setItems(list.items ?? []);
+      setItems(await findServers(value));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Search failed");
     }
   }
 
   async function refresh() {
-    const list = q.trim() ? await searchGameServers(q) : await listGameServers();
-    setItems(list.items ?? []);
+    setItems(await findServers(q));
   }
 
   async function onPower(id: string, action: "start" | "stop" | "restart") {
@@ -366,9 +383,11 @@ export function GameServersHomePage() {
                     aria-label={`Select ${server.name}`}
                   />
                 </label>
-                <button type="button" className={"gs-pin" + (server.pinned ? " is-on" : "")} onClick={() => void onFavorite(server.id)} aria-label="Favourite">
-                  ★
-                </button>
+                {roleAccess ? (
+                  <button type="button" className={"gs-pin" + (server.pinned ? " is-on" : "")} onClick={() => void onFavorite(server.id)} aria-label="Favourite">
+                    ★
+                  </button>
+                ) : null}
                 <Link className="gs-card-main" href={gameServerHref(server.id)}>
                   <span className={"gs-status is-" + server.status}>{statusLabel(server.status)}</span>
                   <h3>{server.name}</h3>
@@ -379,27 +398,27 @@ export function GameServersHomePage() {
                   {server.error_human ? <p className="gs-error">{server.error_human}</p> : null}
                 </Link>
                 <div className="gs-quick">
-                  {mutate && server.status !== "running" ? (
+                  {canPower(server.id) && server.status !== "running" ? (
                     <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => void onPower(server.id, "start")}>
                       Start
                     </button>
                   ) : null}
-                  {mutate && server.status === "running" ? (
+                  {canPower(server.id) && server.status === "running" ? (
                     <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => void onPower(server.id, "restart")}>
                       Restart
                     </button>
                   ) : null}
-                  {hasCap(server, "console") ? (
+                  {hasCap(server, "console") && canOpen(server.id, "gameserver.console") ? (
                     <Link className="btn btn-ghost" href={gameServerHref(server.id, "console")}>
                       Console
                     </Link>
                   ) : null}
-                  {hasCap(server, "files") ? (
+                  {hasCap(server, "files") && canOpen(server.id, "gameserver.files") ? (
                     <Link className="btn btn-ghost" href={gameServerHref(server.id, "files")}>
                       Files
                     </Link>
                   ) : null}
-                  {hasCap(server, "backups") ? (
+                  {hasCap(server, "backups") && canOpen(server.id, "gameserver.backup") ? (
                     <Link className="btn btn-ghost" href={gameServerHref(server.id, "backups")}>
                       Backups
                     </Link>

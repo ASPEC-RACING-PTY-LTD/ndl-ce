@@ -896,6 +896,40 @@ export interface MeResponse {
   workload_sort?: string;
   workload_order?: string[];
   ui_prefs?: Record<string, unknown>;
+  item_access?: Record<string, unknown>;
+  item_grants?: ItemGrant[];
+}
+
+export interface ItemGrant {
+  kind: "workload" | "gameserver" | "docker" | "node";
+  id: string;
+  permissions: string[];
+}
+
+export interface ResourceGrant {
+  id: string;
+  subject_kind: "user" | "group";
+  subject_id: string;
+  subject_name?: string;
+  resource_kind: "workload" | "gameserver" | "docker" | "node";
+  resource_id: string;
+  permissions: string[];
+  created_by?: string;
+  created_at?: string;
+}
+
+export interface ResourceAccess {
+  grants: ResourceGrant[];
+  grantable: Record<string, unknown>;
+}
+
+export interface ResourceGrantBody {
+  id?: string;
+  subject_kind: "user" | "group";
+  subject_id: string;
+  resource_kind: "workload" | "gameserver" | "docker" | "node";
+  resource_id: string;
+  permissions: string[];
 }
 
 export interface MePatchRequest {
@@ -4296,6 +4330,12 @@ export type ClearDeepSearchIndexPath = "/api/v1/search/index/deep";
 export type CreateAgentTunnelPath = "/api/v1/cluster/agent-tunnels";
 
 export type AgentTunnelInstallPath = "/api/v1/agent-tunnel-install/{ticket}";
+
+export type ListResourceAccessPath = "/api/v1/iam/resource-access";
+
+export type DeleteResourceAccessPath = "/api/v1/iam/resource-access/{id}";
+
+export type MyResourceAccessPath = "/api/v1/me/resource-access";
 
 export type GetNodeNicknamesPath = "/api/v1/node-nicknames";
 

@@ -43,6 +43,9 @@ export function roleLabel(role: string): string {
       return "User";
     case "automation":
       return "Automation";
+    case "none":
+    case "":
+      return "No role";
     default:
       return role;
   }

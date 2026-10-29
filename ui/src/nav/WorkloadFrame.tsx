@@ -5,11 +5,11 @@ import { Link } from "../components/Link";
 import { StatusBadge } from "../components/StatusBadge";
 import { kindLabel } from "../labels";
 import { useQuery } from "../query";
-import { canMutate } from "../rbac";
+import { canMutate, canOnItem, hasRoleAccess } from "../rbac";
 import { usePath } from "../router";
 import { useSession } from "../session";
 import { useNavDisclosure } from "./NavDisclosure";
-import { buildWorkloadNav, leafFromWorkloadPath } from "./workloadNav";
+import { buildWorkloadNav, ITEM_WORKLOAD_PAGES, leafFromWorkloadPath } from "./workloadNav";
 
 /**
  * The workload's own navigation (Summary, Terminal, Files, Snapshots, ...)
@@ -19,7 +19,8 @@ import { buildWorkloadNav, leafFromWorkloadPath } from "./workloadNav";
 export function WorkloadFrame({ id, children }: { id: string; children: ReactNode }) {
   const path = usePath();
   const session = useSession();
-  const mutate = canMutate(session.status === "ready" ? session.user?.roles : undefined);
+  const user = session.status === "ready" ? session.user : null;
+  const mutate = canMutate(user?.roles);
   const { featureEnabled } = useNavDisclosure();
   const wl = useQuery(`workload:${id}`, () => getWorkload(id), 10000);
   const item = wl.data?.id === id ? wl.data : undefined;
@@ -38,6 +39,10 @@ export function WorkloadFrame({ id, children }: { id: string; children: ReactNod
     guestOk,
     mutate,
     dockerOn: Boolean(featureEnabled.docker),
+    // Without a role, only the pages this workload's grant opens.
+    allow: hasRoleAccess(user)
+      ? undefined
+      : (page) => Boolean(ITEM_WORKLOAD_PAGES[page]) && canOnItem(user, "workload", id, ITEM_WORKLOAD_PAGES[page]),
   });
   const links = groups.flatMap((g) => g.items).filter((entry) => entry.href !== "/docker");
   return (

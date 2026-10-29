@@ -6,7 +6,9 @@ import { FeatureGate } from "./components/FeatureGate";
 import { AccessControlArea } from "./iam/AccessControlArea";
 import { IAMLayout, iamSections } from "./iam/IAMLayout";
 import { SystemLayout } from "./nav/SystemLayout";
-import { SYSTEM_PAGES } from "./nav/sections";
+import { ADMIN_SECTIONS, SYSTEM_PAGES, itemOnlyPathOpen, visibleSections } from "./nav/sections";
+import { firstItemArea, hasRoleAccess } from "./rbac";
+import { useNavDisclosure } from "./nav/NavDisclosure";
 import { ForbiddenPage } from "./pages/ForbiddenPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { EventsPage } from "./pages/EventsPage";
@@ -104,6 +106,45 @@ function Redirect({ to }: { to: string }) {
   return <GateNotice>Redirecting</GateNotice>;
 }
 
+/** HomeRoute is the Dashboard, or the first area holding an item for people without a role. */
+function HomeRoute() {
+  const session = useSession();
+  const user = session.status === "ready" ? session.user : null;
+  if (hasRoleAccess(user)) {
+    return <DashboardPage />;
+  }
+  const first = firstItemArea(user);
+  if (!first) {
+    return <NothingSharedPage />;
+  }
+  return <Redirect to={first} />;
+}
+
+/** NothingSharedPage greets a person without a role who holds no item grant yet. */
+function NothingSharedPage() {
+  return (
+    <section className="page" aria-labelledby="nothing-shared-heading">
+      <h1 id="nothing-shared-heading">Nothing shared with you yet</h1>
+      <p className="muted">An administrator can share a workload, game server, Docker container or node with your account. It shows here once they do.</p>
+    </section>
+  );
+}
+
+/** AdminRoute is the Administration overview, or its first open area for people without a role. */
+function AdminRoute() {
+  const session = useSession();
+  const user = session.status === "ready" ? session.user : null;
+  const { capabilityOn } = useNavDisclosure();
+  if (hasRoleAccess(user)) {
+    return <AdminHome />;
+  }
+  const first = visibleSections(ADMIN_SECTIONS, user, capabilityOn)[0];
+  if (!first) {
+    return <ForbiddenPage />;
+  }
+  return <Redirect to={first.href} />;
+}
+
 /** /iam opens the first IAM section the user may see. */
 function IAMHome() {
   const session = useSession();
@@ -144,7 +185,7 @@ function matchPage(path: string) {
     return <ThemePage />;
   }
   if (path === "/admin") {
-    return <AdminHome />;
+    return <AdminRoute />;
   }
   if (path === "/admin/theme") {
     return (
@@ -438,7 +479,7 @@ function matchPage(path: string) {
     );
   }
   if (path === "/") {
-    return <DashboardPage />;
+    return <HomeRoute />;
   }
   return <NotFoundPage />;
 }
@@ -506,11 +547,29 @@ function AppRoutes() {
     <NavDisclosureProvider>
       <Shell>
         <TerminalWorkspaceProvider>
-          <AreaFrame>{withFrame(path, <FeatureGate path={path}>{matchPage(path)}</FeatureGate>)}</AreaFrame>
+          <AreaFrame>{withFrame(path, <ItemOnlyGate path={path} />)}</AreaFrame>
         </TerminalWorkspaceProvider>
       </Shell>
     </NavDisclosureProvider>
   );
+}
+
+/**
+ * ItemOnlyGate draws the page. People without a role reach only their own
+ * account and the areas holding items shared with them; other addresses
+ * show the "no access" page instead of a page full of refused requests.
+ */
+function ItemOnlyGate({ path }: { path: string }) {
+  const session = useSession();
+  const user = session.status === "ready" ? session.user : null;
+  if (!hasRoleAccess(user) && !itemOnlyPathOpen(path, user)) {
+    return <ForbiddenPage />;
+  }
+  // Item grants stand in for the feature list, which is closed to people without a role.
+  if (!hasRoleAccess(user)) {
+    return <>{matchPage(path)}</>;
+  }
+  return <FeatureGate path={path}>{matchPage(path)}</FeatureGate>;
 }
 
 /** PrefsBinder loads the signed-in user's saved interface preferences. */

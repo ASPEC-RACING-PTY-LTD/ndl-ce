@@ -130,8 +130,12 @@ func (s *Server) listWorkloads(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	ids, limited := s.scopedIDs(r.Context(), p, accessWorkload)
 	out := make([]map[string]any, 0, len(items))
 	for _, item := range items {
+		if limited && !ids[strings.ToLower(item.ID)] {
+			continue
+		}
 		out = append(out, s.workloadJSON(r.Context(), item))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": out, "image_pins": lxc.AllowedPins})

@@ -1,6 +1,7 @@
 import type { IconName } from "../components/Icon";
 import type { PageNavItem } from "../components/PageNav";
-import { hasGrant } from "../rbac";
+import { canOnItem, hasGrant, hasRoleAccess, itemGateOpen, type ItemGate, type ItemUser } from "../rbac";
+import { ITEM_WORKLOAD_PAGES } from "./workloadNav";
 import { IAM_PERMISSIONS, isIAMPath } from "./modules";
 
 // The modern navigation: the sidebar keeps Dashboard, Compute and one
@@ -12,6 +13,11 @@ type Gate = {
   anyPermission?: string[];
   /** capability names an optional feature (nav/modules CAPABILITIES). */
   capability?: string;
+  /**
+   * items opens the page to people who hold a grant on a single item of
+   * that kind. People without a role see only pages opened this way.
+   */
+  items?: ItemGate[];
 };
 
 export type SectionChild = Gate & { id: string; label: string; href: string; match?: (p: string) => boolean };
@@ -71,6 +77,7 @@ export const ADMIN_SECTIONS: Section[] = [
     href: "/node",
     icon: "node",
     description: "This node, storage, networking and the cluster, Docker, CodeHold and the Claude Agent.",
+    items: [{ kind: "node" }],
     match: (p) =>
       p === "/node" ||
       p.startsWith("/node/") ||
@@ -80,11 +87,11 @@ export const ADMIN_SECTIONS: Section[] = [
       p === "/settings/cluster" ||
       p === "/claude-agent",
     children: [
-      { id: "node", label: "Node", href: "/node", match: (p) => p === "/node" || p.startsWith("/node/") },
+      { id: "node", label: "Node", href: "/node", items: [{ kind: "node" }], match: (p) => p === "/node" || p.startsWith("/node/") },
       { id: "storage", label: "Storage", href: "/storage", match: under("/storage") },
       // Network holds Edge forwarding, DDoS Protection, Cluster, Cloudflare, Caddy and Nginx.
       { id: "network", label: "Network", href: "/network", match: (p) => under("/network")(p) || p === "/cloudflare" || p === "/settings/cluster" },
-      { id: "docker", label: "Docker", href: "/docker", capability: "docker", match: (p) => under("/docker")(p) || p === "/uptime" },
+      { id: "docker", label: "Docker", href: "/docker", capability: "docker", items: [{ kind: "docker" }], match: (p) => under("/docker")(p) || p === "/uptime" },
       { id: "codehold", label: "CodeHold", href: "/codehold", capability: "codehold", match: under("/codehold") },
       { id: "claude-agent", label: "Claude Agent", href: "/claude-agent", capability: "claude_agent" },
     ],
@@ -136,6 +143,7 @@ export const INSTANCE_SECTIONS: Section[] = [
     href: "/workloads",
     icon: "workloads",
     description: "System containers.",
+    items: [{ kind: "workload" }],
     match: (p) =>
       p === "/workloads" ||
       p === "/workloads/new/system-container" ||
@@ -149,6 +157,7 @@ export const INSTANCE_SECTIONS: Section[] = [
     href: "/instance/vms",
     icon: "monitor",
     description: "Virtual machines.",
+    items: [{ kind: "workload" }],
     match: exact("/instance/vms", "/workloads/new/vm", "/workloads/import"),
   },
   {
@@ -158,6 +167,7 @@ export const INSTANCE_SECTIONS: Section[] = [
     icon: "game",
     description: "Dedicated game servers.",
     capability: "gameservers",
+    items: [{ kind: "gameserver" }],
     // No dropdown: the dashboard's own filters join the bar while it is open.
     match: (p) => under("/game-servers", "/workloads/game-servers")(p),
   },
@@ -209,11 +219,19 @@ export const CREATE_ENTRIES: CreateEntry[] = [
   { section: "templates", kind: "vms", group: "Templates", label: "VM template", href: "/templates?new=vm" },
 ];
 
-type Who = { roles?: string[]; grants?: string[] } | null;
+type Who = ItemUser | null;
 
 function allowed(g: Gate, user: Who, capabilityOn: (id: string) => boolean): boolean {
-  if (g.capability && !capabilityOn(g.capability)) {
+  const byItem = itemGateOpen(user, g.items);
+  // The feature list is closed to people without a role, so their item grants stand in for it.
+  if (g.capability && !capabilityOn(g.capability) && !byItem) {
     return false;
+  }
+  if (!hasRoleAccess(user)) {
+    return byItem;
+  }
+  if (byItem) {
+    return true;
   }
   if (g.anyPermission) {
     return g.anyPermission.some((p) => hasGrant(user, p));
@@ -229,7 +247,7 @@ export function visibleSections(sections: Section[], user: Who, capabilityOn: (i
   const out: Section[] = [];
   for (const s of sections) {
     // A whole area belongs to a feature: with it off, none of its pages show.
-    if (s.capability && !capabilityOn(s.capability)) {
+    if (s.capability && !capabilityOn(s.capability) && !itemGateOpen(user, s.items)) {
       continue;
     }
     const children = (s.children ?? []).filter((c) => allowed(c, user, capabilityOn));
@@ -289,4 +307,60 @@ export function createScope(path: string): string | null {
     }
   }
   return null;
+}
+
+/** Pages every signed-in person may open: their own account and preferences. */
+function personalPath(p: string): boolean {
+  return (
+    p === "/" ||
+    p === "/admin" ||
+    p === "/me" ||
+    p === "/profile" ||
+    p === "/notifications" ||
+    p === "/settings/mfa" ||
+    p === "/theme" ||
+    p.startsWith("/theme/") ||
+    p.startsWith("/people/")
+  );
+}
+
+/**
+ * itemOnlyPathOpen reports whether a person without a role may open a page:
+ * their own account pages, and the areas of the kinds of items shared with
+ * them. The server refuses everything else for them.
+ */
+export function itemOnlyPathOpen(path: string, user: ItemUser | null | undefined): boolean {
+  const p = path.split(/[?#]/)[0] || "/";
+  if (personalPath(p)) {
+    return true;
+  }
+  const has = (kind: ItemGate["kind"], perm?: string) => itemGateOpen(user, [{ kind, perm }]);
+  if (has("workload")) {
+    const creating = p.startsWith("/workloads/new/") || p === "/workloads/import";
+    if (!creating && (p === "/instance" || p === "/instance/vms" || p === "/workloads")) {
+      return true;
+    }
+    const parts = p.split("/").filter(Boolean);
+    if (!creating && parts[0] === "workloads" && parts[1] && parts[1] !== "game-servers" && parts.length <= 3) {
+      // A workload's own pages, as far as its grant reaches.
+      const perm = ITEM_WORKLOAD_PAGES[parts[2] ?? "summary"];
+      return Boolean(perm) && canOnItem(user, "workload", decodeURIComponent(parts[1]), perm);
+    }
+  }
+  if (has("gameserver") && (p === "/game-servers" || (p.startsWith("/game-servers/") && p !== "/game-servers/create") || p.startsWith("/workloads/game-servers"))) {
+    return true;
+  }
+  if (has("docker") && (p === "/docker" || (p.startsWith("/docker/") && p !== "/docker/deploy"))) {
+    return true;
+  }
+  if (has("node") && (p === "/node" || p.startsWith("/node/") || p.startsWith("/nodes/"))) {
+    return true;
+  }
+  if (p === "/terminal" && (has("workload", "terminal.open") || has("node", "terminal.open"))) {
+    return true;
+  }
+  if (p === "/files" && (has("workload", "files.read") || has("node", "files.read"))) {
+    return true;
+  }
+  return false;
 }

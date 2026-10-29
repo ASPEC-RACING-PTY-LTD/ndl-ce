@@ -7,7 +7,7 @@ import { GameConsoleTerminal } from "../components/GameConsoleTerminal";
 import { contentKind, familyTone, formatRam, hasCap, statusLabel } from "../gameservers/caps";
 import { GS_ROOT, gameServerAnchorFromPath, gameServerHref, gameServerIdFromPath, gameServerSectionFromPath } from "../nav/gameServers";
 import { gameServerQueryKey } from "../nav/GameServerFrame";
-import { gameServerTabList } from "../nav/gameServersNav";
+import { gameServerTabList, gameTabAllow } from "../nav/gameServersNav";
 import {
   createGameBackup,
   createGameSchedule,
@@ -54,6 +54,8 @@ import { GameDDoSPane } from "../gameservers/GameDDoSPane";
 import { GameEdgePane } from "../gameservers/GameEdgePane";
 import { GamePlayersPane } from "../gameservers/GamePlayersPane";
 import { useNavDisclosure } from "../nav/NavDisclosure";
+import { canOnItem, hasRoleAccess } from "../rbac";
+import { useSession } from "../session";
 import { Segmented } from "../ui/Segmented";
 
 const errText = (err: unknown, fallback: string) => (err instanceof ApiError || err instanceof Error ? err.message : fallback);
@@ -66,13 +68,21 @@ export function GameServerDetailPage() {
   // Shares the bar's query, so the page and GameServerFrame show one copy of the server.
   const q = useQuery(gameServerQueryKey(id), () => getGameServer(id), 4000);
   const server = q.data?.id === id ? q.data : undefined;
-  const tabs = useMemo(() => gameServerTabList(server), [server]);
+  const session = useSession();
+  const user = session.status === "ready" ? session.user : null;
+  const roleAccess = hasRoleAccess(user);
+  const itemPerm = useCallback((perm: string) => canOnItem(user, "gameserver", id, perm), [user, id]);
+  const tabs = useMemo(() => gameServerTabList(server, gameTabAllow(roleAccess, itemPerm)), [server, roleAccess, itemPerm]);
 
   useEffect(() => {
     if (server && id && !tabs.some((item) => item.id === tab)) {
       navigate(gameServerHref(id), { replace: true });
     }
   }, [id, server, tab, tabs]);
+
+  // What this person may do here: everything a role allows (the server
+  // checks it), or what their grant on this one server holds.
+  const access: GameAccess = { role: roleAccess, can: (perm) => roleAccess || itemPerm(perm) };
 
   if (q.error && !server) {
     return <ErrorState>{q.error}</ErrorState>;
@@ -94,20 +104,23 @@ export function GameServerDetailPage() {
       ) : null}
       {server.error_human ? <ErrorNotice error={server.error_human} /> : null}
 
-      {tab === "overview" ? <OverviewPane server={server} onReload={q.reload} /> : null}
+      {tab === "overview" ? <OverviewPane server={server} onReload={q.reload} access={access} /> : null}
       {tab === "console" ? <GameConsoleTerminal key={id} id={id} name={server.name} /> : null}
       {tab === "files" ? <FilesBrowser key={id} kind="game" id={id} embedded onTerminalHere={() => navigate(gameServerHref(id, "console"))} /> : null}
       {tab === "mods" || tab === "plugins" || tab === "workshop" ? <ContentPane id={id} kind={contentKind(server) || tab} /> : null}
       {tab === "players" ? <GamePlayersPane key={id} id={id} /> : null}
-      {tab === "backups" ? <BackupsAndSchedules server={server} /> : null}
-      {tab === "settings" ? <SettingsPane server={server} anchor={anchor} /> : null}
+      {tab === "backups" ? <BackupsAndSchedules server={server} access={access} /> : null}
+      {tab === "settings" ? <SettingsPane server={server} anchor={anchor} access={access} /> : null}
     </section>
   );
 }
 
+/** GameAccess says whether the person has a role, and what they may do on this server. */
+type GameAccess = { role: boolean; can: (perm: string) => boolean };
+
 /* ---------------- Overview ---------------- */
 
-function OverviewPane({ server, onReload }: { server: GameServer; onReload: () => Promise<unknown> }) {
+function OverviewPane({ server, onReload, access }: { server: GameServer; onReload: () => Promise<unknown>; access: GameAccess }) {
   const [tuning, setTuning] = useState<{ title: string; detail: string }[]>([]);
   useEffect(() => {
     void gameTuning(server.id)
@@ -152,17 +165,19 @@ function OverviewPane({ server, onReload }: { server: GameServer; onReload: () =
           </p>
         ))}
       </article>
-      <DangerRow server={server} onReload={onReload} />
+      {access.can("gameserver.reinstall") ? <DangerRow server={server} onReload={onReload} canDelete={access.role} /> : null}
     </div>
   );
 }
 
-function DangerRow({ server, onReload }: { server: GameServer; onReload: () => Promise<unknown> }) {
+function DangerRow({ server, onReload, canDelete }: { server: GameServer; onReload: () => Promise<unknown>; canDelete: boolean }) {
   return (
     <article className="gs-widget gs-wide gs-danger">
       <div>
         <h2>Danger zone</h2>
-        <p className="muted">Reinstall takes a rollback point first. Delete removes the container and its files.</p>
+        <p className="muted">
+          {canDelete ? "Reinstall takes a rollback point first. Delete removes the container and its files." : "Reinstall takes a rollback point first."}
+        </p>
       </div>
       <div className="btn-row is-flush">
         <button
@@ -176,17 +191,19 @@ function DangerRow({ server, onReload }: { server: GameServer; onReload: () => P
         >
           Reinstall
         </button>
-        <button
-          type="button"
-          className="btn btn-sm btn-danger"
-          onClick={() => {
-            if (confirmAction(`Delete ${server.name}? This removes the container and files.`)) {
-              void deleteGameServer(server.id).then(() => navigate(GS_ROOT));
-            }
-          }}
-        >
-          Delete server
-        </button>
+        {canDelete ? (
+          <button
+            type="button"
+            className="btn btn-sm btn-danger"
+            onClick={() => {
+              if (confirmAction(`Delete ${server.name}? This removes the container and files.`)) {
+                void deleteGameServer(server.id).then(() => navigate(GS_ROOT));
+              }
+            }}
+          >
+            Delete server
+          </button>
+        ) : null}
       </div>
     </article>
   );
@@ -194,11 +211,11 @@ function DangerRow({ server, onReload }: { server: GameServer; onReload: () => P
 
 /* ---------------- Backups & Schedules ---------------- */
 
-function BackupsAndSchedules({ server }: { server: GameServer }) {
+function BackupsAndSchedules({ server, access }: { server: GameServer; access: GameAccess }) {
   return (
     <div className="gs-split">
-      {hasCap(server, "backups") ? <BackupsPane id={server.id} /> : null}
-      {hasCap(server, "schedules") ? <SchedulesPane id={server.id} /> : null}
+      {hasCap(server, "backups") && access.can("gameserver.backup") ? <BackupsPane id={server.id} /> : null}
+      {hasCap(server, "schedules") && access.can("gameserver.schedule") ? <SchedulesPane id={server.id} /> : null}
     </div>
   );
 }
@@ -367,10 +384,10 @@ function SchedulesPane({ id }: { id: string }) {
 
 type SettingsSection = { id: string; title: string; render: () => ReactNode };
 
-function SettingsPane({ server, anchor }: { server: GameServer; anchor: string }) {
+function SettingsPane({ server, anchor, access }: { server: GameServer; anchor: string; access: GameAccess }) {
   const id = server.id;
   const { featureEnabled } = useNavDisclosure();
-  const sections: SettingsSection[] = [
+  const all: SettingsSection[] = [
     ...(hasCap(server, "config") ? [{ id: "config", title: "Configuration", render: () => <ConfigPane id={id} /> }] : []),
     ...(hasCap(server, "startup") ? [{ id: "startup", title: "Startup", render: () => <StartupPane id={id} /> }] : []),
     ...(hasCap(server, "resources") ? [{ id: "resources", title: "Resources", render: () => <ResourcesPane id={id} /> }] : []),
@@ -395,6 +412,8 @@ function SettingsPane({ server, anchor }: { server: GameServer; anchor: string }
     { id: "activity", title: "Activity", render: () => <ActivityPane id={id} /> },
     { id: "diagnostics", title: "Diagnostics", render: () => <DiagnosticsPane id={id} /> },
   ];
+  // A grant on this one server opens its configuration only; the rest needs a role.
+  const sections = access.role ? all : all.filter((s) => (s.id === "config" || s.id === "startup") && access.can("gameserver.config"));
 
   useEffect(() => {
     if (anchor) {

@@ -1,3 +1,6 @@
+import { itemOnlyPathOpen } from "./nav/sections";
+import { hasRoleAccess, type ItemUser } from "./rbac";
+
 export type PaletteRequire = "mutate" | "audit" | "update" | "groups";
 
 export type PaletteAction = {
@@ -146,7 +149,14 @@ export function paletteAllowed(roles: string[] | undefined, require?: PaletteReq
   }
 }
 
-export function visiblePaletteActions(roles: string[] | undefined): PaletteAction[] {
+/**
+ * visiblePaletteActions lists the actions a person may use. With a user
+ * that holds no role, only the pages of the items shared with them remain.
+ */
+export function visiblePaletteActions(roles: string[] | undefined, user?: ItemUser | null): PaletteAction[] {
+  if (user && !hasRoleAccess(user)) {
+    return PALETTE_ACTIONS.filter((action) => !action.require && itemOnlyPathOpen(action.href, user) && action.href !== "/");
+  }
   return PALETTE_ACTIONS.filter((action) => paletteAllowed(roles, action.require));
 }
 

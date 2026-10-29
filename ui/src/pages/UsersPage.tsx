@@ -236,6 +236,7 @@ export function UsersPage() {
             minLength={8}
           />
           <SelectField id="new-role" label="Role" value={newRole} onChange={(e) => setNewRole(e.target.value)}>
+            <option value="none">No role (item access only)</option>
             <option value="user">User</option>
             <option value="admin">Admin</option>
             {canRoles ? <option value="superadmin">SuperAdmin</option> : null}
@@ -318,7 +319,7 @@ export function UsersPage() {
           rows={items.map((row) => {
             // The root account is only managed by itself.
             const rootLocked = Boolean(row.is_root && user?.user_id !== row.id);
-            const primary = row.roles?.includes("superadmin") ? "superadmin" : row.roles?.includes("admin") ? "admin" : row.roles?.[0] || "";
+            const primary = row.roles?.includes("superadmin") ? "superadmin" : row.roles?.includes("admin") ? "admin" : row.roles?.[0] || "none";
             const actions = [];
             if (canUpdate) {
               actions.push({
@@ -354,6 +355,12 @@ export function UsersPage() {
               });
             }
             if (canUpdate && canRoles && !row.protected) {
+              if (row.roles?.length) {
+                actions.push({
+                  label: "Remove role",
+                  onClick: () => void onChangeRole(row, "none"),
+                });
+              }
               actions.push({
                 label: "Make User",
                 onClick: () => void onChangeRole(row, "user"),

@@ -4,6 +4,7 @@ import {
   deleteManagedUser,
   getUserAllowlist,
   listAudit,
+  listResourceAccess,
   patchManagedUser,
   putUserAllowlist,
   resetManagedUserPassword,
@@ -32,7 +33,7 @@ function errText(err: unknown, fallback: string): string {
 }
 
 function primaryRole(u: ManagedUser): string {
-  return u.roles?.includes("superadmin") ? "superadmin" : u.roles?.includes("admin") ? "admin" : u.roles?.[0] || "user";
+  return u.roles?.includes("superadmin") ? "superadmin" : u.roles?.includes("admin") ? "admin" : u.roles?.[0] || "none";
 }
 
 /**
@@ -67,6 +68,7 @@ export function UserDetailDialog({
   const [allowOn, setAllowOn] = useState(false);
   const [activity, setActivity] = useState<AuditEvent[] | null>(null);
   const [activityError, setActivityError] = useState<string | null>(null);
+  const [itemCount, setItemCount] = useState<number | null>(null);
 
   useEffect(() => {
     if (!user) {
@@ -85,6 +87,7 @@ export function UserDetailDialog({
     setAllow(null);
     setActivity(null);
     setActivityError(null);
+    setItemCount(null);
   }, [user]);
 
   // Root is managed only by itself (or the host console).
@@ -94,6 +97,24 @@ export function UserDetailDialog({
   const canRoles = hasGrant(me, "users.roles.manage") && !locked && !self;
   const canRevoke = hasGrant(me, "users.sessions.revoke") && !locked;
   const canDelete = hasGrant(me, "users.delete") && !locked && !self && !user?.protected;
+  const canItemAccess = hasGrant(me, "users.roles.manage");
+
+  useEffect(() => {
+    if (!user || tab !== "access" || !canItemAccess || itemCount !== null) {
+      return;
+    }
+    let cancelled = false;
+    void listResourceAccess()
+      .then((res) => {
+        if (!cancelled) {
+          setItemCount((res.grants ?? []).filter((g) => g.subject_kind === "user" && g.subject_id === user.id).length);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [user, tab, canItemAccess, itemCount]);
 
   useEffect(() => {
     if (!user || tab !== "security" || allow || locked) {
@@ -253,11 +274,32 @@ export function UserDetailDialog({
         <div className="form">
           <label htmlFor="ud-role">Role</label>
           <select id="ud-role" className="field-input" value={role} disabled={!canRoles} onChange={(e) => setRole(e.target.value)}>
+            <option value="none">No role (item access only)</option>
             <option value="user">User</option>
             <option value="admin">Admin</option>
             <option value="superadmin">SuperAdmin</option>
           </select>
-          <p className="field-hint">You can only assign roles below your own. The last SuperAdmin cannot be demoted.</p>
+          <p className="field-hint">
+            You can only assign roles below your own. The last SuperAdmin cannot be demoted. With no role, the account sees only
+            the items it is given access to.
+          </p>
+          {itemCount !== null ? (
+            <p className="field-hint">
+              {itemCount === 0 ? "No access to single items." : `Has access to ${itemCount} item${itemCount === 1 ? "" : "s"}.`}{" "}
+              {document.getElementById("item-access") ? (
+                <button
+                  type="button"
+                  className="linkish"
+                  onClick={() => {
+                    onClose();
+                    setTimeout(() => document.getElementById("item-access")?.scrollIntoView({ block: "start" }), 50);
+                  }}
+                >
+                  Manage item access
+                </button>
+              ) : null}
+            </p>
+          ) : null}
           {canRoles ? (
             <div className="btn-row is-flush">
               <button

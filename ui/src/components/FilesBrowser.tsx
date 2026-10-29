@@ -16,6 +16,8 @@ import { workloadGuestIOReason } from "../guestIO";
 import { fileTypeLabel } from "../labels";
 import { navigate } from "../router";
 import { useSession } from "../session";
+import { itemAllows } from "../rbac";
+import { mayOpenTerminal } from "../terminal/catalog";
 import { ErrorNotice } from "./ErrorNotice";
 import { UploadDialog } from "./UploadDialog";
 
@@ -83,15 +85,24 @@ export function FilesBrowser({
   onTerminalHere,
 }: FilesBrowserProps) {
   const session = useSession();
-  const roles = session.status === "ready" ? session.user?.roles : undefined;
+  const user = session.status === "ready" ? session.user : null;
+  const roles = user?.roles;
   const host = kind === "node";
   const game = kind === "game";
+  // A files grant on this one workload or host opens the matching actions.
+  const grantOn = (perm: string) => !game && itemAllows(user, host ? "node" : "workload", id, perm);
   const backend = useMemo(() => (kind === "game" ? gameFilesBackend(id) : agentFilesBackend(kind, id)), [kind, id]);
   // Game servers check per-server grants on the server, so the browser offers every action.
-  const canWrite = game || (host ? Boolean(roles?.includes("superadmin")) : Boolean(roles?.includes("superadmin") || roles?.includes("admin")));
-  const canDownload = canWrite;
+  const roleWrite = game || (host ? Boolean(roles?.includes("superadmin")) : Boolean(roles?.includes("superadmin") || roles?.includes("admin")));
+  const canUpload = roleWrite || grantOn("files.upload");
+  const canCreate = roleWrite || grantOn("files.create");
+  const canWrite = roleWrite || grantOn("files.modify");
+  const canDelete = roleWrite || grantOn("files.delete");
+  const canDownload = roleWrite || grantOn("files.download");
+  const canTerminal = game || mayOpenTerminal(host ? "node" : "workload", id, roles, user);
   const canRead =
     game ||
+    grantOn("files.read") ||
     (host ? Boolean(roles?.includes("superadmin")) : Boolean(roles?.includes("superadmin") || roles?.includes("admin") || roles?.includes("user")));
   const [path, setPath] = useState(initialPath || "/");
   const [pathInput, setPathInput] = useState(displayPath(initialPath || "/"));
@@ -318,14 +329,14 @@ export function FilesBrowser({
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
         return;
       }
-      if (ev.key === "Delete" && canWrite && selectedEntries.length && !dialog && !editor) {
+      if (ev.key === "Delete" && canDelete && selectedEntries.length && !dialog && !editor) {
         ev.preventDefault();
         setDialog({ kind: "delete", entries: selectedEntries });
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [active, canWrite, selectedEntries, dialog, editor]);
+  }, [active, canDelete, selectedEntries, dialog, editor]);
 
   if (unsupported) {
     if (embedded) {
@@ -389,10 +400,10 @@ export function FilesBrowser({
       if (backend.copy) {
         items.push({ label: "Copy", onClick: () => { setDialogValue(path); setDialog({ kind: "copy", entries: [entry] }); } });
       }
-      if (backend.chmod) {
+      if (backend.chmod && roleWrite) {
         items.push({ label: "Permissions", onClick: () => { setDialogValue(formatMode(entry.mode) || "644"); setDialog({ kind: "chmod", entries: [entry] }); } });
       }
-      if (backend.chown) {
+      if (backend.chown && roleWrite) {
         items.push({ label: "Owner", onClick: () => { setDialogValue(entry.uid != null && entry.gid != null ? `${entry.uid}:${entry.gid}` : "0:0"); setDialog({ kind: "chown", entries: [entry] }); } });
       }
       if (backend.extract && entry.type !== "dir" && isArchive(entry.name)) {
@@ -401,6 +412,8 @@ export function FilesBrowser({
       if (backend.compress) {
         items.push({ label: "Zip", onClick: () => { setDialogValue(`${entry.name}.zip`); setDialog({ kind: "zip", entries: [entry] }); } });
       }
+    }
+    if (canDelete) {
       items.push({ label: "Delete", onClick: () => setDialog({ kind: "delete", entries: [entry] }), danger: true });
     }
     return items;
@@ -429,7 +442,7 @@ export function FilesBrowser({
       onDrop={(e) => {
         e.preventDefault();
         setDropActive(false);
-        if (canWrite) {
+        if (canUpload) {
           void onUploadList(e.dataTransfer.files);
         }
       }}
@@ -444,7 +457,7 @@ export function FilesBrowser({
           {uploadNote}
         </p>
       ) : null}
-      {dropActive && canWrite ? (
+      {dropActive && canUpload ? (
         <p className="banner" role="status">
           Drop files to upload into this directory
         </p>
@@ -494,7 +507,7 @@ export function FilesBrowser({
         <button className="btn btn-sm btn-secondary" type="button" disabled={busy} onClick={() => void reload(path)}>
           Refresh
         </button>
-        {canWrite ? (
+        {canUpload ? (
           <>
             <button className="btn btn-sm btn-secondary" type="button" onClick={() => setUploadOpen(true)} disabled={busy}>
               Upload
@@ -511,6 +524,10 @@ export function FilesBrowser({
               }}
               disabled={busy}
             />
+          </>
+        ) : null}
+        {canCreate ? (
+          <>
             <button className="btn btn-sm btn-secondary" type="button" onClick={() => { setDialogValue(""); setDialog({ kind: "create" }); }}>
               New file
             </button>
@@ -518,6 +535,10 @@ export function FilesBrowser({
               <Icon name="create" size={14} />
               New folder
             </button>
+          </>
+        ) : null}
+        {canTerminal ? (
+          <>
             {!game || onTerminalHere ? (
               <button className="btn btn-sm btn-ghost" type="button" onClick={() => (onTerminalHere ? onTerminalHere(path) : navigate(termHereHref))}>
                 <Icon name="terminal" size={14} />
@@ -527,24 +548,28 @@ export function FilesBrowser({
           </>
         ) : null}
       </div>
-      {canWrite && selectedEntries.length > 0 ? (
+      {(canWrite || canDelete) && selectedEntries.length > 0 ? (
         <div className="btn-row is-flush">
+          {canWrite ? (
           <button className="btn btn-sm btn-secondary" type="button" onClick={() => { setDialogValue(path); setDialog({ kind: "move", entries: selectedEntries }); }}>
             Move selected
           </button>
-          {backend.copy ? (
+          ) : null}
+          {canWrite && backend.copy ? (
             <button className="btn btn-sm btn-secondary" type="button" onClick={() => { setDialogValue(path); setDialog({ kind: "copy", entries: selectedEntries }); }}>
               Copy selected
             </button>
           ) : null}
-          {backend.compress ? (
+          {canWrite && backend.compress ? (
             <button className="btn btn-sm btn-secondary" type="button" onClick={() => { setDialogValue(selectedEntries.length === 1 ? `${selectedEntries[0].name}.zip` : "archive.zip"); setDialog({ kind: "zip", entries: selectedEntries }); }}>
               Zip selected
             </button>
           ) : null}
+          {canDelete ? (
           <button className="btn btn-sm btn-danger" type="button" onClick={() => setDialog({ kind: "delete", entries: selectedEntries })}>
             Delete selected
           </button>
+          ) : null}
         </div>
       ) : null}
       {editor ? (

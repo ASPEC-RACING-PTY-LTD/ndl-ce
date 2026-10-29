@@ -159,11 +159,11 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "username must be 1-64 letters, digits, dot, underscore, or hyphen")
 		return
 	}
-	if !containsString(s.loginRoleNames(r.Context(), p.User.ClusterID), req.Role) {
+	if req.Role != rbac.NoRole && !containsString(s.loginRoleNames(r.Context(), p.User.ClusterID), req.Role) {
 		writeErr(w, http.StatusBadRequest, "unknown sign-in role "+req.Role)
 		return
 	}
-	if !s.mayActOnRole(r.Context(), p, req.Role) {
+	if req.Role != rbac.NoRole && !s.mayActOnRole(r.Context(), p, req.Role) {
 		writeErr(w, http.StatusForbidden, "you cannot assign a role at or above yours")
 		return
 	}
@@ -190,9 +190,11 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, "could not create user")
 		return
 	}
-	if err := s.Store.BindRole(r.Context(), p.User.ClusterID, user.ID, req.Role); err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
-		return
+	if req.Role != rbac.NoRole {
+		if err := s.Store.BindRole(r.Context(), p.User.ClusterID, user.ID, req.Role); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "user.create", "ok", user.ID)
 	item, err := s.userPublicJSON(r.Context(), user)
@@ -542,6 +544,9 @@ func (s *Server) replaceLoginRole(w http.ResponseWriter, r *http.Request, p *pri
 		return errForbidden("forbidden")
 	}
 	loginRoles := s.loginRoleNames(r.Context(), p.User.ClusterID)
+	if role == rbac.NoRole {
+		return s.clearLoginRoles(w, r, p, u, loginRoles)
+	}
 	if !containsString(loginRoles, role) {
 		writeErr(w, http.StatusBadRequest, "unknown sign-in role "+role)
 		return errBadRequest("invalid role")
@@ -578,6 +583,40 @@ func (s *Server) replaceLoginRole(w http.ResponseWriter, r *http.Request, p *pri
 	if u.ID != p.User.ID {
 		s.notifyUser(r.Context(), p.User.ClusterID, u.ID, noteRolesChanged, "Your role changed",
 			p.User.Username+" changed your role to "+s.roleTitle(r.Context(), p.User.ClusterID, role)+".", "/me")
+	}
+	return nil
+}
+
+// clearLoginRoles leaves a user with no sign-in role: they keep only their
+// grants on single items.
+func (s *Server) clearLoginRoles(w http.ResponseWriter, r *http.Request, p *principal, u appdb.User, loginRoles []string) error {
+	cur, err := s.Store.UserRoles(r.Context(), u.ID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return err
+	}
+	for _, role := range cur {
+		if containsString(loginRoles, role) && !s.mayActOnRole(r.Context(), p, role) {
+			writeErr(w, http.StatusForbidden, "you cannot change a user whose role is at or above yours")
+			return errForbidden("forbidden")
+		}
+	}
+	if containsString(cur, rbac.SuperAdmin) {
+		if err := s.guardLastAdmin(r.Context(), p.User.ClusterID, u.ID, "demote"); err != nil {
+			writeErr(w, http.StatusConflict, err.Error())
+			return err
+		}
+	}
+	for _, role := range loginRoles {
+		if err := s.Store.UnbindRole(r.Context(), p.User.ClusterID, u.ID, role); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return err
+		}
+	}
+	s.audit(r, p.User.ClusterID, p.User.ID, "user.role.change", "ok", u.ID+" none")
+	if u.ID != p.User.ID {
+		s.notifyUser(r.Context(), p.User.ClusterID, u.ID, noteRolesChanged, "Your role changed",
+			p.User.Username+" removed your role. You keep access to the items you were given.", "/me")
 	}
 	return nil
 }

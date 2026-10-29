@@ -67,7 +67,8 @@ func (s *Server) createNodeTerminal(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	if !hasRole(p, rbac.SuperAdmin) {
+	// A grant on this node (resource_access.go) also opens its host terminal.
+	if !hasRole(p, rbac.SuperAdmin) && !(p.Scoped && rbac.Authorize(p.Grants, rbac.TerminalOpen)) {
 		s.audit(r, p.User.ClusterID, p.User.ID, "terminal.open", "denied", "host terminal is admin-only")
 		writeErr(w, http.StatusForbidden, "host terminal requires admin")
 		return

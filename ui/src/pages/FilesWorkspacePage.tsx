@@ -9,7 +9,7 @@ import { displayPath } from "../files/paths";
 import { defaultFilesPath } from "../files/workspace";
 import { kindLabel } from "../labels";
 import { navigate } from "../router";
-import { isAdmin } from "../rbac";
+import { canOnItem, grantedItemIds, isAdmin } from "../rbac";
 import { useSession } from "../session";
 import { storageGet, storageSet } from "../storage";
 
@@ -63,7 +63,8 @@ function tabLabel(tab: FilesTab): string {
 
 function TargetPicker({ open, onClose, onPick }: { open: boolean; onClose: () => void; onPick: (t: FilesTarget) => void }) {
   const session = useSession();
-  const roles = session.status === "ready" ? session.user?.roles : undefined;
+  const user = session.status === "ready" ? session.user : null;
+  const roles = user?.roles;
   const [items, setItems] = useState<FilesTarget[]>([]);
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -75,12 +76,14 @@ function TargetPicker({ open, onClose, onPick }: { open: boolean; onClose: () =>
     setQuery("");
     setError(null);
     let cancelled = false;
-    void Promise.all([isAdmin(roles) ? listNodes().catch(() => []) : Promise.resolve([]), listWorkloads()])
+    // Hosts are for SuperAdmins, or the hosts a person holds a files grant on.
+    const nodeGrants = grantedItemIds(user, "node", "files.read");
+    void Promise.all([isAdmin(roles) || nodeGrants.length > 0 ? listNodes().catch(() => []) : Promise.resolve([]), listWorkloads()])
       .then(([nodes, workloads]) => {
         if (cancelled) {
           return;
         }
-        const out: FilesTarget[] = nodes.map((n) => ({
+        const out: FilesTarget[] = nodes.filter((n) => isAdmin(roles) || nodeGrants.includes(n.id)).map((n) => ({
           kind: "node" as const,
           id: n.id,
           name: n.name || n.id,
@@ -88,7 +91,7 @@ function TargetPicker({ open, onClose, onPick }: { open: boolean; onClose: () =>
           status: n.status,
         }));
         for (const w of workloads.items ?? []) {
-          if (w.kind !== "system-container" && w.kind !== "vm") {
+          if ((w.kind !== "system-container" && w.kind !== "vm") || !canOnItem(user, "workload", w.id, "files.read")) {
             continue;
           }
           out.push({ kind: "workload", id: w.id, name: w.name || w.id, typeLabel: kindLabel(w.kind), status: w.status });
@@ -103,7 +106,7 @@ function TargetPicker({ open, onClose, onPick }: { open: boolean; onClose: () =>
     return () => {
       cancelled = true;
     };
-  }, [open, roles]);
+  }, [open, roles, user]);
 
   const shown = useMemo(() => {
     const needle = query.trim().toLowerCase();

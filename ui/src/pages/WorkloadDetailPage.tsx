@@ -45,7 +45,7 @@ import { formatBytes, honestStatus } from "../format";
 import { isOperationsLeaf } from "../nav/workloadNav";
 import { bytesFromGB, gbFromBytes, parseMemoryGB } from "../memory";
 import { kindLabel } from "../labels";
-import { canMutate } from "../rbac";
+import { canMutate, canOnItem, hasRoleAccess } from "../rbac";
 import { currentPath, navigate, usePath } from "../router";
 import { useSession } from "../session";
 import { nodeLabel } from "../nodeNames";
@@ -84,10 +84,15 @@ function MetricArea({
 export function WorkloadDetailPage() {
   const session = useSession();
   const cloudflareOn = useFeatureOn("cloudflare");
-  const roles = session.status === "ready" ? session.user?.roles : undefined;
-  const mutate = canMutate(roles);
+  const user = session.status === "ready" ? session.user : null;
+  const mutate = canMutate(user?.roles);
   const path = usePath();
   const id = workloadIDFromPath();
+  // Power can come from a role or from a grant on this one workload. Edit,
+  // delete, clone and migrate stay with roles: no item grant offers them.
+  const power = mutate || canOnItem(user, "workload", id, "compute.lifecycle");
+  const canStart = power || canOnItem(user, "workload", id, "compute.start");
+  const canStop = power || canOnItem(user, "workload", id, "compute.stop");
   const leaf = leafFromPath(path);
   const view = isOperationsLeaf(leaf) ? "operations" : leaf === "machine" ? "machine" : "overview";
   const [item, setItem] = useState<Workload | null>(null);
@@ -167,7 +172,8 @@ export function WorkloadDetailPage() {
       setGuest(null);
     }
     if (w.kind === "vm" && w.node_id) {
-      const listed = await listNodeUSB(w.node_id);
+      // The node's devices are for roles; a person holding only this VM gets an empty list.
+      const listed = await listNodeUSB(w.node_id).catch(() => ({ items: [] as USBDeviceRow[] }));
       setUsbs(listed.items ?? []);
       if (!usbAddr && listed.items?.[0]?.address) {
         setUsbAddr(listed.items[0].address);
@@ -340,7 +346,7 @@ export function WorkloadDetailPage() {
   const memLimit = lastPoint(memMax);
   const diskGrowing = parseMemoryGB(diskGB, 8) > parseMemoryGB(origDiskGB, 8);
   const diagnosticsLink =
-    item.kind === "system-container" ? (
+    item.kind === "system-container" && hasRoleAccess(user) ? (
       <Link
         className="btn btn-sm btn-ghost btn-icon"
         href={`/workloads/${item.id}/diagnostics`}
@@ -362,29 +368,39 @@ export function WorkloadDetailPage() {
           </>
         }
         actions={
-          mutate ? (
+          mutate || canStart || canStop ? (
             <div className="btn-row is-flush">
               {diagnosticsLink}
-              <button className="btn btn-sm btn-secondary" type="button" disabled={busy} onClick={() => setEditOpen(true)}>
-                <Icon name="edit" size={14} />
-                Edit
-              </button>
-              <button className="btn btn-sm btn-secondary" type="button" disabled={busy} onClick={() => void onAction("start")}>
-                <Icon name="start" size={14} />
-                Start
-              </button>
-              <button className="btn btn-sm btn-secondary" type="button" disabled={busy} onClick={() => void onAction("stop")}>
-                <Icon name="stop" size={14} />
-                Stop
-              </button>
-              <button className="btn btn-sm btn-ghost" type="button" disabled={busy} onClick={() => void onAction("restart")}>
-                <Icon name="restart" size={14} />
-                Restart
-              </button>
-              <button className="btn btn-sm btn-danger" type="button" disabled={busy} onClick={() => setConfirm("delete")}>
-                <Icon name="delete" size={14} />
-                Delete
-              </button>
+              {mutate ? (
+                <button className="btn btn-sm btn-secondary" type="button" disabled={busy} onClick={() => setEditOpen(true)}>
+                  <Icon name="edit" size={14} />
+                  Edit
+                </button>
+              ) : null}
+              {canStart ? (
+                <button className="btn btn-sm btn-secondary" type="button" disabled={busy} onClick={() => void onAction("start")}>
+                  <Icon name="start" size={14} />
+                  Start
+                </button>
+              ) : null}
+              {canStop ? (
+                <button className="btn btn-sm btn-secondary" type="button" disabled={busy} onClick={() => void onAction("stop")}>
+                  <Icon name="stop" size={14} />
+                  Stop
+                </button>
+              ) : null}
+              {power ? (
+                <button className="btn btn-sm btn-ghost" type="button" disabled={busy} onClick={() => void onAction("restart")}>
+                  <Icon name="restart" size={14} />
+                  Restart
+                </button>
+              ) : null}
+              {mutate ? (
+                <button className="btn btn-sm btn-danger" type="button" disabled={busy} onClick={() => setConfirm("delete")}>
+                  <Icon name="delete" size={14} />
+                  Delete
+                </button>
+              ) : null}
             </div>
           ) : diagnosticsLink ? (
             <div className="btn-row is-flush">{diagnosticsLink}</div>

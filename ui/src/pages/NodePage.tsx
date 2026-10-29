@@ -25,6 +25,7 @@ import { GpuPage } from "./GpuPage";
 import { formatBytes, formatWhen, honestStatus } from "../format";
 import { navigate, usePath } from "../router";
 import { useSession } from "../session";
+import { canOnItem, hasRoleAccess } from "../rbac";
 import { SummaryCard } from "../ui/SummaryCard";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { NodeName, NodeNicknameButton } from "../components/NodeNickname";
@@ -45,6 +46,9 @@ type Inventory = {
 
 export function NodePage() {
   const path = usePath();
+  const session = useSession();
+  const user = session.status === "ready" ? session.user : null;
+  const roleAccess = hasRoleAccess(user);
   const [nodes, setNodes] = useState<NodeSummary | "loading" | "missing">("loading");
   const [id, setId] = useState<string | null>(null);
 
@@ -93,6 +97,8 @@ export function NodePage() {
 
   const tab = nodeTab(path);
   const elsewhere = nodeElsewhere(path);
+  // Metrics and logs need a role, or metrics on this node's grant.
+  const showMetrics = roleAccess || canOnItem(user, "node", id, "metrics.read");
   if (elsewhere) {
     return <NodeRedirect to={elsewhere} />;
   }
@@ -103,14 +109,14 @@ export function NodePage() {
         title="Node"
         kicker={`${nodes.host_os || "Host OS not reported"} · ${honestStatus(nodes.status)}${nodes.stale ? " (stale)" : ""}`}
       />
-      <PageNav id="node" label="Node" items={NODE_ITEMS} className="is-sub" />
-      {tab === "summary" ? (
+      <PageNav id="node" label="Node" items={showMetrics ? NODE_ITEMS : NODE_ITEMS.filter((i) => i.id !== "metrics")} className="is-sub" />
+      {tab === "summary" || !showMetrics ? (
         <>
           <NodeSummaryView id={id} fallback={nodes} />
           <NodeHardwareView id={id} />
         </>
       ) : null}
-      {tab === "metrics" ? <NodeMonitorView id={id} /> : null}
+      {tab === "metrics" && showMetrics ? <NodeMonitorView id={id} /> : null}
     </section>
   );
 }
@@ -316,6 +322,10 @@ export function RemoteNodeHelper() {
 
 function NodeHardwareView({ id }: { id: string }) {
   const [hw, setHw] = useState<HardwareResponse | null>(null);
+  const [hwFailed, setHwFailed] = useState(false);
+  const session = useSession();
+  // The GPU tools are for roles; a grant on the node shows its hardware only.
+  const roleAccess = hasRoleAccess(session.status === "ready" ? session.user : null);
   const [rawLayout, setRawLayout] = usePref<unknown>("node.hardware.layout", null);
   const layout = parseLayout(
     rawLayout,
@@ -332,14 +342,19 @@ function NodeHardwareView({ id }: { id: string }) {
           setHw(value);
         }
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (!cancelled) {
+          setHwFailed(true);
+        }
+      });
     return () => {
       cancelled = true;
     };
   }, [id]);
 
   if (!hw) {
-    return <LoadingState label="Collecting" />;
+    // Hardware this person may not read is left out rather than shown as an error.
+    return hwFailed ? null : <LoadingState label="Collecting" />;
   }
   if (!hw.inventory) {
     return <p>{hw.message || honestStatus(hw.status)}</p>;
@@ -353,7 +368,7 @@ function NodeHardwareView({ id }: { id: string }) {
       <article className="panel">
         <h2>GPUs</h2>
         <HardwareTable title="Detected" rows={inv.gpus ?? []} keys={["id", "vendor", "pci", "driver"]} bare />
-        <GpuPage />
+        {roleAccess ? <GpuPage /> : null}
       </article>
     ) : null,
     disks: (

@@ -128,6 +128,10 @@ func (s *Server) canGame(ctx context.Context, p *principal, srv *appdb.GameServe
 		return true
 	}
 	need := gameGrant(action)
+	// A grant on this server (resource_access.go) is enough on its own.
+	if srv != nil && rbac.Authorize(s.itemPerms(ctx, p, accessGameServer, srv.ID), need) {
+		return true
+	}
 	if !rbac.Authorize(p.Grants, need) && !rbac.Authorize(p.Grants, rbac.GameServerRead) && action != "view" {
 		return false
 	}

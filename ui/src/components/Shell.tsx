@@ -3,13 +3,13 @@ import { getHealth } from "../api/client";
 import type { HealthResponse } from "../api/types";
 import { useNavDisclosure, useVisibleNav } from "../nav/NavDisclosure";
 import type { NavModule } from "../nav/modules";
-import { ADMIN_SECTIONS, isAdminPath, isInstancePath, visibleSections } from "../nav/sections";
+import { ADMIN_SECTIONS, INSTANCE_SECTIONS, isAdminPath, isInstancePath, visibleSections } from "../nav/sections";
 import { useNavLayout } from "../appearance/state";
 import { selectedTargetFromPath, viewFromPath } from "../nav/match";
 import { saveLastView } from "../nav/prefs";
 import { navigate, usePath } from "../router";
 import { useSession } from "../session";
-import { hasGrant } from "../rbac";
+import { hasGrant, hasItemAccess, hasRoleAccess, type ItemKind, type ItemUser } from "../rbac";
 import { HostDiskBanner } from "./HostDisk";
 import { storageGet, storageSet } from "../storage";
 import { BrandMark } from "./BrandMark";
@@ -28,22 +28,43 @@ const SIDEBAR_KEY = "ndl-sidebar-collapsed";
 type NavGroup = { label: string; items: NavModule[] };
 
 /**
+ * modernShow says which modern sidebar entries a person may open. People
+ * without a role see only the entries for items shared with them.
+ */
+export function modernShow(user: ItemUser | null, capabilityOn: (id: string) => boolean): ModernNavShow {
+  if (hasRoleAccess(user)) {
+    return {};
+  }
+  const has = (kind: ItemKind, perm?: string) => hasItemAccess(user, kind, perm);
+  return {
+    dashboard: false,
+    instance: visibleSections(INSTANCE_SECTIONS, user, capabilityOn).length > 0,
+    terminal: has("workload", "terminal.open") || has("node", "terminal.open"),
+    files: has("workload", "files.read") || has("node", "files.read"),
+  };
+}
+
+/**
  * modernNav is the short sidebar of the modern layout: Dashboard, the
  * Compute pages and one Administration entry under Management. Everything else is reached
  * from each area's page bar.
  */
-export function modernNav(showAdmin: boolean): NavGroup[] {
-  const groups: NavGroup[] = [
-    { label: "Overview", items: [{ id: "dashboard", href: "/", label: "Dashboard", group: "Overview", match: (p) => p === "/" }] },
-    {
-      label: "Compute",
-      items: [
-        { id: "instance", href: "/instance", label: "Instance", group: "Compute", match: isInstancePath },
-        { id: "terminal", href: "/terminal", label: "Terminal", group: "Compute", match: (p) => p === "/terminal" },
-        { id: "files", href: "/files", label: "Files", group: "Compute", match: (p) => p === "/files" },
-      ],
-    },
-  ];
+export type ModernNavShow = { dashboard?: boolean; instance?: boolean; terminal?: boolean; files?: boolean };
+
+export function modernNav(showAdmin: boolean, show: ModernNavShow = {}): NavGroup[] {
+  const on = (k: keyof ModernNavShow) => show[k] !== false;
+  const compute: NavModule[] = [
+    { id: "instance", href: "/instance", label: "Instance", group: "Compute", match: isInstancePath },
+    { id: "terminal", href: "/terminal", label: "Terminal", group: "Compute", match: (p: string) => p === "/terminal" },
+    { id: "files", href: "/files", label: "Files", group: "Compute", match: (p: string) => p === "/files" },
+  ].filter((item) => on(item.id as keyof ModernNavShow));
+  const groups: NavGroup[] = [];
+  if (on("dashboard")) {
+    groups.push({ label: "Overview", items: [{ id: "dashboard", href: "/", label: "Dashboard", group: "Overview", match: (p) => p === "/" }] });
+  }
+  if (compute.length > 0) {
+    groups.push({ label: "Compute", items: compute });
+  }
   if (showAdmin) {
     groups.push({
       label: "Management",
@@ -110,7 +131,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const { capabilityOn } = useNavDisclosure();
   const classic = useVisibleNav();
   const showAdmin = visibleSections(ADMIN_SECTIONS, user, capabilityOn).length > 0;
-  const groups = applyNavOrder(layout === "classic" ? classic : modernNav(showAdmin), navOrder);
+  const groups = applyNavOrder(layout === "classic" ? classic : modernNav(showAdmin, modernShow(user, capabilityOn)), navOrder);
   const navMenu = useContextMenu();
   const [drag, setDrag] = useState<{ group: string; id: string } | null>(null);
   const [dropAt, setDropAt] = useState<{ id: string; after: boolean } | null>(null);

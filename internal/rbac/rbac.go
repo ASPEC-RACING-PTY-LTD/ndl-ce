@@ -10,6 +10,10 @@ const (
 	User       = "user"
 	// Automation labels the identity flows run as. It is not a login role.
 	Automation = "automation"
+	// NoRole is what the user forms send for a person with no sign-in role:
+	// they hold only grants on single items (workloads, game servers, Docker
+	// containers, nodes) given to them or their groups.
+	NoRole = "none"
 )
 
 // Permissions used in Phase 1. Later phases add more names.

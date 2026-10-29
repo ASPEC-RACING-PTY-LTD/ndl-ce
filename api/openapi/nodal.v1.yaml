@@ -887,6 +887,66 @@ paths:
             text/x-shellscript:
               schema:
                 type: string
+  /iam/resource-access:
+    get:
+      operationId: listResourceAccess
+      summary: Every grant of permissions on a single item, and what each kind of item can grant (users.roles.manage).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceAccess"
+    put:
+      operationId: putResourceAccess
+      summary: Create or replace a grant on one item for a user or group; empty permissions remove it (users.roles.manage).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResourceGrantBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceAccess"
+  /iam/resource-access/{id}:
+    delete:
+      operationId: deleteResourceAccess
+      summary: Remove one item grant (users.roles.manage).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceAccess"
+  /me/resource-access:
+    get:
+      operationId: myResourceAccess
+      summary: The caller's own item grants, directly or through groups.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  grants:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ResourceGrant"
   /node-nicknames:
     get:
       operationId: getNodeNicknames
@@ -15829,6 +15889,128 @@ components:
           type: object
           description: Interface preferences by key (theme, sidebar order, table columns). Presentation only.
           additionalProperties: true
+        item_access:
+          type: object
+          description: Permissions held on single items through resource grants, merged by kind (workload, gameserver, docker, node).
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        item_grants:
+          type: array
+          description: Each item the caller holds a resource grant on, with its permissions.
+          items:
+            $ref: "#/components/schemas/ItemGrant"
+    ItemGrant:
+      type: object
+      required:
+        - kind
+        - id
+        - permissions
+      properties:
+        kind:
+          type: string
+          enum:
+            - workload
+            - gameserver
+            - docker
+            - node
+        id:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+    ResourceGrant:
+      type: object
+      required:
+        - id
+        - subject_kind
+        - subject_id
+        - resource_kind
+        - resource_id
+        - permissions
+      properties:
+        id:
+          type: string
+        subject_kind:
+          type: string
+          enum:
+            - user
+            - group
+        subject_id:
+          type: string
+        subject_name:
+          type: string
+        resource_kind:
+          type: string
+          enum:
+            - workload
+            - gameserver
+            - docker
+            - node
+        resource_id:
+          type: string
+          description: Workload, game server or node ID; for Docker, machine_id/container_name.
+        permissions:
+          type: array
+          items:
+            type: string
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    ResourceAccess:
+      type: object
+      required:
+        - grants
+        - grantable
+      properties:
+        grants:
+          type: array
+          items:
+            $ref: "#/components/schemas/ResourceGrant"
+        grantable:
+          type: object
+          description: The permissions each kind of item can grant.
+          additionalProperties:
+            type: array
+            items:
+              type: string
+    ResourceGrantBody:
+      type: object
+      required:
+        - subject_kind
+        - subject_id
+        - resource_kind
+        - resource_id
+        - permissions
+      properties:
+        id:
+          type: string
+          description: Set to replace that grant; otherwise the grant for the same subject and item is replaced or created.
+        subject_kind:
+          type: string
+          enum:
+            - user
+            - group
+        subject_id:
+          type: string
+        resource_kind:
+          type: string
+          enum:
+            - workload
+            - gameserver
+            - docker
+            - node
+        resource_id:
+          type: string
+        permissions:
+          type: array
+          description: Empty removes the grant. Seeing the item is always included.
+          items:
+            type: string
     MePatchRequest:
       type: object
       additionalProperties: false

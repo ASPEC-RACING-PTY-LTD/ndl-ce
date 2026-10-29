@@ -25,6 +25,7 @@ func (s *Server) listNodes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	redact := redactViewer(p)
+	ids, limited := s.scopedIDs(r.Context(), p, accessNode)
 	items := []map[string]any{}
 	seenNames := map[string]struct{}{}
 	localID := ""
@@ -33,7 +34,7 @@ func (s *Server) listNodes(w http.ResponseWriter, r *http.Request) {
 	}
 	for i := range nodes {
 		n := nodes[i]
-		if n.RevokedAt != nil {
+		if n.RevokedAt != nil || (limited && !ids[strings.ToLower(n.ID)]) {
 			continue
 		}
 		inv, _ := s.Store.GetInventory(r.Context(), n.ID)
@@ -56,7 +57,7 @@ func (s *Server) listNodes(w http.ResponseWriter, r *http.Request) {
 	remotes, _ := s.Store.ListRemoteNodes(r.Context(), p.User.ClusterID)
 	now := s.now()
 	for _, remote := range remotes {
-		if _, ok := seenNames[remote.Name]; ok {
+		if _, ok := seenNames[remote.Name]; ok || limited {
 			continue
 		}
 		items = append(items, remoteNodeJSON(remote, now))
