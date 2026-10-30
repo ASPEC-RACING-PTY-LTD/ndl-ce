@@ -175,9 +175,12 @@ func (r *Runtime) Start(ctx context.Context, spec RunSpec) (string, error) {
 		return "", err
 	}
 	_ = r.Stop(ctx, spec.ID)
-	image := spec.Image
+	image, note := javaImageFor(spec.Image, dir, spec.Env)
+	if note != "" {
+		r.appendLog(spec.ID, note)
+	}
 	if len(spec.Dependencies) > 0 {
-		built, err := r.EnsureRuntimeImage(ctx, spec.Image, spec.Dependencies)
+		built, err := r.EnsureRuntimeImage(ctx, image, spec.Dependencies)
 		if err != nil {
 			return "", fmt.Errorf("runtime dependencies failed: %w", err)
 		}
