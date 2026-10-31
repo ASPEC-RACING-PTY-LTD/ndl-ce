@@ -25,12 +25,12 @@ func TestCTLifecycleForwardsGuestSetupExtras(t *testing.T) {
 	}
 }
 
-// The CodeHold address must survive the trip to the agent: without it every
-// CodeHold CLI install failed with "no CodeHold address is configured".
+// The CodeHold release must survive the trip to the agent: without it every
+// CodeHold CLI install fails.
 func TestCTLifecycleCarriesTheCodeholdSource(t *testing.T) {
 	in := lxc.LifecycleRequest{
 		WorkloadID: "w", Action: lxc.ActionGuestSetup, Extras: []string{"codehold-cli"},
-		Codehold: &lxc.CodeholdSource{URL: "https://codehold.example.com"},
+		Codehold: &lxc.CodeholdSource{Release: "https://codehold.dev/downloads/1.0.0", Sums: map[string]string{"ch-linux-amd64": "ab"}},
 	}
 	msg, err := ctLifecycleMsg(in)
 	if err != nil {
@@ -48,7 +48,7 @@ func TestCTLifecycleCarriesTheCodeholdSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out.Codehold == nil || out.Codehold.URL != "https://codehold.example.com" {
+	if out.Codehold == nil || out.Codehold.Release != "https://codehold.dev/downloads/1.0.0" || out.Codehold.Sums["ch-linux-amd64"] != "ab" {
 		t.Fatalf("the agent got no CodeHold source: %+v", out.Codehold)
 	}
 	if out.WorkloadID != "w" || len(out.Extras) != 1 {

@@ -15,6 +15,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/appdb"
+	"github.com/no-dal/ndl-ce/internal/codeholddl"
 	"github.com/no-dal/ndl-ce/internal/guestextras"
 	"github.com/no-dal/ndl-ce/internal/lxc"
 	"github.com/no-dal/ndl-ce/internal/storage"
@@ -35,6 +36,12 @@ func chcliDo(t *testing.T, ts *httptest.Server, cookie string) func(method, path
 		return res.StatusCode, b
 	}
 }
+
+// testCHRelease stands in for codehold.dev in every API test (testServer).
+var testCHRelease = codeholddl.Release{Dir: "https://codehold.dev/downloads/1.0.0", Sums: map[string]string{
+	"ch-linux-amd64":              strings.Repeat("ab", 32),
+	"codehold-runner-linux-amd64": strings.Repeat("cd", 32),
+}}
 
 func TestWorkloadCreateGetsCodeholdCLIUnlessTurnedOff(t *testing.T) {
 	s, mem, token := testServer(t)
@@ -62,14 +69,13 @@ func TestWorkloadCreateGetsCodeholdCLIUnlessTurnedOff(t *testing.T) {
 		waitExtras(t, s, got["id"].(string))
 	}
 
-	// There is no built-in CodeHold server, so nothing is installed until an
-	// address is set.
+	// ch comes from codehold.dev, so it needs no CodeHold address.
 	// Every new container gets the baseline tools, so setup always runs;
 	// what matters is whether ch is in it.
 	hasCH := func() bool { return slices.Contains(fw.lastLife.Extras, guestextras.CodeholdCLI) }
 	create("unset", "")
-	if hasCH() {
-		t.Fatal("with no CodeHold address a new container must not get ch")
+	if !hasCH() {
+		t.Fatal("with no CodeHold address a new container must still get ch")
 	}
 	if code, b := do("PUT", "/api/v1/codehold-cli/settings", `{"url":"https://codehold.example.com","auto_install":true}`); code != 200 {
 		t.Fatalf("settings %d %s", code, b)
@@ -78,8 +84,8 @@ func TestWorkloadCreateGetsCodeholdCLIUnlessTurnedOff(t *testing.T) {
 	if !hasCH() || !slices.Equal(fw.lastLife.Extras, guestextras.WithBaseline([]string{guestextras.CodeholdCLI})) {
 		t.Fatalf("a new container must get ch and the baseline tools by default: extras=%v", fw.lastLife.Extras)
 	}
-	if fw.lastLife.Codehold == nil || fw.lastLife.Codehold.URL != "https://codehold.example.com" || fw.lastLife.Codehold.AccessClientSecret != "" {
-		t.Fatalf("the configured CodeHold address must be passed, without Access headers: %+v", fw.lastLife.Codehold)
+	if fw.lastLife.Codehold == nil || fw.lastLife.Codehold.Release != testCHRelease.Dir || fw.lastLife.Codehold.AccessClientSecret != "" {
+		t.Fatalf("the codehold.dev release must be passed, without Access headers: %+v", fw.lastLife.Codehold)
 	}
 
 	create("opted-out", `,"codehold_cli":false`)
@@ -95,8 +101,8 @@ func TestWorkloadCreateGetsCodeholdCLIUnlessTurnedOff(t *testing.T) {
 		t.Fatal("with auto install off a new container must not get ch")
 	}
 	create("asked", `,"extras":["codehold-cli"]`)
-	if !hasCH() || fw.lastLife.Codehold == nil || fw.lastLife.Codehold.URL != "https://code.example.com" {
-		t.Fatalf("an explicit request must still install, from the configured address: %+v", fw.lastLife.Codehold)
+	if !hasCH() || fw.lastLife.Codehold == nil || fw.lastLife.Codehold.Release != testCHRelease.Dir {
+		t.Fatalf("an explicit request must still install, from codehold.dev: %+v", fw.lastLife.Codehold)
 	}
 
 	code, b := do("GET", "/api/v1/workload-extras?image_pin=debian/trixie/amd64/default", "")
@@ -160,7 +166,7 @@ func (f *cliWorkloads) LifecycleCT(ctx context.Context, req lxc.LifecycleRequest
 	case lxc.ActionGuestExtrasStatus:
 		return lxc.Result{WorkloadID: req.WorkloadID, Extras: status()}, nil
 	case lxc.ActionGuestSetup, lxc.ActionGuestExtrasUpdate:
-		if req.Codehold == nil || req.Codehold.URL == "" {
+		if req.Codehold == nil || req.Codehold.Release == "" {
 			return lxc.Result{}, errors.New("no source")
 		}
 		if msg := f.fail[req.WorkloadID]; msg != "" {
@@ -220,16 +226,13 @@ func newCLIFixture(t *testing.T) *cliFixture {
 	add("odd", "fedora/41/amd64/default", lxc.StatusRunning, "running")
 	fw := &cliWorkloads{
 		installed: map[string]string{ids["has-ch"]: "ch v1"},
-		fail:      map[string]string{ids["offline"]: "could not download ch from https://codehold.example.com/downloads/ch-linux-amd64: curl: (6) Could not resolve host"},
+		fail:      map[string]string{ids["offline"]: "could not download ch from https://codehold.dev/downloads/1.0.0/ch-linux-amd64: curl: (6) Could not resolve host"},
 		hang:      map[string]bool{},
 	}
 	s.Workloads = fw
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 	do := chcliDo(t, ts, claimAdmin(t, ts, token))
-	if code, _ := do("POST", "/api/v1/codehold-cli/rollout", `{"dry_run":true}`); code != http.StatusBadRequest {
-		t.Fatalf("a rollout with no CodeHold address must be refused: %d", code)
-	}
 	if code, b := do("PUT", "/api/v1/codehold-cli/settings", `{"url":"https://codehold.example.com","auto_install":true}`); code != 200 {
 		t.Fatalf("settings %d %s", code, b)
 	}

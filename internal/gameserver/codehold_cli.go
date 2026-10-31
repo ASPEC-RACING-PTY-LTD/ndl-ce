@@ -3,6 +3,9 @@ package gameserver
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -10,10 +13,11 @@ import (
 
 // The CodeHold CLI ("ch") is mounted read-only at /usr/local/bin/ch in every
 // game server container, so a terminal in the server folder can use it. It
-// is the same static binary system containers get from the CodeHold CLI
-// extra, downloaded from the configured CodeHold server and kept on the host.
-// When no CodeHold address is set, or the download fails with nothing kept,
-// the host's own ch is passed through instead. Each user signs in with
+// is the same static binary, with Git built in, that system containers get
+// from the CodeHold CLI extra: downloaded from the current codehold.dev
+// release, checked against its SHA-256 and kept on the host. When the
+// release cannot be reached and nothing is kept, the host's own ch is passed
+// through instead. Each user signs in with
 // "ch auth login"; HOME is the server folder, so that survives restarts.
 
 const (
@@ -31,12 +35,19 @@ func (r *Runtime) codeholdCLI(ctx context.Context) string {
 	info, err := os.Stat(cached)
 	fresh := err == nil && time.Since(info.ModTime()) < chRefresh
 	if !fresh && r.CodeholdCLIURL != nil {
-		if url := r.CodeholdCLIURL(ctx); url != "" {
-			dctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-			if err := downloadCH(dctx, url, cached); err == nil {
+		if url, sum := r.CodeholdCLIURL(ctx); url != "" && sum != "" {
+			if fileSHA256(cached) == sum {
+				// Already the current release: keep it another day.
+				now := time.Now()
+				_ = os.Chtimes(cached, now, now)
 				fresh = true
+			} else {
+				dctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+				if err := downloadCH(dctx, url, sum, cached); err == nil {
+					fresh = true
+				}
+				cancel()
 			}
-			cancel()
 		}
 	}
 	if fresh || isELF(cached) {
@@ -49,13 +60,13 @@ func (r *Runtime) codeholdCLI(ctx context.Context) string {
 	return ""
 }
 
-// downloadCH replaces dest only with a complete Linux executable.
-func downloadCH(ctx context.Context, url, dest string) error {
+// downloadCH replaces dest only with a Linux executable matching sum.
+func downloadCH(ctx context.Context, url, sum, dest string) error {
 	tmp := dest + ".new"
 	if err := fetchFile(ctx, url, tmp, chMaxBytes); err != nil {
 		return err
 	}
-	if !isELF(tmp) {
+	if !isELF(tmp) || fileSHA256(tmp) != sum {
 		_ = os.Remove(tmp)
 		return os.ErrInvalid
 	}
@@ -64,6 +75,19 @@ func downloadCH(ctx context.Context, url, dest string) error {
 		return err
 	}
 	return os.Rename(tmp, dest)
+}
+
+func fileSHA256(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return ""
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 func isELF(path string) bool {

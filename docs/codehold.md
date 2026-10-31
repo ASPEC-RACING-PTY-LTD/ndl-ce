@@ -73,12 +73,14 @@ credential outright the page says so and asks for a new enrollment token.
 
 ## The runner program
 
-By default the `codehold-runner` binary is copied from the CodeHold container
-on this node (`/app/downloads/codehold-runner-linux-amd64`) through the Docker
-API, without starting anything in it and without any network download. When
-CodeHold is not on this node, set an HTTPS address under Runner settings. A
-SHA-256 checksum can be required; it is off by default, in which case the
-program is trusted because it comes from that HTTPS address.
+By default the `codehold-runner` binary is downloaded from the current release
+on [codehold.dev](https://codehold.dev/downloads) and checked against that
+release's `SHA256SUMS`. Under Runner settings it can instead be copied from a
+CodeHold container on this node (`/app/downloads/codehold-runner-linux-amd64`)
+through the Docker API, without starting anything in it; when no such
+container serves the runner, codehold.dev is used. A third choice is your own
+HTTPS address, where a SHA-256 checksum can be required (off by default, in
+which case the program is trusted because it comes from that HTTPS address).
 
 ## Turning it off
 

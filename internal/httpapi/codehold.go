@@ -20,6 +20,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	cf "github.com/no-dal/ndl-ce/internal/cloudflare"
 	"github.com/no-dal/ndl-ce/internal/codehold"
+	"github.com/no-dal/ndl-ce/internal/codeholddl"
 	"github.com/no-dal/ndl-ce/internal/docker"
 	"github.com/no-dal/ndl-ce/internal/features"
 	"github.com/no-dal/ndl-ce/internal/lxc"
@@ -81,7 +82,8 @@ type chSettings struct {
 	// this node; zero uses what the runner containers could use.
 	CapacityCPUs     float64 `json:"capacity_cpus,omitempty"`
 	CapacityMemoryMB int     `json:"capacity_memory_mb,omitempty"`
-	// Source is "local" (a CodeHold container on this node) or "url".
+	// Source is "public" (the current codehold.dev release, checked against
+	// its SHA256SUMS), "local" (a CodeHold container on this node) or "url".
 	Source string `json:"source"`
 	// LocalMachineID and LocalContainer find the local CodeHold container.
 	LocalMachineID   string `json:"local_machine_id,omitempty"`
@@ -105,7 +107,7 @@ func (st *chSettings) defaults() {
 		st.ImagePin = chDefaultImage
 	}
 	if st.Source == "" {
-		st.Source = "local"
+		st.Source = "public"
 	}
 }
 
@@ -128,7 +130,7 @@ func (st chSettings) validate() error {
 		return errors.New("capacity cannot be negative")
 	}
 	switch st.Source {
-	case "local":
+	case "public", "local":
 	case "url":
 		u := strings.TrimSpace(st.DownloadURL)
 		if !strings.HasPrefix(u, "https://") || strings.ContainsAny(u, " \n\r") {
@@ -138,7 +140,7 @@ func (st chSettings) validate() error {
 			return errors.New("enter the runner's SHA-256 checksum (64 hexadecimal characters) or turn the checksum off")
 		}
 	default:
-		return errors.New("the runner source must be local or url")
+		return errors.New("the runner source must be public, local or url")
 	}
 	return nil
 }
@@ -1005,9 +1007,24 @@ func (s *Server) chPlacement(ctx context.Context, clusterID string, st chSetting
 	return poolID, netID
 }
 
-// chSource finds where the runner binary comes from: the local CodeHold
-// container when it is there, else the configured HTTPS address.
+// chSource finds where the runner binary comes from: codehold.dev, the local
+// CodeHold container, or the configured HTTPS address. A local source with
+// no CodeHold container serving the runner falls back to codehold.dev.
 func (s *Server) chSource(ctx context.Context, clusterID string, st chSettings) (docker.CodeholdSource, error) {
+	public := func() (docker.CodeholdSource, error) {
+		rel, err := codeholddl.Latest(ctx)
+		if err != nil {
+			return docker.CodeholdSource{}, fmt.Errorf("the runner could not be found on codehold.dev: %w", err)
+		}
+		u, sum, err := rel.File(codeholddl.RunnerName("amd64"))
+		if err != nil {
+			return docker.CodeholdSource{}, err
+		}
+		return docker.CodeholdSource{URL: u, SHA256: sum}, nil
+	}
+	if st.Source == "public" || st.Source == "" {
+		return public()
+	}
 	if st.Source == "url" {
 		src := docker.CodeholdSource{URL: st.DownloadURL}
 		if st.ChecksumRequired {
@@ -1027,7 +1044,7 @@ func (s *Server) chSource(ctx context.Context, clusterID string, st chSettings) 
 		}
 		return docker.CodeholdSource{MachineID: in.MachineID, ContainerID: in.ContainerID}, nil
 	}
-	return docker.CodeholdSource{}, errors.New("no CodeHold instance with runner downloads was found on this node; start it, or set an HTTPS download address in the runner settings")
+	return public()
 }
 
 // chDetect looks for CodeHold server containers on this node and in system

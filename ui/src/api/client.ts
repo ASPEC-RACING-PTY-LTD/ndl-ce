@@ -3545,7 +3545,7 @@ export type CodeholdSettings = {
   image_pin: string;
   capacity_cpus?: number;
   capacity_memory_mb?: number;
-  source: "local" | "url";
+  source: "public" | "local" | "url";
   local_machine_id?: string;
   local_container?: string;
   download_url?: string;

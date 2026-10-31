@@ -692,6 +692,10 @@ function SettingsDialog({
       <p className="field-hint">CodeHold reserves each runner's per-job limits times its jobs at a time from this, and refuses runners that do not fit.</p>
       <h3>Where the runner program comes from</h3>
       <label className="check-row">
+        <input type="radio" name="chs-source" checked={s.source === "public"} onChange={() => setS({ ...s, source: "public" })} />
+        <span>From codehold.dev, the latest release checked against its SHA-256 (recommended)</span>
+      </label>
+      <label className="check-row">
         <input type="radio" name="chs-source" checked={s.source === "local"} onChange={() => setS({ ...s, source: "local" })} />
         <span>From CodeHold on this node (copied directly, no network download)</span>
       </label>
@@ -716,7 +720,7 @@ function SettingsDialog({
             </select>
           </div>
         ) : (
-          <p className="banner banner-warn">No CodeHold with runner downloads was found on this node. Start it, or use an HTTPS address below.</p>
+          <p className="banner banner-warn">No CodeHold with runner downloads was found on this node, so the runner comes from codehold.dev.</p>
         )
       ) : null}
       <label className="check-row">

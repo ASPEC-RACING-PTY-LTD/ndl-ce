@@ -12,14 +12,16 @@ import (
 	"github.com/no-dal/ndl-ce/internal/guestextras"
 )
 
-// The CodeHold CLI ("ch") is a single static binary served by the CodeHold
-// server at /downloads/ch-linux-<arch>. It is downloaded inside the guest
-// with curl straight to a temporary file next to its final place, checked
-// with "ch --version" and only then renamed over /usr/local/bin/ch, so a
-// failed or partial download never replaces a working ch. The server's
-// install script (/install/ch.sh) is not used: No-dal runs fixed argv lists
-// in guests and never a downloaded script as root, and the CPU type is
-// already known from the image pin.
+// The CodeHold CLI ("ch") is a single static binary, with Git built in,
+// published on codehold.dev as ch-linux-<arch>. The control plane resolves
+// the current release folder and its SHA256SUMS (internal/codeholddl). The
+// binary is downloaded inside the guest with curl straight to a temporary
+// file next to its final place, checked against that SHA-256 and with
+// "ch --version", and only then renamed over /usr/local/bin/ch, so a failed,
+// partial or altered download never replaces a working ch. The install
+// script (/install/ch.sh) is not used: No-dal runs fixed argv lists in
+// guests and never a downloaded script as root, and the CPU type is already
+// known from the image pin.
 //
 // This step only installs the binary. Signing in ("ch auth login") is done by
 // each user, and CodeHold Actions runners are a separate integration.
@@ -40,10 +42,13 @@ const (
 
 // CodeholdSource says where the CodeHold CLI is downloaded from.
 type CodeholdSource struct {
-	// URL is the CodeHold server, for example https://git.example.com.
-	URL string `json:"url"`
+	// Release is a codehold.dev release folder, for example
+	// https://codehold.dev/downloads/1.0.0.
+	Release string `json:"release"`
+	// Sums are the release's SHA-256 checksums by file name.
+	Sums map[string]string `json:"sums,omitempty"`
 	// AccessClientID and AccessClientSecret are an optional Cloudflare Access
-	// service token for a CodeHold behind Access. They are written to a 0600
+	// service token for a download behind Access. They are written to a 0600
 	// header file in the guest for the one curl call and removed after it;
 	// they never appear on a command line or in a log. The control plane
 	// leaves them empty today (see codeholdCLIAccess in httpapi).
@@ -51,19 +56,24 @@ type CodeholdSource struct {
 	AccessClientSecret string `json:"access_client_secret,omitempty"`
 }
 
-// CHDownloadURL is the "ch" binary for one CPU type on a CodeHold server. It
-// refuses anything but an https URL with a host.
-func CHDownloadURL(server, arch string) (string, error) {
-	u, err := url.Parse(strings.TrimSpace(server))
+// CHDownload is the "ch" binary for one CPU type in the release and its
+// SHA-256. It refuses anything but an https release folder.
+func (src CodeholdSource) CHDownload(arch string) (string, string, error) {
+	u, err := url.Parse(strings.TrimSpace(src.Release))
 	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-		return "", fmt.Errorf("the CodeHold address must be an https URL")
+		return "", "", fmt.Errorf("the CodeHold download must be an https URL")
 	}
 	switch arch {
 	case "amd64", "arm64":
 	default:
-		return "", fmt.Errorf("ch is not built for %q", arch)
+		return "", "", fmt.Errorf("ch is not built for %q", arch)
 	}
-	return strings.TrimRight(u.String(), "/") + "/downloads/ch-linux-" + arch, nil
+	name := "ch-linux-" + arch
+	sum := strings.ToLower(src.Sums[name])
+	if len(sum) != 64 || strings.Trim(sum, "0123456789abcdef") != "" {
+		return "", "", fmt.Errorf("the CodeHold release has no checksum for %s", name)
+	}
+	return strings.TrimRight(u.String(), "/") + "/" + name, sum, nil
 }
 
 // guestCHVersion is the output of "ch --version", or false when ch is
@@ -140,11 +150,11 @@ func (e *Engine) installGuestCodeholdCLI(ctx context.Context, id, pin, family st
 		change.Outcome, change.Version = ChangeCurrent, before
 		return change, nil
 	}
-	if src == nil || strings.TrimSpace(src.URL) == "" {
-		return change, fmt.Errorf("no CodeHold address is configured")
+	if src == nil || strings.TrimSpace(src.Release) == "" {
+		return change, fmt.Errorf("the CodeHold release on codehold.dev could not be looked up")
 	}
 	arch := e.guestArch(ctx, id, pin)
-	from, err := CHDownloadURL(src.URL, arch)
+	from, wantSum, err := src.CHDownload(arch)
 	if err != nil {
 		return change, err
 	}
@@ -176,6 +186,14 @@ func (e *Engine) installGuestCodeholdCLI(ctx context.Context, id, pin, family st
 		msg := sanitizeGuestSetupErr(aptError(out, err))
 		log.Printf("container %s: codehold-cli: download from %s failed: %s", id, from, msg)
 		return change, fmt.Errorf("could not download ch from %s: %s", from, msg)
+	}
+	sumOut, err := e.attach(ctx, id, "/usr/bin/env", "sha256sum", guestCHTemp)
+	if fields := strings.Fields(string(sumOut)); err != nil || len(fields) == 0 || !strings.EqualFold(fields[0], wantSum) {
+		removeTemp()
+		if err != nil {
+			return change, fmt.Errorf("could not check the downloaded ch (sha256sum failed): %s", sanitizeGuestSetupErr(err))
+		}
+		return change, fmt.Errorf("the downloaded ch does not match the release checksum; the installed one is unchanged")
 	}
 	if _, err := e.attach(ctx, id, "/bin/chmod", "0755", guestCHTemp); err != nil {
 		removeTemp()

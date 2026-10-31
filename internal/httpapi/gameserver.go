@@ -12,9 +12,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/appdb"
+	"github.com/no-dal/ndl-ce/internal/codeholddl"
 	"github.com/no-dal/ndl-ce/internal/features"
 	"github.com/no-dal/ndl-ce/internal/gameserver"
-	"github.com/no-dal/ndl-ce/internal/lxc"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 )
 
@@ -27,13 +27,17 @@ func (s *Server) gameRuntime() *gameserver.Runtime {
 		root = dir
 	}
 	s.Game = gameserver.NewRuntime(root)
-	s.Game.CodeholdCLIURL = func(ctx context.Context) string {
-		// The same CodeHold server the CodeHold CLI workload extra uses.
-		u, err := lxc.CHDownloadURL(s.codeholdCLIConfig(ctx, s.clusterIDCached(ctx)).URL, goruntime.GOARCH)
+	s.Game.CodeholdCLIURL = func(ctx context.Context) (string, string) {
+		// The same codehold.dev release the CodeHold CLI workload extra uses.
+		rel, err := codeholddl.Latest(ctx)
 		if err != nil {
-			return ""
+			return "", ""
 		}
-		return u
+		u, sum, err := rel.File(codeholddl.CLIName(goruntime.GOARCH))
+		if err != nil {
+			return "", ""
+		}
+		return u, sum
 	}
 	return s.Game
 }

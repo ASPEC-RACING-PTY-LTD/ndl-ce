@@ -252,7 +252,8 @@ func TestCodeholdRunnerLifecycle(t *testing.T) {
 		t.Fatal("runner containers need nesting for Docker")
 	}
 	inst := e.dock.actions(docker.CodeholdInstall)
-	if len(inst) != 1 || inst[0].Source.ContainerID != "srv" || inst[0].RunnerURL != "http://192.168.2.196:8085" {
+	// By default the runner comes from codehold.dev, checked against its SHA-256.
+	if len(inst) != 1 || inst[0].Source.URL != testCHRelease.Dir+"/codehold-runner-linux-amd64" || inst[0].Source.SHA256 != testCHRelease.Sums["codehold-runner-linux-amd64"] || inst[0].RunnerURL != "http://192.168.2.196:8085" {
 		t.Fatalf("install %+v", inst)
 	}
 
@@ -463,6 +464,26 @@ func TestCodeholdSettingsValidate(t *testing.T) {
 	}())
 	src, err := e.s.chSource(context.Background(), e.cluster, st)
 	if err != nil || src.URL != "https://git.example.com/" || src.SHA256 != "" {
+		t.Fatalf("%+v %v", src, err)
+	}
+}
+
+func TestCodeholdRunnerDefaultsToCodeholdDev(t *testing.T) {
+	s, _, _ := testServer(t)
+	sum := testCHRelease.Sums["codehold-runner-linux-amd64"]
+	var st chSettings
+	st.defaults()
+	if st.Source != "public" {
+		t.Fatalf("the default runner source is %q", st.Source)
+	}
+	src, err := s.chSource(context.Background(), "c", st)
+	if err != nil || src.URL != "https://codehold.dev/downloads/1.0.0/codehold-runner-linux-amd64" || src.SHA256 != sum {
+		t.Fatalf("%+v %v", src, err)
+	}
+	// A local source with no CodeHold container serving the runner falls
+	// back to codehold.dev.
+	st.Source = "local"
+	if src, err := s.chSource(context.Background(), "c", st); err != nil || src.SHA256 != sum {
 		t.Fatalf("%+v %v", src, err)
 	}
 }

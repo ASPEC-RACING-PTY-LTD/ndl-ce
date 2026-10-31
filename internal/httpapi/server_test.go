@@ -16,12 +16,14 @@ import (
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/auth"
 	"github.com/no-dal/ndl-ce/internal/cluster"
+	"github.com/no-dal/ndl-ce/internal/codeholddl"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 	"github.com/no-dal/ndl-ce/internal/secutil"
 )
 
 func testServer(t *testing.T) (*Server, *appdb.Memory, string) {
 	t.Helper()
+	codeholddl.Set(testCHRelease)
 	mem := appdb.NewMemory()
 	clusterID := uuid.NewString()
 	token := "setup-token-value-32bytes-minimum"

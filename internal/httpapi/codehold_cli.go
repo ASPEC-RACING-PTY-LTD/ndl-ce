@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"slices"
 	"sort"
 	"strings"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/appdb"
+	"github.com/no-dal/ndl-ce/internal/codeholddl"
 	"github.com/no-dal/ndl-ce/internal/guestextras"
 	"github.com/no-dal/ndl-ce/internal/lxc"
 	"github.com/no-dal/ndl-ce/internal/rbac"
@@ -20,9 +22,11 @@ import (
 
 // The CodeHold CLI ("ch") is the guestextras.CodeholdCLI extra: new system
 // containers get it unless turned off (globally here, or per container at
-// create), and a bulk rollout installs or updates it in existing ones. The
-// install itself is the extras path (lxc/guest_codehold.go). Nothing here
-// signs anyone in; each user runs "ch auth login" themselves.
+// create), and a bulk rollout installs or updates it in existing ones. It is
+// downloaded from the current codehold.dev release; the URL setting is only
+// the CodeHold address users sign in to. The install itself is the extras
+// path (lxc/guest_codehold.go). Nothing here signs anyone in; each user runs
+// "ch auth login --server <address>" themselves.
 
 const (
 	chCLIDefaultConcurrency = 5
@@ -68,9 +72,12 @@ func (s *Server) codeholdCLISource(ctx context.Context, clusterID string, extras
 	if !slices.Contains(extras, guestextras.CodeholdCLI) {
 		return nil
 	}
-	// With no CodeHold address set the install reports "no CodeHold address
-	// is configured" for that container.
-	src := &lxc.CodeholdSource{URL: s.codeholdCLIConfig(ctx, clusterID).URL}
+	// ch is downloaded from the current codehold.dev release. When it cannot
+	// be looked up, the install reports that for each container.
+	src := &lxc.CodeholdSource{}
+	if rel, err := codeholddl.Latest(ctx); err == nil {
+		src.Release, src.Sums = rel.Dir, rel.Sums
+	}
 	src.AccessClientID, src.AccessClientSecret = s.codeholdCLIAccess(ctx, clusterID)
 	return src
 }
@@ -82,9 +89,8 @@ func (s *Server) withDefaultExtras(ctx context.Context, clusterID, pin string, e
 		return id == guestextras.CodeholdCLI && optIn != nil && !*optIn
 	})
 	cfg := s.codeholdCLIConfig(ctx, clusterID)
-	// There is no built-in CodeHold server: until an address is set, new
-	// containers do not get the CLI by default.
-	want := optIn != nil && *optIn || optIn == nil && cfg.AutoInstall && cfg.URL != ""
+	// ch comes from codehold.dev, so it needs no CodeHold address.
+	want := optIn != nil && *optIn || optIn == nil && cfg.AutoInstall
 	if want && !slices.Contains(out, guestextras.CodeholdCLI) && guestextras.AvailabilityFor(pin, guestextras.CodeholdCLI).Available {
 		out = append(out, guestextras.CodeholdCLI)
 	}
@@ -117,8 +123,10 @@ func (s *Server) putCodeholdCLISettings(w http.ResponseWriter, r *http.Request) 
 	}
 	req.URL = strings.TrimRight(strings.TrimSpace(req.URL), "/")
 	if req.URL != "" {
-		if _, err := lxc.CHDownloadURL(req.URL, "amd64"); err != nil {
-			writeErr(w, http.StatusBadRequest, err.Error())
+		// The address users sign in to (ch auth login --server); ch itself
+		// comes from codehold.dev.
+		if u, err := url.Parse(req.URL); err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+			writeErr(w, http.StatusBadRequest, "the CodeHold address must be an https URL")
 			return
 		}
 	}
@@ -242,10 +250,6 @@ func (s *Server) startCodeholdCLIRollout(w http.ResponseWriter, r *http.Request)
 	}
 	clusterID := p.User.ClusterID
 	cfg := s.codeholdCLIConfig(r.Context(), clusterID)
-	if cfg.URL == "" {
-		writeErr(w, http.StatusBadRequest, "set the CodeHold address first")
-		return
-	}
 	if req.Concurrency <= 0 {
 		req.Concurrency = cfg.Concurrency
 	}

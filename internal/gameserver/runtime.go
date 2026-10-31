@@ -29,9 +29,9 @@ type Runtime struct {
 	// OnProgress, when set, receives install phase changes so the API can
 	// persist them for the UI.
 	OnProgress func(id, phase, message string)
-	// CodeholdCLIURL is where the ch binary is downloaded from, or "" when
-	// no CodeHold address is set (see codehold_cli.go).
-	CodeholdCLIURL func(ctx context.Context) string
+	// CodeholdCLIURL is where the ch binary is downloaded from and its
+	// SHA-256, or "" when the release cannot be looked up (codehold_cli.go).
+	CodeholdCLIURL func(ctx context.Context) (url, sha256 string)
 	// HostCH is the host's own ch, passed through when nothing is downloaded.
 	HostCH  string
 	chMu    sync.Mutex

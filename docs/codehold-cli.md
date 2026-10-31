@@ -1,7 +1,7 @@
 # CodeHold CLI in containers
 
-Every system container can have `ch`, CodeHold's command line client (a git
-wrapper with its own credential store: `ch clone`, `ch pull`, `ch push`,
+Every system container can have `ch`, CodeHold's command line client (Git
+built in, with its own credential store: `ch clone`, `ch pull`, `ch push`,
 `ch auth login`, issues, pull requests). No-dal installs it as the
 **CodeHold CLI (ch)** extra, the same way as Git or Docker, so it shows up
 under each container's Extensions and in the create form's Extras step.
@@ -18,20 +18,25 @@ In the container, through the same `lxc-attach` path as every other extra:
 2. If `curl` or the CA bundle is missing, it installs `curl` and
    `ca-certificates` with apt-get (apk on Alpine). Otherwise the package
    manager is not touched.
-3. It downloads `<CodeHold address>/downloads/ch-linux-<amd64|arm64>` over
-   HTTPS only (`curl --proto =https`, redirects to HTTPS only, three retries)
-   to a temporary file next to `/usr/local/bin/ch`.
-4. It sets the file to mode 0755 and runs `--version` on it. Only a binary
-   that runs is renamed over `/usr/local/bin/ch`, in one step, so a failed or
-   broken download never replaces a working `ch`. An update that downloads
-   the same binary leaves the installed one alone and reports it as current.
+3. It downloads `ch-linux-<amd64|arm64>` from the current release on
+   [codehold.dev](https://codehold.dev/downloads) over HTTPS only
+   (`curl --proto =https`, redirects to HTTPS only, three retries) to a
+   temporary file next to `/usr/local/bin/ch`. The control plane resolves
+   `https://codehold.dev/downloads/latest/SHA256SUMS` to one release folder
+   (for example `/downloads/1.0.0`) first, so the file and its checksum come
+   from the same release.
+4. It checks the file's SHA-256 against that release's `SHA256SUMS`, sets it
+   to mode 0755 and runs `--version` on it. Only a binary that matches and
+   runs is renamed over `/usr/local/bin/ch`, in one step, so a failed,
+   altered or broken download never replaces a working `ch`. An update that
+   downloads the same binary leaves the installed one alone and reports it as
+   current.
 
 The CPU type comes from the container's image. CodeHold's `install/ch.sh`
 script is not used: No-dal runs fixed commands in containers, never a
 downloaded script as root.
 
-If the server can't be reached, the extra is marked failed with curl's
-reason. The container is still created and everything else is still
+If codehold.dev can't be reached, the extra is marked failed with the reason. The container is still created and everything else is still
 installed. Retry it from the container's Extensions page.
 
 `/usr/local/bin` is on the default `PATH` for root and normal users on
@@ -52,11 +57,11 @@ No tokens or passwords are used, stored or logged by this step.
 
 On Workloads, choose **CodeHold CLI**. From there you can change:
 
-- **CodeHold address.** There is no default: set your CodeHold server's
-  address first. Only `https://` addresses are accepted. Until it is set,
-  nothing is installed.
-- **Install on new containers.** This is on by default once an address is
-  set. Turn it off to stop new containers getting `ch`.
+- **CodeHold address.** Your CodeHold server, which users sign in to with
+  `ch auth login --server`. Only `https://` addresses are accepted. It is
+  optional: `ch` itself always comes from codehold.dev.
+- **Install on new containers.** This is on by default. Turn it off to stop
+  new containers getting `ch`.
 - **Containers at a time** (default 5) and **time limit per container**
   (default 600 seconds) for bulk installs.
 
@@ -73,7 +78,7 @@ In the same dialog:
    changes.
 2. Choose **Install now**. With **Update containers that already have ch**
    ticked, the button reads **Install or update now**, and containers that
-   already have `ch` get the server's current binary.
+   already have `ch` get the current codehold.dev release.
 
 Containers that are not running are listed and skipped. Tick **Include
 containers that are not running** to start each one for the install and stop

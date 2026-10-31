@@ -175,11 +175,10 @@ export function CodeholdCLIDialog({
       {settings ? (
         <>
           <p>
-            <code>ch</code> is CodeHold's command line client. It is downloaded from{" "}
-            <code>{url ? `${url}/downloads` : "your CodeHold server's /downloads"}</code> into <code>/usr/local/bin/ch</code>. Nobody is signed in: each
-            user runs <code>ch auth login --server {url || "<your CodeHold address>"}</code> themselves.
+            <code>ch</code> is CodeHold's command line client, with Git built in. The latest release is downloaded from{" "}
+            <code>codehold.dev</code>, checked against its SHA-256, into <code>/usr/local/bin/ch</code>. Nobody is signed in: each user runs{" "}
+            <code>ch auth login --server {url || "<your CodeHold address>"}</code> themselves.
           </p>
-          {!url ? <p className="banner banner-warn">Set your CodeHold address and save before installing.</p> : null}
           <div className="form-grid">
             <label className="field">
               <span className="field-label">CodeHold address</span>

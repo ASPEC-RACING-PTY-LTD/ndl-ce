@@ -58,9 +58,10 @@ codehold-runner run --config /etc/codehold-runner/config.json
   credentials (revoked, expired or removed), so a supervisor can tell and
   register it again; other failures exit with status 1.
 
-The binary is served by CodeHold at
-`/downloads/codehold-runner-linux-{amd64,arm64}`; `/install/runner.sh`
-installs it as a systemd service.
+The binary is published on codehold.dev at
+`/downloads/<version>/codehold-runner-linux-{amd64,arm64}` (`/downloads/latest/`
+redirects to the current release), with checksums in that release's
+`SHA256SUMS`.
 
 ## 2. The administration API
 
