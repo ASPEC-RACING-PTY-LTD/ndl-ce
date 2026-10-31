@@ -123,3 +123,30 @@ func TestMinecraftModsOfferBothCatalogues(t *testing.T) {
 		t.Fatal("source must not switch a non-Minecraft catalogue")
 	}
 }
+
+func TestGameServerTerminalSessionOpensShell(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Game = fakeGameRuntime(t)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	cluster, _ := mem.GetCluster(context.Background())
+	enableGameServers(t, mem, cluster.ID)
+	id := createPaperServer(t, ts, mem, cookie, cluster.ID)
+
+	code, got := apiJSON(t, ts, cookie, "POST", "/api/v1/game-servers/"+id+"/terminal/sessions", `{}`)
+	if code != http.StatusCreated || got["target_kind"] != ioTargetGameServerShell || got["target_id"] != id || got["ticket"] == "" {
+		t.Fatalf("terminal session %d %v", code, got)
+	}
+	// Unlike the console, the shell is a terminal tab, so it is listed.
+	_, list := apiJSON(t, ts, cookie, "GET", "/api/v1/io/sessions", "")
+	if items, _ := list["items"].([]any); len(items) != 1 {
+		t.Fatalf("the game server shell must show as a terminal: %v", items)
+	}
+	if g := ioSessionGrant(appdb.IOSession{TargetKind: ioTargetGameServerShell, Kind: appdb.IOKindTerminal}); g != rbac.TerminalOpen {
+		t.Fatalf("a game server shell needs terminal access, got %s", g)
+	}
+	if code, _ := apiJSON(t, ts, cookie, "POST", "/api/v1/game-servers/"+uuidLike()+"/terminal/sessions", `{}`); code != http.StatusNotFound {
+		t.Fatalf("an unknown server must be refused: %d", code)
+	}
+}

@@ -35,3 +35,26 @@ func (s *Server) gameServerConsoleSession(w http.ResponseWriter, r *http.Request
 	}
 	s.createTerminal(w, r, p, ioTargetGameServer, row.ID, "", "")
 }
+
+// ioTargetGameServerShell is a shell inside a running game server's
+// container, starting in the server folder.
+const ioTargetGameServerShell = "gameserver-shell"
+
+// gameServerTerminalSession is POST /game-servers/{id}/terminal/sessions: a
+// shell in the server's container, for work such as git in the server
+// folder. It needs terminal access and file access to this server.
+func (s *Server) gameServerTerminalSession(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.requireGameFeature(w, r, rbac.GameServerFiles)
+	if !ok {
+		return
+	}
+	row, ok := s.loadGame(w, r, p, "files")
+	if !ok {
+		return
+	}
+	if !rbac.Authorize(p.Grants, rbac.TerminalOpen) {
+		writeErr(w, http.StatusForbidden, "a game server terminal needs terminal access")
+		return
+	}
+	s.createTerminal(w, r, p, ioTargetGameServerShell, row.ID, "/", "")
+}

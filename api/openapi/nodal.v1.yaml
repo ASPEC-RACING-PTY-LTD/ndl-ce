@@ -3514,6 +3514,26 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
+  /game-servers/{id}/terminal/sessions:
+    post:
+      operationId: gameServerTerminalSession
+      summary: Open a shell in a running game server's container, in the server folder
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: Session with a one-time ticket
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "403":
+          description: Needs terminal access and file access to this server
   /game-servers/{id}/console/history:
     get:
       operationId: gameServerConsoleHistory

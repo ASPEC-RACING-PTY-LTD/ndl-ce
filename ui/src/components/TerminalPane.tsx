@@ -214,7 +214,7 @@ export function TerminalPane({
       setTabError(tab.tabId, "Connect the terminal before dropping files.");
       return;
     }
-    if (tab.target.kind === "docker") {
+    if (tab.target.kind === "docker" || tab.target.kind === "gameserver") {
       setTabError(tab.tabId, "File drop is not available for Docker exec sessions.");
       return;
     }

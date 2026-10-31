@@ -719,7 +719,7 @@ func (s *Server) sessionJail(ctx context.Context, clusterID string, row appdb.IO
 	if row.TargetKind == appdb.IOTargetHost {
 		return "/", nil
 	}
-	if row.TargetKind == appdb.IOTargetDocker {
+	if row.TargetKind == appdb.IOTargetDocker || row.TargetKind == ioTargetGameServerShell {
 		return "/", nil
 	}
 	if row.TargetKind == appdb.IOTargetVM {

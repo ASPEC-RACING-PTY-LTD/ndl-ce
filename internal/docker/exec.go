@@ -49,13 +49,20 @@ func (e *Engine) Exec(ctx context.Context, req ExecRequest) (ExecSession, error)
 	if cli == nil {
 		cli = sharedUnixClient(sock)
 	}
-	body, _ := json.Marshal(map[string]any{
+	spec := map[string]any{
 		"AttachStdin":  true,
 		"AttachStdout": true,
 		"AttachStderr": true,
 		"Tty":          true,
 		"Cmd":          []string{"/bin/sh", "-c", "cd / 2>/dev/null; if [ -x /bin/bash ]; then exec /bin/bash --login; fi; exec /bin/sh -l"},
-	})
+	}
+	if req.WorkDir != "" {
+		// A login shell may cd to $HOME, so start a plain one in WorkDir.
+		spec["WorkingDir"] = req.WorkDir
+		spec["Env"] = []string{"TERM=xterm-256color"}
+		spec["Cmd"] = []string{"/bin/sh", "-c", "if [ -x /bin/bash ]; then exec /bin/bash; fi; exec /bin/sh"}
+	}
+	body, _ := json.Marshal(spec)
 	var created struct {
 		ID string `json:"Id"`
 	}

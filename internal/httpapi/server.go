@@ -422,6 +422,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/game-servers/{id}/console", s.gameServerConsole)
 	mux.HandleFunc("POST /api/v1/game-servers/{id}/console", s.gameServerConsoleSend)
 	mux.HandleFunc("POST /api/v1/game-servers/{id}/console/sessions", s.gameServerConsoleSession)
+	mux.HandleFunc("POST /api/v1/game-servers/{id}/terminal/sessions", s.gameServerTerminalSession)
 	mux.HandleFunc("GET /api/v1/game-servers/{id}/console/history", s.gameServerConsoleHistory)
 	mux.HandleFunc("POST /api/v1/game-servers/{id}/console/favorites", s.gameServerConsoleFavCreate)
 	mux.HandleFunc("DELETE /api/v1/game-servers/{id}/console/favorites/{fid}", s.gameServerConsoleFavDelete)

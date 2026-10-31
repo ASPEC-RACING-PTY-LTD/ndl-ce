@@ -9,7 +9,8 @@ import {
   GROUP_ORDER,
   groupHeading,
 } from "../terminal/catalog";
-import type { TermTarget } from "../terminal/types";
+import type { TermGroup, TermTarget } from "../terminal/types";
+import { listGameServers } from "../gameservers/api";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { StatusBadge } from "./StatusBadge";
 import { ErrorNotice } from "./ErrorNotice";
@@ -114,10 +115,11 @@ export function QuickSwitch({
     let cancelled = false;
     void (async () => {
       try {
-        const [nodes, workloads, stacks] = await Promise.all([
+        const [nodes, workloads, stacks, games] = await Promise.all([
           listNodes().catch(() => []),
           listWorkloads().catch(() => null),
           listStacks().catch(() => ({ items: [] })),
+          listGameServers().catch(() => ({ items: [] })),
         ]);
         if (cancelled) {
           return;
@@ -129,6 +131,7 @@ export function QuickSwitch({
           nodes,
           workloads: workloads?.items ?? [],
           stacks: stacks.items ?? [],
+          gameServers: games.items ?? [],
         });
         setCatalog(live);
         // Only a successful workload list can prove a workload is gone.
@@ -155,16 +158,25 @@ export function QuickSwitch({
       return filtered.map((target) => ({ key: `${target.kind}:${target.id}`, target }));
     }
     const out: Row[] = [];
-    // The local host always sits at the top, then recents, then everything else.
+    // Host & Nodes always sit at the top (this host first), then recents of
+    // everything else, then each group in name order.
     const isLocal = (t: TermTarget) => t.kind === "node" && t.id === localNodeId;
-    const local = catalog.find(isLocal);
-    if (local) {
-      out.push({ key: "h-local", heading: "This host" });
-      out.push({ key: `local:${local.kind}:${local.id}`, target: local });
-    }
+    const byName = (a: TermTarget, b: TermTarget) => a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true });
+    const pushGroup = (group: TermGroup) => {
+      const items = catalog.filter((t) => t.group === group).sort((a, b) => Number(isLocal(b)) - Number(isLocal(a)) || byName(a, b));
+      if (items.length === 0) {
+        return;
+      }
+      out.push({ key: `h-${group}`, heading: groupHeading(group) });
+      for (const target of items) {
+        out.push({ key: `${target.kind}:${target.id}`, target });
+      }
+    };
+    pushGroup("host");
     const recentHits = recents
-      .map((r) => catalog.find((t) => t.kind === r.kind && t.id === r.id) ?? (catalogLoaded && r.kind === "workload" ? null : r))
-      .filter((t): t is TermTarget => t != null && !isLocal(t));
+      .filter((r) => r.kind !== "node")
+      .map((r) => catalog.find((t) => t.kind === r.kind && t.id === r.id) ?? (catalogLoaded && r.kind !== "docker" ? null : r))
+      .filter((t): t is TermTarget => t != null);
     if (recentHits.length) {
       out.push({ key: "h-recent", heading: "Recent" });
       for (const target of recentHits) {
@@ -172,13 +184,8 @@ export function QuickSwitch({
       }
     }
     for (const group of GROUP_ORDER) {
-      const items = catalog.filter((t) => t.group === group && !isLocal(t));
-      if (items.length === 0) {
-        continue;
-      }
-      out.push({ key: `h-${group}`, heading: groupHeading(group) });
-      for (const target of items) {
-        out.push({ key: `${target.kind}:${target.id}`, target });
+      if (group !== "host") {
+        pushGroup(group);
       }
     }
     return out;

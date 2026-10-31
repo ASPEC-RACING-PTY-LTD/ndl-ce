@@ -1,10 +1,12 @@
 package agentrpc
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
 
+	"github.com/no-dal/ndl-ce/internal/docker"
 	"github.com/no-dal/ndl-ce/internal/gameserver"
 )
 
@@ -57,4 +59,20 @@ func gameConsoleArgv(id string) ([]string, error) {
 		docker = "/usr/bin/docker"
 	}
 	return []string{"/bin/sh", "-c", gameConsoleScript, "ndl-game-console", "ndl-gs-" + id, docker}, nil
+}
+
+// TargetGameServerShell is a shell inside a running game server's container,
+// starting in the server folder.
+const TargetGameServerShell = "gameserver-shell"
+
+func startGameServerShell(ctx context.Context, h *Handler, req termRequest) (termSession, error) {
+	id := strings.TrimSpace(req.TargetID)
+	if !gameserver.ValidHostID(id) {
+		return nil, fmt.Errorf("game server id is invalid")
+	}
+	sess, err := h.docker().Exec(ctx, docker.ExecRequest{MachineID: docker.HostMachineID, ContainerID: "ndl-gs-" + id, WorkDir: "/home/container"})
+	if err != nil {
+		return nil, fmt.Errorf("the game server is not running: %w", err)
+	}
+	return sess, nil
 }

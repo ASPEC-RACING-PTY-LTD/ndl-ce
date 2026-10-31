@@ -1,6 +1,6 @@
-export type TermKind = "node" | "workload" | "docker";
+export type TermKind = "node" | "workload" | "docker" | "gameserver";
 
-export type TermGroup = "host" | "system-container" | "vm" | "application";
+export type TermGroup = "host" | "system-container" | "vm" | "game-server" | "application";
 
 export type TermConnState = "connecting" | "active" | "disconnected" | "reconnecting" | "closed";
 

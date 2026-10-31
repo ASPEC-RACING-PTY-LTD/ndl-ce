@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	goruntime "runtime"
 	"strings"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/features"
 	"github.com/no-dal/ndl-ce/internal/gameserver"
+	"github.com/no-dal/ndl-ce/internal/lxc"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 )
 
@@ -25,6 +27,14 @@ func (s *Server) gameRuntime() *gameserver.Runtime {
 		root = dir
 	}
 	s.Game = gameserver.NewRuntime(root)
+	s.Game.CodeholdCLIURL = func(ctx context.Context) string {
+		// The same CodeHold server the CodeHold CLI workload extra uses.
+		u, err := lxc.CHDownloadURL(s.codeholdCLIConfig(ctx, s.clusterIDCached(ctx)).URL, goruntime.GOARCH)
+		if err != nil {
+			return ""
+		}
+		return u
+	}
 	return s.Game
 }
 

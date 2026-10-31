@@ -196,6 +196,8 @@ type ExecResult struct {
 type ExecRequest struct {
 	MachineID   string
 	ContainerID string
-	Cols        uint16
-	Rows        uint16
+	// WorkDir is where the shell starts; empty starts at /.
+	WorkDir string
+	Cols    uint16
+	Rows    uint16
 }

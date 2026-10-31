@@ -1615,10 +1615,18 @@ export async function patchWorkload(
 }
 
 export async function createTerminalSession(
-  kind: "node" | "workload" | "docker",
+  kind: "node" | "workload" | "docker" | "gameserver",
   id: string,
   cwd = "/",
 ): Promise<import("./phase6").IOSession> {
+  if (kind === "gameserver") {
+    return readJson(
+      await request(`/game-servers/${encodeURIComponent(id)}/terminal/sessions`, {
+        method: "POST",
+        body: JSON.stringify({ cwd }),
+      }),
+    );
+  }
   if (kind === "docker") {
     const slash = id.indexOf("/");
     const machine = slash >= 0 ? id.slice(0, slash) : id;

@@ -103,3 +103,27 @@ describe("pushRecent", () => {
     expect(twice).toHaveLength(1);
   });
 });
+
+describe("game server targets", () => {
+  const gs = (id: string, status: string) =>
+    ({ id, name: `JvS ${id}`, status, template_id: "t", template_name: "Garry's Mod", game: "gmod" }) as unknown as import("../gameservers/types").GameServer;
+
+  it("lists game servers for terminal users, ready only while running", () => {
+    const out = buildTermCatalog({ roles: ["admin"], nodes: [], workloads: [], gameServers: [gs("a", "running"), gs("b", "stopped")] });
+    expect(out.map((t) => [t.kind, t.group, t.terminalReady])).toEqual([
+      ["gameserver", "game-server", true],
+      ["gameserver", "game-server", false],
+    ]);
+    expect(out[0].typeLabel).toBe("Game server · Garry's Mod");
+  });
+
+  it("leaves them out without terminal access", () => {
+    expect(buildTermCatalog({ user: { roles: ["user"], grants: ["gameserver.files"] }, nodes: [], workloads: [], gameServers: [gs("a", "running")] })).toEqual([]);
+  });
+});
+
+describe("recents", () => {
+  it("never records hosts, which always sit at the top", () => {
+    expect(pushRecent([alpine], host)).toEqual([alpine]);
+  });
+});

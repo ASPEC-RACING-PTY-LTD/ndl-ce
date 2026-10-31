@@ -78,7 +78,7 @@ func (s *Server) ioForSession(ctx context.Context, clusterID string, row appdb.I
 		return rpc, err
 	case appdb.IOTargetDocker:
 		return s.IO, nil
-	case ioTargetGameServer:
+	case ioTargetGameServer, ioTargetGameServerShell:
 		// Game servers run beside the control node's agent.
 		return s.IO, nil
 	}

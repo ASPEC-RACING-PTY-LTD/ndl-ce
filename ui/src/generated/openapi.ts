@@ -4544,6 +4544,8 @@ export type GameServerConsolePath = "/api/v1/game-servers/{id}/console";
 
 export type GameServerConsoleSessionPath = "/api/v1/game-servers/{id}/console/sessions";
 
+export type GameServerTerminalSessionPath = "/api/v1/game-servers/{id}/terminal/sessions";
+
 export type GameServerConsoleHistoryPath = "/api/v1/game-servers/{id}/console/history";
 
 export type GameServerConsoleFavCreatePath = "/api/v1/game-servers/{id}/console/favorites";

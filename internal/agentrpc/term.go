@@ -32,6 +32,8 @@ func startTermSession(ctx context.Context, h *Handler, req termRequest) (termSes
 	switch strings.TrimSpace(req.TargetKind) {
 	case "docker":
 		return startDockerExec(ctx, h, req)
+	case TargetGameServerShell:
+		return startGameServerShell(ctx, h, req)
 	case "vm-guest":
 		return startGuestPTY(ctx, h, req)
 	case "vm":

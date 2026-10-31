@@ -29,10 +29,16 @@ type Runtime struct {
 	// OnProgress, when set, receives install phase changes so the API can
 	// persist them for the UI.
 	OnProgress func(id, phase, message string)
-	mu         sync.Mutex
-	logs       map[string][]string
-	input      map[string][]string
-	imageMu    sync.Mutex
+	// CodeholdCLIURL is where the ch binary is downloaded from, or "" when
+	// no CodeHold address is set (see codehold_cli.go).
+	CodeholdCLIURL func(ctx context.Context) string
+	// HostCH is the host's own ch, passed through when nothing is downloaded.
+	HostCH  string
+	chMu    sync.Mutex
+	mu      sync.Mutex
+	logs    map[string][]string
+	input   map[string][]string
+	imageMu sync.Mutex
 }
 
 func NewRuntime(root string) *Runtime {
@@ -200,6 +206,9 @@ func (r *Runtime) Start(ctx context.Context, spec RunSpec) (string, error) {
 		"--security-opt", "no-new-privileges",
 		"--read-only=false",
 	)
+	if ch := r.codeholdCLI(ctx); ch != "" {
+		args = append(args, "-v", ch+":"+chContainerPath+":ro")
+	}
 	if spec.MemoryBytes > 0 {
 		args = append(args, "--memory", strconv.FormatInt(spec.MemoryBytes, 10))
 	}

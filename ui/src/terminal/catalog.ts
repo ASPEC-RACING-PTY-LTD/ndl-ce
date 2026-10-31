@@ -1,6 +1,7 @@
 import type { NodeSummary } from "../api/phase2";
 import type { Workload } from "../api/phase5";
 import type { Stack } from "../api/client";
+import type { GameServer } from "../gameservers/types";
 import { canOnItem, dockerItemId, hasGrant, itemAllows, type ItemUser } from "../rbac";
 import { kindLabel } from "../labels";
 import type { TermGroup, TermKind, TermTarget } from "./types";
@@ -18,6 +19,10 @@ export function mayOpenTerminal(kind: TermKind, id: string, roles: string[] | un
     // A Docker target is "machine/container id"; its grant is on "machine/container name".
     const machine = id.split("/")[0] ?? "";
     return hasGrant(who, "terminal.open") || (Boolean(name) && itemAllows(who, "docker", dockerItemId(machine, name ?? ""), "terminal.open"));
+  }
+  if (kind === "gameserver") {
+    // The server also checks file access to this game server.
+    return hasGrant(who, "terminal.open");
   }
   return canOnItem(who, "workload", id, "terminal.open");
 }
@@ -50,6 +55,7 @@ export function buildTermCatalog(input: {
   nodes: NodeSummary[];
   workloads: Workload[];
   stacks?: Stack[];
+  gameServers?: GameServer[];
 }): TermTarget[] {
   const nodeName = new Map(input.nodes.map((n) => [n.id, n.name]));
   const out: TermTarget[] = [];
@@ -111,6 +117,20 @@ export function buildTermCatalog(input: {
       });
     }
   }
+  for (const gs of input.gameServers ?? []) {
+    if (!mayOpenTerminal("gameserver", gs.id, input.roles, input.user)) {
+      continue;
+    }
+    out.push({
+      kind: "gameserver",
+      id: gs.id,
+      name: gs.name || gs.id,
+      group: "game-server",
+      typeLabel: `Game server · ${gs.template_name || gs.game}`,
+      status: gs.status || "unknown",
+      terminalReady: (gs.status || "").toLowerCase() === "running",
+    });
+  }
   return out;
 }
 
@@ -128,20 +148,26 @@ function groupForKind(kind?: string): TermGroup | null {
 }
 
 export function pushRecent(list: TermTarget[], target: TermTarget): TermTarget[] {
+  // Hosts and nodes always sit at the top, so they are never recents.
+  if (target.kind === "node") {
+    return list;
+  }
   const key = `${target.kind}:${target.id}`;
   return [target, ...list.filter((t) => `${t.kind}:${t.id}` !== key)].slice(0, 8);
 }
 
-export const GROUP_ORDER: TermGroup[] = ["host", "system-container", "vm", "application"];
+export const GROUP_ORDER: TermGroup[] = ["host", "system-container", "vm", "game-server", "application"];
 
 export function groupHeading(group: TermGroup): string {
   switch (group) {
     case "host":
-      return "Hosts";
+      return "Host & Nodes";
     case "system-container":
       return "System containers";
     case "vm":
       return "Virtual machines";
+    case "game-server":
+      return "Game servers";
     case "application":
       return "Applications";
     default:
