@@ -43,6 +43,8 @@ func (h *Handler) resolveJail(targetKind, targetID, requested string) (string, e
 		return filepath.Clean(requested), nil
 	case "docker", TargetGameServerShell:
 		return "/", nil
+	case TargetGameServerFiles:
+		return h.gameHost().Jail(strings.TrimSpace(targetID))
 	case iojail.TargetCT, "workload":
 		if h.Workloads != nil {
 			id := strings.TrimSpace(targetID)

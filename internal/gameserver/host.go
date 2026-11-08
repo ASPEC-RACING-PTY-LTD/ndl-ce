@@ -39,6 +39,9 @@ type Host interface {
 	ListDir(ctx context.Context, id, rel string) (DirListing, error)
 	ReadFile(ctx context.Context, id, rel string, max int64) ([]byte, error)
 	WriteFile(ctx context.Context, id, rel string, body []byte) error
+	// WriteFileFrom streams r into rel, refusing more than max bytes. The
+	// file appears only once it is complete.
+	WriteFileFrom(ctx context.Context, id, rel string, r io.Reader, max int64) (int64, error)
 	Mkdir(ctx context.Context, id, rel string) error
 	Remove(ctx context.Context, id, rel string) error
 	Rename(ctx context.Context, id, from, to string) error
@@ -290,6 +293,61 @@ func (h *LocalHost) WriteFile(_ context.Context, id, rel string, body []byte) er
 	_, err = f.Write(body)
 	return err
 }
+
+func (h *LocalHost) WriteFileFrom(_ context.Context, id, rel string, r io.Reader, max int64) (int64, error) {
+	rel, err := iojail.CleanRel(rel)
+	if err != nil {
+		return 0, err
+	}
+	if rel == "." {
+		return 0, fmt.Errorf("file path is required")
+	}
+	root, err := h.jail(id)
+	if err != nil {
+		return 0, err
+	}
+	if err := mkdirAllBeneath(root, filepath.Dir(rel)); err != nil {
+		return 0, err
+	}
+	part := rel + ".part"
+	f, _, err := iojail.OpenBeneath(root, part, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o640)
+	if err != nil {
+		return 0, err
+	}
+	n, err := io.Copy(f, io.LimitReader(r, max+1))
+	if err == nil && n > max {
+		err = fmt.Errorf("upload is larger than %d MiB", max>>20)
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = iojail.RenameBeneath(root, part, rel)
+	}
+	if err != nil {
+		_ = iojail.RemoveBeneath(root, part)
+		return 0, err
+	}
+	return n, nil
+}
+
+// mkdirAllBeneath creates rel and its parents under root.
+func mkdirAllBeneath(root, rel string) error {
+	if rel == "." || rel == "" {
+		return nil
+	}
+	cur := ""
+	for _, part := range strings.Split(filepath.ToSlash(rel), "/") {
+		cur = filepath.Join(cur, part)
+		if err := iojail.MkdirBeneath(root, cur, 0o750); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Jail is the server's folder, created if missing.
+func (h *LocalHost) Jail(id string) (string, error) { return h.jail(id) }
 
 func (h *LocalHost) Mkdir(_ context.Context, id, rel string) error {
 	root, err := h.jail(id)

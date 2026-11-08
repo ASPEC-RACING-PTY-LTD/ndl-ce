@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
+	"path"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -165,6 +168,37 @@ func (g GameHost) ReadFile(ctx context.Context, id, rel string, max int64) ([]by
 func (g GameHost) WriteFile(ctx context.Context, id, rel string, body []byte) error {
 	_, err := g.call(ctx, gsWriteFile, id, gameSpec{Rel: rel}, body)
 	return err
+}
+
+func (g GameHost) WriteFileFrom(ctx context.Context, id, rel string, r io.Reader, max int64) (int64, error) {
+	if !gameserver.ValidHostID(id) {
+		return 0, fmt.Errorf("game server id is invalid")
+	}
+	if parent := path.Dir(path.Clean("/" + rel)); parent != "/" {
+		cur := ""
+		for _, dir := range strings.Split(strings.TrimPrefix(parent, "/"), "/") {
+			cur = path.Join(cur, dir)
+			if err := g.Mkdir(ctx, id, cur); err != nil {
+				return 0, err
+			}
+		}
+	}
+	cr := &countReader{r: r}
+	_, err := g.Client.FilesPut(ctx, FilesPutCall{
+		TargetKind: TargetGameServerFiles, TargetID: id, Path: rel, MaxBytes: max, Mode: 0o640,
+	}, cr, "")
+	return cr.n, err
+}
+
+type countReader struct {
+	r io.Reader
+	n int64
+}
+
+func (c *countReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += int64(n)
+	return n, err
 }
 
 func (g GameHost) Mkdir(ctx context.Context, id, rel string) error {

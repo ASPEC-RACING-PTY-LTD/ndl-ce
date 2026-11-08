@@ -65,6 +65,9 @@ func gameConsoleArgv(id string) ([]string, error) {
 // starting in the server folder.
 const TargetGameServerShell = "gameserver-shell"
 
+// TargetGameServerFiles streams uploads into a game server's folder.
+const TargetGameServerFiles = "gameserver-files"
+
 func startGameServerShell(ctx context.Context, h *Handler, req termRequest) (termSession, error) {
 	id := strings.TrimSpace(req.TargetID)
 	if !gameserver.ValidHostID(id) {

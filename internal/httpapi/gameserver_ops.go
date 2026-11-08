@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -575,33 +576,60 @@ func (s *Server) gameServerFilesUpload(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 64<<20)
-	if err := r.ParseMultipartForm(64 << 20); err != nil {
-		writeErr(w, http.StatusBadRequest, "upload is too large or invalid")
-		return
-	}
-	file, hdr, err := r.FormFile("file")
+	r.Body = http.MaxBytesReader(w, r.Body, gameUploadMax+1<<20)
+	mr, err := r.MultipartReader()
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, "file is required")
+		writeErr(w, http.StatusBadRequest, "upload must be multipart")
 		return
 	}
-	defer file.Close()
-	rel := r.FormValue("path")
-	if rel == "" {
-		rel = hdr.Filename
-	}
-	body, err := io.ReadAll(io.LimitReader(file, 64<<20+1))
-	if err != nil || int64(len(body)) > 64<<20 {
-		writeErr(w, http.StatusBadRequest, "upload is too large")
-		return
-	}
-	if err := s.writeGameFile(row, rel, body); err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
-		return
+	// The file streams to the server folder as it arrives, so a large map
+	// is never held in memory or spooled to a temp folder first. The UI
+	// sends "path" before "file".
+	rel := ""
+	var n int64
+	for {
+		part, err := mr.NextPart()
+		if err == io.EOF {
+			writeErr(w, http.StatusBadRequest, "file is required")
+			return
+		}
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "upload is too large or invalid")
+			return
+		}
+		if part.FormName() == "path" {
+			v, _ := io.ReadAll(io.LimitReader(part, 4096))
+			rel = strings.TrimSpace(string(v))
+			continue
+		}
+		if part.FormName() != "file" {
+			continue
+		}
+		if rel == "" {
+			rel = part.FileName()
+		}
+		if rel == "" {
+			writeErr(w, http.StatusBadRequest, "file path is required")
+			return
+		}
+		n, err = s.gameHost().WriteFileFrom(r.Context(), row.ID, rel, part, gameUploadMax)
+		if err != nil {
+			var mbe *http.MaxBytesError
+			if errors.As(err, &mbe) || strings.Contains(err.Error(), "max_bytes") || strings.Contains(err.Error(), "larger than") {
+				writeErr(w, http.StatusRequestEntityTooLarge, "upload is larger than 2 GiB")
+				return
+			}
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		break
 	}
 	s.noteGame(r, p, row.ID, "files.upload", "File uploaded", rel)
-	writeJSON(w, http.StatusCreated, map[string]any{"path": rel, "bytes": len(body)})
+	writeJSON(w, http.StatusCreated, map[string]any{"path": rel, "bytes": n})
 }
+
+// gameUploadMax is the largest file the game file manager accepts.
+const gameUploadMax int64 = 2 << 30
 
 func (s *Server) readGameFile(row *appdb.GameServer, path string, max int64) ([]byte, string, error) {
 	rel, err := iojail.CleanRel(path)

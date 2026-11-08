@@ -173,3 +173,29 @@ func TestGameHostRunsEverythingInTheAgent(t *testing.T) {
 		t.Fatalf("server folder must be gone: %v", err)
 	}
 }
+
+func TestGameHostStreamsUploadsThroughTheAgent(t *testing.T) {
+	g, local, _ := startGameAgent(t)
+	ctx := context.Background()
+	id := "5b0f4c1e-9d2b-4b7a-9f1e-3f2a1b0c9d8e"
+	body := strings.Repeat("map", 5<<20) // 15 MiB, several stream chunks
+	n, err := g.WriteFileFrom(ctx, id, "garrysmod/maps/gm_big.bsp", strings.NewReader(body), int64(len(body)))
+	if err != nil || n != int64(len(body)) {
+		t.Fatalf("upload = %d %v", n, err)
+	}
+	got, err := os.ReadFile(filepath.Join(local.RT.DataDir(id), "garrysmod/maps/gm_big.bsp"))
+	if err != nil || string(got) != body {
+		t.Fatalf("uploaded %d bytes, %v", len(got), err)
+	}
+	if _, err := g.WriteFileFrom(ctx, id, "too.bin", strings.NewReader("12345"), 4); err == nil {
+		t.Fatal("over-limit upload accepted")
+	}
+	if _, err := os.Stat(filepath.Join(local.RT.DataDir(id), "too.bin")); !os.IsNotExist(err) {
+		t.Fatalf("over-limit file kept: %v", err)
+	}
+	for _, bad := range [][2]string{{"../../etc", "x"}, {id, "../outside"}} {
+		if _, err := g.WriteFileFrom(ctx, bad[0], bad[1], strings.NewReader("x"), 10); err == nil {
+			t.Fatalf("upload to %v accepted", bad)
+		}
+	}
+}
