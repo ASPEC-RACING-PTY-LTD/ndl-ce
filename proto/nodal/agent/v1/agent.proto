@@ -568,6 +568,9 @@ message CTLifecycle {
   // codehold_json is the lxc.CodeholdSource the CodeHold CLI extra is
   // downloaded from.
   string codehold_json = 17;
+  // tun turns the container's /dev/net/tun access on or off for the
+  // tun-set action.
+  bool tun = 18;
 }
 
 message WorkloadHint {

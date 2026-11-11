@@ -155,7 +155,31 @@ func (e *Engine) Mounts(id string) (Result, error) {
 	}
 	return Result{
 		WorkloadID: id, Mounts: append([]Mount{}, applied.Spec.Mounts...),
-		MappedRootUID: MappedRootUID(applied.Spec),
+		MappedRootUID: MappedRootUID(applied.Spec), TUN: applied.Spec.TUN,
+	}, nil
+}
+
+// SetTUN gives the container the host's /dev/net/tun (bind mount plus the
+// c 10:200 device rule) or takes it away. Like mounts, it is saved in the
+// container's spec, so regenerated configs keep it, and a running
+// container picks it up on its next start.
+func (e *Engine) SetTUN(ctx context.Context, id string, on bool) (Result, error) {
+	applied, err := e.readApplied(id)
+	if err != nil {
+		return Result{}, fmt.Errorf("system container last-applied is missing: %w", err)
+	}
+	changed := applied.Spec.TUN != on
+	applied.Spec.TUN = on
+	if err := e.writeConfig(applied.Spec); err != nil {
+		return Result{}, err
+	}
+	if err := e.writeApplied(applied.Spec, applied.ImageVerified, applied.ImageSHA256); err != nil {
+		return Result{}, err
+	}
+	return Result{
+		WorkloadID: id, Mounts: append([]Mount{}, applied.Spec.Mounts...),
+		MappedRootUID: MappedRootUID(applied.Spec), TUN: on,
+		RestartRequired: changed && e.AlreadyRunning(ctx, id),
 	}, nil
 }
 
@@ -210,7 +234,7 @@ func (e *Engine) SetMounts(id string, mounts []Mount) (Result, error) {
 	}
 	return Result{
 		WorkloadID: id, Mounts: append([]Mount{}, clean...),
-		MappedRootUID:   MappedRootUID(applied.Spec),
+		MappedRootUID: MappedRootUID(applied.Spec), TUN: applied.Spec.TUN,
 		RestartRequired: before != renderMounts(applied.Spec) && e.AlreadyRunning(context.Background(), id),
 	}, nil
 }

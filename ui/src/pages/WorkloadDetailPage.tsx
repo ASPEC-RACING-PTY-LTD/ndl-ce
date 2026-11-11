@@ -11,6 +11,7 @@ import {
   getWorkload,
   getWorkloadGuest,
   getWorkloadLogs,
+  getWorkloadStorage,
   listNodeUSB,
   listPhysicalDisks,
   migrateWorkload,
@@ -124,6 +125,9 @@ export function WorkloadDetailPage() {
   const [logMessage, setLogMessage] = useState<string>("");
   const [dockerMachine, setDockerMachine] = useState<DockerMachine | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+  // TUN lives in the container's agent-side spec; null until it is read.
+  const [tun, setTun] = useState<boolean | null>(null);
+  const [origTun, setOrigTun] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (!editOpen || item?.kind !== "system-container") {
@@ -132,7 +136,15 @@ export function WorkloadDetailPage() {
     listNetworks()
       .then((res) => setNetworks((res.items ?? []) as { id: string; name: string; kind?: string; status?: string }[]))
       .catch(() => setNetworks([]));
-  }, [editOpen, item?.kind]);
+    setTun(null);
+    setOrigTun(null);
+    getWorkloadStorage(item.id)
+      .then((res) => {
+        setTun(Boolean(res.tun));
+        setOrigTun(Boolean(res.tun));
+      })
+      .catch(() => undefined);
+  }, [editOpen, item?.kind, item?.id]);
   const [restartAfterSave, setRestartAfterSave] = useState(false);
   const [expandFS, setExpandFS] = useState(true);
   const [applyNote, setApplyNote] = useState<{ field: string; apply: string; reason: string }[]>([]);
@@ -313,6 +325,7 @@ export function WorkloadDetailPage() {
           : {}),
         ...(item?.kind === "system-container" ? containerIPBody(ip) : {}),
         ...(item?.kind === "system-container" && mac.trim() ? { mac: mac.trim() } : {}),
+        ...(item?.kind === "system-container" && tun !== null && tun !== origTun ? { tun } : {}),
       });
       const apply = (updated as Workload & { apply?: { field: string; apply: string; reason: string }[] }).apply;
       setApplyNote(Array.isArray(apply) ? apply : []);
@@ -934,6 +947,18 @@ export function WorkloadDetailPage() {
               onChange={(e) => setMAC(e.target.value)}
               hint="Stop the container before changing MAC. The new address is written to the LXC interface. Leave unchanged to keep the current reservation."
             />
+            <label className="field-check">
+              <input
+                type="checkbox"
+                checked={Boolean(tun)}
+                disabled={tun === null}
+                onChange={(e) => setTun(e.target.checked)}
+              />{" "}
+              TUN device (/dev/net/tun) for VPN clients such as WireGuard, OpenVPN or gluetun
+            </label>
+            {tun !== null && tun !== origTun && running ? (
+              <p className="field-hint">Applies when the container next starts. Tick Restart after save to apply it now.</p>
+            ) : null}
           </>
         ) : null}
         <label className="field-check">

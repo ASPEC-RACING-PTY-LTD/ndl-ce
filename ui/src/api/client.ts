@@ -1604,6 +1604,7 @@ export async function patchWorkload(
     mac?: string;
     restart_after_save?: boolean;
     expand_filesystem?: boolean;
+    tun?: boolean;
   },
 ): Promise<import("./phase5").Workload> {
   return readJson(

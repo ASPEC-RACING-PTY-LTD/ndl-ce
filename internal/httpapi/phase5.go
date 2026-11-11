@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 
@@ -107,6 +108,9 @@ type patchWorkloadRequest struct {
 	ExpandFilesystem *bool           `json:"expand_filesystem"`
 	// NetworkID moves a stopped system container to another network.
 	NetworkID string `json:"network_id"`
+	// TUN gives a system container the host's /dev/net/tun (for VPN
+	// clients such as WireGuard or OpenVPN). It applies at the next start.
+	TUN *bool `json:"tun"`
 }
 
 type cloneWorkloadRequest struct {
@@ -944,6 +948,17 @@ func (s *Server) patchWorkload(w http.ResponseWriter, r *http.Request) {
 			if res.LiveApplyError != "" {
 				classes = liveMissed(classes, res.LiveApplyError)
 			}
+		}
+		if req.TUN != nil {
+			res, err := rpc.LifecycleCT(r.Context(), lxc.LifecycleRequest{WorkloadID: row.ID, Action: lxc.ActionTUNSet, TUN: *req.TUN})
+			if err != nil {
+				writeErr(w, statusFor(err), err.Error())
+				return
+			}
+			if res.RestartRequired {
+				classes = append(classes, lxc.ApplyClass{Field: "tun", Apply: lxc.ApplyRestart, Reason: "the /dev/net/tun mount and device rule load at start"})
+			}
+			s.audit(r, p.User.ClusterID, p.User.ID, "workload.tun", "ok", row.ID+" tun="+strconv.FormatBool(*req.TUN))
 		}
 		next.PendingRestart = running && lxc.RequiresRestart(classes)
 		if err := s.Store.UpdateWorkloadSpec(r.Context(), next); err != nil {

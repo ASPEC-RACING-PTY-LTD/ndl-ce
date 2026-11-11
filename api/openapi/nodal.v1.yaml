@@ -22495,6 +22495,9 @@ components:
           description: Host UID that is root inside the container.
         restart_required:
           type: boolean
+        tun:
+          type: boolean
+          description: Whether the container gets the host's /dev/net/tun (VPN clients).
     WorkloadGPUDiagnostics:
       type: object
       additionalProperties: false

@@ -22,13 +22,14 @@ type mountWorkloads struct {
 	mounts  []lxc.Mount
 	sets    [][]lxc.Mount
 	actions []string
+	tun     bool
 }
 
 func (m *mountWorkloads) LifecycleCT(ctx context.Context, req lxc.LifecycleRequest) (lxc.Result, error) {
 	m.actions = append(m.actions, req.Action)
 	switch req.Action {
 	case lxc.ActionMountsGet:
-		return lxc.Result{WorkloadID: req.WorkloadID, Mounts: m.mounts, MappedRootUID: 100000}, nil
+		return lxc.Result{WorkloadID: req.WorkloadID, Mounts: m.mounts, MappedRootUID: 100000, TUN: m.tun}, nil
 	case lxc.ActionMountsSet:
 		clean, err := lxc.NormalizeMounts(req.Mounts)
 		if err != nil {
@@ -40,6 +41,10 @@ func (m *mountWorkloads) LifecycleCT(ctx context.Context, req lxc.LifecycleReque
 		}
 		m.mounts = clean
 		return lxc.Result{WorkloadID: req.WorkloadID, Mounts: clean, MappedRootUID: 100000, RestartRequired: true}, nil
+	case lxc.ActionTUNSet:
+		changed := m.tun != req.TUN
+		m.tun = req.TUN
+		return lxc.Result{WorkloadID: req.WorkloadID, TUN: m.tun, RestartRequired: changed}, nil
 	}
 	return m.fakeWorkloads.LifecycleCT(ctx, req)
 }
@@ -166,5 +171,50 @@ func TestWorkloadStorageIsForSystemContainers(t *testing.T) {
 	cookie := claimAdmin(t, ts, token)
 	if code, _ := storageCall(t, ts, cookie, "GET", "/workloads/"+vmID+"/storage", ""); code != http.StatusUnprocessableEntity {
 		t.Fatalf("vm storage must be refused, got %d", code)
+	}
+}
+
+// The TUN option is set through the container edit and read back with
+// the container's storage, without stopping it.
+func TestWorkloadTUNIsSetThroughTheEditAndReadBack(t *testing.T) {
+	s, mem, token := testServer(t)
+	ctx := context.Background()
+	cluster, _ := mem.GetCluster(ctx)
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(ctx, appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	seedCompute(t, mem, cluster.ID, nodeID)
+	wlf := &mountWorkloads{fakeWorkloads: &fakeWorkloads{}}
+	s.Workloads = wlf
+	wlID := uuid.NewString()
+	if err := mem.CreateWorkload(ctx, appdb.Workload{ID: wlID, ClusterID: cluster.ID, NodeID: nodeID, Name: "velvet", Kind: "system-container", Status: "running", CPUs: 1, MemoryBytes: 1 << 30, CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	if code, body := storageCall(t, ts, cookie, "GET", "/workloads/"+wlID+"/storage", ""); code != http.StatusOK || body["tun"] != false {
+		t.Fatalf("%d %v", code, body)
+	}
+	code, body := storageCall(t, ts, cookie, "PATCH", "/workloads/"+wlID, `{"tun":true}`)
+	if code != http.StatusOK || !wlf.tun {
+		t.Fatalf("%d %v tun=%v", code, body, wlf.tun)
+	}
+	restart := false
+	for _, c := range body["apply"].([]any) {
+		if c.(map[string]any)["field"] == "tun" && c.(map[string]any)["apply"] == lxc.ApplyRestart {
+			restart = true
+		}
+	}
+	if !restart || body["pending_restart"] != true {
+		t.Fatalf("a running container must be told TUN waits for a restart: %v", body)
+	}
+	for _, a := range wlf.actions {
+		if a == "stop" || a == "restart" || a == "start" {
+			t.Fatalf("setting TUN must not touch the running container: %v", wlf.actions)
+		}
+	}
+	if code, body := storageCall(t, ts, cookie, "GET", "/workloads/"+wlID+"/storage", ""); code != http.StatusOK || body["tun"] != true {
+		t.Fatalf("%d %v", code, body)
 	}
 }

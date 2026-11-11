@@ -121,6 +121,7 @@ func (s *Server) workloadStorageBody(ctx context.Context, clusterID string, res 
 		"pools":            eligible,
 		"mapped_root_uid":  res.MappedRootUID,
 		"restart_required": res.RestartRequired,
+		"tun":              res.TUN,
 	}
 }
 

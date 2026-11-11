@@ -109,3 +109,55 @@ func TestSetMountsWritesBindEntriesAndKeepsData(t *testing.T) {
 		t.Fatalf("mounts must survive a spec save: %+v", got)
 	}
 }
+
+// TUN is kept in the spec, so every config written later still has it.
+func TestSetTUNWritesTheDeviceAndSurvivesRewrites(t *testing.T) {
+	e := testEngine(t)
+	id := uuid.NewString()
+	if _, err := e.Create(context.Background(), Spec{
+		WorkloadID: id, Name: "velvet", ImagePin: "alpine/3.21/amd64/default",
+		VolumeID: uuid.NewString(), RootfsPath: filepath.Join(e.DataDir, "rootfs", id), BridgeName: "br0",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"lxc.mount.entry = /dev/net/tun dev/net/tun none bind,optional,create=file 0 0",
+		"lxc.cgroup2.devices.allow = c 10:200 rwm",
+	}
+	has := func() (int, string) {
+		cfg, _ := os.ReadFile(e.configPath(id))
+		n := 0
+		for _, w := range want {
+			if strings.Contains(string(cfg), w) {
+				n++
+			}
+		}
+		return n, string(cfg)
+	}
+	if n, _ := has(); n != 0 {
+		t.Fatal("TUN must be off by default")
+	}
+	res, err := e.SetTUN(context.Background(), id, true)
+	if err != nil || !res.TUN {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if n, cfg := has(); n != 2 {
+		t.Fatalf("config missing TUN lines:\n%s", cfg)
+	}
+	// Another config rewrite (a mount change) keeps it.
+	if _, err := e.SetMounts(id, nil); err != nil {
+		t.Fatal(err)
+	}
+	if n, cfg := has(); n != 2 {
+		t.Fatalf("TUN lost on rewrite:\n%s", cfg)
+	}
+	if got, _ := e.Mounts(id); !got.TUN {
+		t.Fatal("mounts must report TUN")
+	}
+	if _, err := e.SetTUN(context.Background(), id, false); err != nil {
+		t.Fatal(err)
+	}
+	if n, cfg := has(); n != 0 {
+		t.Fatalf("TUN must be removed:\n%s", cfg)
+	}
+}

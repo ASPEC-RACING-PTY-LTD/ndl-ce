@@ -27,6 +27,8 @@ const (
 	ActionGuestExtrasReinstall = "guest-extras-reinstall"
 	ActionMountsGet            = "mounts-get"
 	ActionMountsSet            = "mounts-set"
+	// ActionTUNSet turns /dev/net/tun access on or off (LifecycleRequest.TUN).
+	ActionTUNSet = "tun-set"
 )
 
 const (
@@ -166,6 +168,9 @@ type Result struct {
 	// Mounts and RestartRequired answer the mount actions.
 	Mounts          []Mount `json:"mounts,omitempty"`
 	RestartRequired bool    `json:"restart_required,omitempty"`
+	// TUN reports whether the container has /dev/net/tun (mount actions
+	// and ActionTUNSet).
+	TUN bool `json:"tun,omitempty"`
 	// MappedRootUID is the host UID that is root inside the container.
 	MappedRootUID int `json:"mapped_root_uid,omitempty"`
 	// LiveApplyError is why new CPU or memory limits could not be applied
@@ -229,6 +234,8 @@ type LifecycleRequest struct {
 	Codehold *CodeholdSource `json:"codehold,omitempty"`
 	// Mounts is the complete mount list for ActionMountsSet.
 	Mounts []Mount `json:"mounts,omitempty"`
+	// TUN is the wanted /dev/net/tun access for ActionTUNSet.
+	TUN bool `json:"tun,omitempty"`
 }
 
 // ApplyClass describes whether a spec change can happen live.

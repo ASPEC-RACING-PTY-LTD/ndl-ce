@@ -58,4 +58,11 @@ func TestCTLifecycleCarriesTheCodeholdSource(t *testing.T) {
 	if r, _ := ctLifecycleRequest(none); r.Codehold != nil {
 		t.Fatal("no source must stay no source")
 	}
+	tun, _ := ctLifecycleMsg(lxc.LifecycleRequest{WorkloadID: "w", Action: lxc.ActionTUNSet, TUN: true})
+	wire, _ = proto.Marshal(tun)
+	var tunBack agentv1.CTLifecycle
+	_ = proto.Unmarshal(wire, &tunBack)
+	if r, _ := ctLifecycleRequest(&tunBack); !r.TUN || r.Action != lxc.ActionTUNSet {
+		t.Fatalf("TUN lost on the way to the agent: %+v", r)
+	}
 }

@@ -4812,7 +4812,10 @@ type CTLifecycle struct {
 	MountsJson string `protobuf:"bytes,16,opt,name=mounts_json,json=mountsJson,proto3" json:"mounts_json,omitempty"`
 	// codehold_json is the lxc.CodeholdSource the CodeHold CLI extra is
 	// downloaded from.
-	CodeholdJson  string `protobuf:"bytes,17,opt,name=codehold_json,json=codeholdJson,proto3" json:"codehold_json,omitempty"`
+	CodeholdJson string `protobuf:"bytes,17,opt,name=codehold_json,json=codeholdJson,proto3" json:"codehold_json,omitempty"`
+	// tun turns the container's /dev/net/tun access on or off for the
+	// tun-set action.
+	Tun           bool `protobuf:"varint,18,opt,name=tun,proto3" json:"tun,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4964,6 +4967,13 @@ func (x *CTLifecycle) GetCodeholdJson() string {
 		return x.CodeholdJson
 	}
 	return ""
+}
+
+func (x *CTLifecycle) GetTun() bool {
+	if x != nil {
+		return x.Tun
+	}
+	return false
 }
 
 type WorkloadHint struct {
@@ -7104,7 +7114,7 @@ const file_nodal_agent_v1_agent_proto_rawDesc = "" +
 	"\n" +
 	"skip_image\x18\x0e \x01(\bR\tskipImage\x12\x19\n" +
 	"\bno_start\x18\x0f \x01(\bR\anoStart\x12$\n" +
-	"\x0eip_config_json\x18\x10 \x01(\tR\fipConfigJson\"\x95\x04\n" +
+	"\x0eip_config_json\x18\x10 \x01(\tR\fipConfigJson\"\xa7\x04\n" +
 	"\vCTLifecycle\x12\x1f\n" +
 	"\vworkload_id\x18\x01 \x01(\tR\n" +
 	"workloadId\x12\x16\n" +
@@ -7126,7 +7136,8 @@ const file_nodal_agent_v1_agent_proto_rawDesc = "" +
 	"\x06extras\x18\x0f \x03(\tR\x06extras\x12\x1f\n" +
 	"\vmounts_json\x18\x10 \x01(\tR\n" +
 	"mountsJson\x12#\n" +
-	"\rcodehold_json\x18\x11 \x01(\tR\fcodeholdJson\"\x7f\n" +
+	"\rcodehold_json\x18\x11 \x01(\tR\fcodeholdJson\x12\x10\n" +
+	"\x03tun\x18\x12 \x01(\bR\x03tun\"\x7f\n" +
 	"\fWorkloadHint\x12\x1f\n" +
 	"\vworkload_id\x18\x01 \x01(\tR\n" +
 	"workloadId\x12\x12\n" +

@@ -628,6 +628,8 @@ func (e *Engine) Lifecycle(ctx context.Context, req LifecycleRequest) (Result, e
 		return e.Mounts(req.WorkloadID)
 	case ActionMountsSet:
 		return e.SetMounts(req.WorkloadID, req.Mounts)
+	case ActionTUNSet:
+		return e.SetTUN(ctx, req.WorkloadID, req.TUN)
 	default:
 		return Result{}, fmt.Errorf("unknown lifecycle action %q", req.Action)
 	}

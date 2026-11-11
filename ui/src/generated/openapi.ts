@@ -3641,6 +3641,7 @@ export interface WorkloadStorage {
   pools: StoragePool[];
   mapped_root_uid: number;
   restart_required: boolean;
+  tun?: boolean;
 }
 
 export interface WorkloadGPUDiagnostics {
