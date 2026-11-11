@@ -453,6 +453,7 @@ func ctLifecycleMsg(req lxc.LifecycleRequest) (*agentv1.CTLifecycle, error) {
 		msg.IpConfigJson = ""
 	}
 	msg.Tun = req.TUN
+	msg.NetworkId, msg.BridgeName = req.NetworkID, req.BridgeName
 	if req.Action == lxc.ActionMountsSet {
 		raw, err := json.Marshal(req.Mounts)
 		if err != nil {

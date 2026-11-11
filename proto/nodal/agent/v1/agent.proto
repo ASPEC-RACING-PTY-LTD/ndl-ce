@@ -571,6 +571,10 @@ message CTLifecycle {
   // tun turns the container's /dev/net/tun access on or off for the
   // tun-set action.
   bool tun = 18;
+  // network_id and bridge_name move a stopped container to another
+  // network (apply-spec).
+  string network_id = 19;
+  string bridge_name = 20;
 }
 
 message WorkloadHint {

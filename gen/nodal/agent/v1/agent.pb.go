@@ -4815,7 +4815,11 @@ type CTLifecycle struct {
 	CodeholdJson string `protobuf:"bytes,17,opt,name=codehold_json,json=codeholdJson,proto3" json:"codehold_json,omitempty"`
 	// tun turns the container's /dev/net/tun access on or off for the
 	// tun-set action.
-	Tun           bool `protobuf:"varint,18,opt,name=tun,proto3" json:"tun,omitempty"`
+	Tun bool `protobuf:"varint,18,opt,name=tun,proto3" json:"tun,omitempty"`
+	// network_id and bridge_name move a stopped container to another
+	// network (apply-spec).
+	NetworkId     string `protobuf:"bytes,19,opt,name=network_id,json=networkId,proto3" json:"network_id,omitempty"`
+	BridgeName    string `protobuf:"bytes,20,opt,name=bridge_name,json=bridgeName,proto3" json:"bridge_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4974,6 +4978,20 @@ func (x *CTLifecycle) GetTun() bool {
 		return x.Tun
 	}
 	return false
+}
+
+func (x *CTLifecycle) GetNetworkId() string {
+	if x != nil {
+		return x.NetworkId
+	}
+	return ""
+}
+
+func (x *CTLifecycle) GetBridgeName() string {
+	if x != nil {
+		return x.BridgeName
+	}
+	return ""
 }
 
 type WorkloadHint struct {
@@ -7114,7 +7132,7 @@ const file_nodal_agent_v1_agent_proto_rawDesc = "" +
 	"\n" +
 	"skip_image\x18\x0e \x01(\bR\tskipImage\x12\x19\n" +
 	"\bno_start\x18\x0f \x01(\bR\anoStart\x12$\n" +
-	"\x0eip_config_json\x18\x10 \x01(\tR\fipConfigJson\"\xa7\x04\n" +
+	"\x0eip_config_json\x18\x10 \x01(\tR\fipConfigJson\"\xe7\x04\n" +
 	"\vCTLifecycle\x12\x1f\n" +
 	"\vworkload_id\x18\x01 \x01(\tR\n" +
 	"workloadId\x12\x16\n" +
@@ -7137,7 +7155,11 @@ const file_nodal_agent_v1_agent_proto_rawDesc = "" +
 	"\vmounts_json\x18\x10 \x01(\tR\n" +
 	"mountsJson\x12#\n" +
 	"\rcodehold_json\x18\x11 \x01(\tR\fcodeholdJson\x12\x10\n" +
-	"\x03tun\x18\x12 \x01(\bR\x03tun\"\x7f\n" +
+	"\x03tun\x18\x12 \x01(\bR\x03tun\x12\x1d\n" +
+	"\n" +
+	"network_id\x18\x13 \x01(\tR\tnetworkId\x12\x1f\n" +
+	"\vbridge_name\x18\x14 \x01(\tR\n" +
+	"bridgeName\"\x7f\n" +
 	"\fWorkloadHint\x12\x1f\n" +
 	"\vworkload_id\x18\x01 \x01(\tR\n" +
 	"workloadId\x12\x12\n" +

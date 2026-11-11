@@ -751,8 +751,11 @@ func (e *Engine) lxcInfo(ctx context.Context, id string) (pid int, ipv4 string, 
 		if strings.HasPrefix(lower, "ip:") {
 			fields := strings.Fields(line)
 			if len(fields) >= 2 {
+				// lxc-info lists every address in the container, eth0's
+				// first. Later ones belong to bridges inside it, such as
+				// Docker's, so the first IPv4 is the container's own.
 				cand := fields[len(fields)-1]
-				if strings.Contains(cand, ".") {
+				if ipv4 == "" && strings.Contains(cand, ".") {
 					ipv4 = cand
 				}
 			}

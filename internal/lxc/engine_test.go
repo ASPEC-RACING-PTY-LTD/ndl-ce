@@ -755,3 +755,18 @@ func TestStartFailsIfIPv4NeverAppears(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A container running Docker has bridge addresses after eth0's; the
+// observed address must stay the container's own.
+func TestLXCInfoKeepsEth0AddressOverDockerBridges(t *testing.T) {
+	e := &Engine{
+		DataDir: t.TempDir(),
+		Run: func(_ context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("State: RUNNING\nPID: 4242\nIP: 10.77.0.219\nIP: fd00::5\nIP: 172.17.0.1\nIP: 172.18.0.1\n"), nil
+		},
+	}
+	pid, ip, err := e.lxcInfo(context.Background(), "x")
+	if err != nil || pid != 4242 || ip != "10.77.0.219" {
+		t.Fatalf("pid=%d ip=%q err=%v", pid, ip, err)
+	}
+}

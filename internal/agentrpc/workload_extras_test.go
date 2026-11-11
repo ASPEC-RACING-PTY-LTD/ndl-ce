@@ -65,4 +65,11 @@ func TestCTLifecycleCarriesTheCodeholdSource(t *testing.T) {
 	if r, _ := ctLifecycleRequest(&tunBack); !r.TUN || r.Action != lxc.ActionTUNSet {
 		t.Fatalf("TUN lost on the way to the agent: %+v", r)
 	}
+	move, _ := ctLifecycleMsg(lxc.LifecycleRequest{WorkloadID: "w", Action: lxc.ActionApplySpec, NetworkID: "net-2", BridgeName: "ndlce8c0536"})
+	wire, _ = proto.Marshal(move)
+	var moveBack agentv1.CTLifecycle
+	_ = proto.Unmarshal(wire, &moveBack)
+	if r, _ := ctLifecycleRequest(&moveBack); r.NetworkID != "net-2" || r.BridgeName != "ndlce8c0536" {
+		t.Fatalf("a network move must reach the agent: %+v", r)
+	}
 }

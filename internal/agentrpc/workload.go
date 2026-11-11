@@ -198,7 +198,7 @@ func ctLifecycleRequest(m *agentv1.CTLifecycle) (lxc.LifecycleRequest, error) {
 		CloneMAC: m.GetCloneMac(), CloneName: m.GetCloneName(),
 		CPUs: int(m.GetCpus()), MemoryBytes: m.GetMemoryBytes(), Name: m.GetName(),
 		MAC: m.GetMac(), Extras: append([]string{}, m.GetExtras()...),
-		TUN: m.GetTun(),
+		TUN: m.GetTun(), NetworkID: m.GetNetworkId(), BridgeName: m.GetBridgeName(),
 	}
 	if m.GetIpConfigJson() != "" {
 		req.IP = ipConfigFromJSON(m.GetIpConfigJson())
