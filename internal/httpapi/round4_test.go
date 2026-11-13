@@ -313,3 +313,13 @@ func TestRollbackCanBeUndoneFromItsCheckpoint(t *testing.T) {
 		t.Fatal("the rollback's checkpoint must be wiped after 3 days")
 	}
 }
+
+// Prod builds are stamped 1.3.0+prodYYYYMMDDHHMM: above the public 1.3.0,
+// below the next public release, and later builds above earlier ones.
+func TestCompareVersionsOrdersProdBuilds(t *testing.T) {
+	if compareVersions("1.3.0+prod202611131210", "1.3.0") != 1 ||
+		compareVersions("1.3.0+prod202611131210", "1.3.1") != -1 ||
+		compareVersions("1.3.0+prod202611131211", "1.3.0+prod202611131210") != 1 {
+		t.Fatal("prod build versions are misordered")
+	}
+}

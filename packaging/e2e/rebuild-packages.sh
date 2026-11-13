@@ -15,6 +15,8 @@ export GOMODCACHE=${GOMODCACHE:-/gocache/mod}
 . "$SRC/packaging/e2e/lib/sign-repo.sh"
 # shellcheck source=lib/ensure-node.sh
 . "$SRC/packaging/e2e/lib/ensure-node.sh"
+# shellcheck source=lib/prod-version.sh
+. "$SRC/packaging/e2e/lib/prod-version.sh"
 
 if ! command -v go >/dev/null 2>&1 || ! go version | grep -Eq 'go1\.(2[4-9]|[3-9][0-9])'; then
   if [ -x /usr/local/go/bin/go ]; then
@@ -38,6 +40,13 @@ for item in cmd gen internal migrations proto systemd packaging ui api store go.
 done
 rm -rf "$BUILD/ui/dist" "$BUILD/ui/node_modules"
 cp -a "$SRC/packaging/debian" "$BUILD/debian"
+base=$(dpkg-parsechangelog -l"$BUILD/debian/changelog" -SVersion)
+# shellcheck disable=SC2046
+PROD_VERSION=$(prod_version "$base" "$(date -u +%Y%m%d%H%M)" \
+  $(git -C "$SRC" tag --list 'v*' 2>/dev/null) $(public_release_tags))
+echo "prod version $PROD_VERSION"
+set_changelog_version "$BUILD/debian/changelog" "$PROD_VERSION"
+set_changelog_version "$BUILD/packaging/debian/changelog" "$PROD_VERSION"
 find "$BUILD/debian" -type f -exec chmod a-x {} +
 chmod +x "$BUILD/debian/rules" \
   "$BUILD/debian/ndl-control.postinst" \
