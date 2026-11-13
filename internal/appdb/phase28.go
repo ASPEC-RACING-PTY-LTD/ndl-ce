@@ -99,6 +99,19 @@ func (m *Memory) GetWGPeer(_ context.Context, clusterID, id string) (*WGPeer, er
 	return &cp, nil
 }
 
+func (m *Memory) BindWGPeerNode(_ context.Context, clusterID, peerID, nodeID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cur, ok := m.wgPeers[peerID]
+	if !ok || cur.ClusterID != clusterID || cur.NodeID != "" {
+		return nil
+	}
+	cur.NodeID = nodeID
+	cur.UpdatedAt = time.Now().UTC()
+	m.wgPeers[peerID] = cur
+	return nil
+}
+
 func (m *Memory) UpdateWGPeerObserved(_ context.Context, p WGPeer) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

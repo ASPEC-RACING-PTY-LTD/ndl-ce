@@ -79,14 +79,10 @@ func TestPhase28WGPeerAndNotReadyHonesty(t *testing.T) {
 		t.Fatalf("expected NotReady before handshake %s", body)
 	}
 
-	sessBody := `{"peer_id":"` + peerID + `","pairing_token":"` + pairing + `","listen_addr":"10.64.8.2:9444","handshake_unix":0}`
-	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/cluster/sessions", strings.NewReader(sessBody))
-	req.Header.Set("Content-Type", "application/json")
-	res, _ = ts.Client().Do(req)
-	body, _ = io.ReadAll(res.Body)
-	_ = res.Body.Close()
-	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), "NotReady") {
-		t.Fatalf("session without handshake must stay NotReady %d %s", res.StatusCode, body)
+	cert := nodeCert(t, s, "worker-1")
+	sessBody := `{"peer_id":"` + peerID + `","node_id":"worker-1","pairing_token":"` + pairing + `","listen_addr":"10.64.8.2:9444","handshake_unix":0}`
+	if code, out := sessionAs(s, sessBody, cert); code != http.StatusOK || !strings.Contains(out, "NotReady") {
+		t.Fatalf("session without handshake must stay NotReady %d %s", code, out)
 	}
 
 	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/cluster/sessions", strings.NewReader(sessBody))
@@ -108,18 +104,7 @@ func TestPhase28WGPeerAndNotReadyHonesty(t *testing.T) {
 		t.Fatalf("reconnect after pairing consume requires cluster client cert %d %s", res.StatusCode, body)
 	}
 
-	certPEM, _, err := s.ClusterCA.IssueNode("worker-1", time.Time{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	block, _ := pem.Decode(certPEM)
-	if block == nil {
-		t.Fatal("node cert pem")
-	}
-	cert, err := x509.ParseCertificate(block.Bytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	sessBody = `{"peer_id":"` + peerID + `","node_id":"worker-1","listen_addr":"10.64.8.2:9444","handshake_unix":1700000000}`
 	hreq := httptest.NewRequest("POST", "/api/v1/cluster/sessions", strings.NewReader(sessBody))
 	hreq.Header.Set("Content-Type", "application/json")
 	hreq.TLS = &tls.ConnectionState{PeerCertificates: []*x509.Certificate{cert}}
@@ -371,7 +356,39 @@ func TestPhase28OpenSessionAcceptsClusterClientCert(t *testing.T) {
 		t.Fatal(err)
 	}
 	peerID, _ := created["id"].(string)
-	certPEM, _, err := s.ClusterCA.IssueNode("n1", time.Time{})
+	pairing, _ := created["pairing_token"].(string)
+	n1, n2 := nodeCert(t, s, "n1"), nodeCert(t, s, "n2")
+	plain := `{"peer_id":"` + peerID + `","node_id":"n1","listen_addr":"10.64.8.2:9444","handshake_unix":0}`
+	// A node certificate alone cannot claim a peer nobody has paired.
+	if code, out := sessionAs(s, plain, n1); code != http.StatusUnauthorized {
+		t.Fatalf("unpaired peer accepted a bare certificate %d %s", code, out)
+	}
+	paired := `{"peer_id":"` + peerID + `","node_id":"n1","pairing_token":"` + pairing + `","listen_addr":"10.64.8.2:9444","handshake_unix":0}`
+	if code, out := sessionAs(s, paired, n1); code != http.StatusOK {
+		t.Fatalf("pairing with a certificate %d %s", code, out)
+	}
+	// The node that paired reconnects with its certificate alone.
+	if code, out := sessionAs(s, plain, n1); code != http.StatusOK {
+		t.Fatalf("mTLS session %d %s", code, out)
+	}
+	// Another node cannot speak for this peer, whatever node_id it claims.
+	for _, body := range []string{
+		plain,
+		`{"peer_id":"` + peerID + `","node_id":"n2","listen_addr":"10.64.8.9:9444","handshake_unix":0}`,
+		`{"peer_id":"` + peerID + `","listen_addr":"10.64.8.9:9444","handshake_unix":0}`,
+	} {
+		if code, out := sessionAs(s, body, n2); code != http.StatusUnauthorized {
+			t.Fatalf("another node's certificate was accepted %d %s for %s", code, out, body)
+		}
+	}
+	if code, _ := sessionAs(s, `{"peer_id":"`+peerID+`","listen_addr":"10.64.8.2:9444","handshake_unix":0}`, n1); code != http.StatusUnauthorized {
+		t.Fatal("a certificate must name its node")
+	}
+}
+
+func nodeCert(t *testing.T, s *Server, nodeID string) *x509.Certificate {
+	t.Helper()
+	certPEM, _, err := s.ClusterCA.IssueNode(nodeID, time.Time{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -383,15 +400,16 @@ func TestPhase28OpenSessionAcceptsClusterClientCert(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := `{"peer_id":"` + peerID + `","node_id":"n1","listen_addr":"10.64.8.2:9444","handshake_unix":0}`
+	return cert
+}
+
+func sessionAs(s *Server, body string, cert *x509.Certificate) (int, string) {
 	hreq := httptest.NewRequest("POST", "/api/v1/cluster/sessions", strings.NewReader(body))
 	hreq.Header.Set("Content-Type", "application/json")
 	hreq.TLS = &tls.ConnectionState{PeerCertificates: []*x509.Certificate{cert}}
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, hreq)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("mTLS session %d %s", rec.Code, rec.Body.String())
-	}
+	return rec.Code, rec.Body.String()
 }
 
 type failCreateRemoteSessionStore struct {

@@ -3,6 +3,7 @@ package ndnet
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -384,5 +385,69 @@ func TestIsolatedNATPlanUsesHostDefaultRoute(t *testing.T) {
 	}
 	if !strings.Contains(joined, "IPv4Forwarding=yes") {
 		t.Fatal(joined)
+	}
+}
+
+// An isolated-nat network reaches the internet, not the host's services or
+// private ranges, while DHCP, DNS and replies keep working.
+func TestIsolatedNATKeepsContainersOffTheLAN(t *testing.T) {
+	out := renderNFT(Plan{NAT: true, IPv4CIDR: "10.77.0.0/24", BridgeName: "ndlce8c0536", EgressIfName: "ndl685ff937"})
+	for _, want := range []string{
+		`iifname "ndlce8c0536" ip daddr != 10.77.0.0/24 ip daddr { 10.0.0.0/8, 100.64.0.0/10, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16 } ct state new counter drop`,
+		`iifname "ndlce8c0536" udp dport { 53, 67 } accept`,
+		`iifname "ndlce8c0536" ct state established,related accept`,
+		`iifname "ndlce8c0536" counter drop`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in\n%s", want, out)
+		}
+	}
+	if strings.Index(out, "counter drop\n  }\n  chain forward") < 0 {
+		t.Errorf("the host drop must end the input chain:\n%s", out)
+	}
+	if _, err := exec.LookPath("nft"); err != nil || os.Geteuid() != 0 {
+		return
+	}
+	// The script loads, in a throwaway network namespace.
+	cmd := exec.Command("unshare", "-n", "sh", "-c", "ip link add ndlce8c0536 type dummy; ip link add ndl685ff937 type dummy; nft -f -")
+	cmd.Stdin = strings.NewReader(out)
+	if b, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("nft refused the rules: %v\n%s", err, b)
+	}
+}
+
+// A table saved by an older version is re-rendered at agent start, so
+// existing networks get the LAN isolation too.
+func TestRestoreNATUpgradesOldTables(t *testing.T) {
+	old := `destroy table inet ndl_nat_ce8c0536
+table inet ndl_nat_ce8c0536 {
+  chain forward {
+    type filter hook forward priority -10; policy accept;
+    iifname "ndlce8c0536" oifname "ndl685ff937" ip saddr 10.77.0.0/24 accept
+    iifname "ndl685ff937" oifname "ndlce8c0536" ip daddr 10.77.0.0/24 ct state established,related accept
+  }
+  chain postrouting {
+    type nat hook postrouting priority srcnat; policy accept;
+    ip saddr 10.77.0.0/24 oifname "ndl685ff937" masquerade
+  }
+}
+`
+	path := filepath.Join(t.TempDir(), "n.nft")
+	_ = os.WriteFile(path, []byte(old), 0o600)
+	e := &Engine{}
+	e.upgradeNATFile(path)
+	got, _ := os.ReadFile(path)
+	want := renderNFT(Plan{NAT: true, IPv4CIDR: "10.77.0.0/24", BridgeName: "ndlce8c0536", EgressIfName: "ndl685ff937"})
+	if string(got) != want || !strings.Contains(want, "ct state new counter drop") {
+		t.Fatalf("not upgraded:\n%s", got)
+	}
+	e.upgradeNATFile(path)
+	if again, _ := os.ReadFile(path); string(again) != want {
+		t.Fatal("upgrade is not stable")
+	}
+	_ = os.WriteFile(path, []byte("table inet other {}\n"), 0o600)
+	e.upgradeNATFile(path)
+	if kept, _ := os.ReadFile(path); string(kept) != "table inet other {}\n" {
+		t.Fatal("an unknown file was rewritten")
 	}
 }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/appdb"
+	"github.com/no-dal/ndl-ce/internal/cluster"
 	"github.com/no-dal/ndl-ce/internal/ndnet"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 	"github.com/no-dal/ndl-ce/internal/secutil"
@@ -197,8 +198,14 @@ func (s *Server) openClusterSession(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "pairing token already used")
 		return
 	}
-	tlsOK := s.clusterClientCertOK(r, strings.TrimSpace(req.NodeID))
-	if !pairingOK && !tlsOK {
+	// A node certificate proves which joined node is calling, not which
+	// peer it may speak for. Without the pairing token, the caller must be
+	// the node that paired this peer.
+	certNode := strings.TrimSpace(req.NodeID)
+	if certNode == "" || !s.clusterClientCertOK(r, certNode) {
+		certNode = ""
+	}
+	if !pairingOK && (certNode == "" || peer.NodeID == "" || peer.NodeID != certNode) {
 		writeErr(w, http.StatusUnauthorized, "pairing token is invalid")
 		return
 	}
@@ -261,6 +268,12 @@ func (s *Server) openClusterSession(w http.ResponseWriter, r *http.Request) {
 		Status: firstNonEmpty(remote.Status, ndnet.StatusUnavailable), Reason: remote.Reason,
 	})
 	if pairingOK {
+		if certNode != "" && peer.NodeID == "" {
+			if err := s.Store.BindWGPeerNode(r.Context(), cluster.ID, peer.ID, certNode); err != nil {
+				writeErr(w, http.StatusInternalServerError, "could not bind the worker to its node")
+				return
+			}
+		}
 		if err := s.ClusterCA.MarkPairingUsed(peer.ID); err != nil {
 			writeErr(w, http.StatusInternalServerError, "could not consume pairing token")
 			return
@@ -288,17 +301,10 @@ func (s *Server) clusterClientCertOK(r *http.Request, wantNodeID string) bool {
 	}
 	want := strings.TrimSpace(wantNodeID)
 	if want == "" {
-		return true
-	}
-	cn := leaf.Subject.CommonName
-	if cn == want {
-		return true
-	}
-	if len(want) > 64 && cn == want[:64] {
-		return true
+		return false
 	}
 	for _, uri := range leaf.URIs {
-		if uri != nil && strings.HasSuffix(uri.String(), "/"+want) {
+		if uri != nil && uri.String() == cluster.NodeURIPrefix+want {
 			return true
 		}
 	}

@@ -56,6 +56,13 @@ FROM wg_peers WHERE cluster_id=$1 AND id=$2`, clusterID, id)
 	return &peer, nil
 }
 
+func (p *Postgres) BindWGPeerNode(ctx context.Context, clusterID, peerID, nodeID string) error {
+	_, err := p.DB.ExecContext(ctx, `
+UPDATE wg_peers SET node_id=$3::uuid, updated_at=now()
+WHERE cluster_id=$1 AND id=$2 AND node_id IS NULL`, clusterID, peerID, nodeID)
+	return err
+}
+
 func (p *Postgres) UpdateWGPeerObserved(ctx context.Context, peer WGPeer) error {
 	_, err := p.DB.ExecContext(ctx, `
 UPDATE wg_peers SET public_key=$3, iface_name=$4, private_key_path=$5, last_handshake_unix=$6, status=$7, reason=$8, updated_at=now()

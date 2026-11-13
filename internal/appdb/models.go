@@ -482,6 +482,9 @@ type Store interface {
 	ListWGPeers(ctx context.Context, clusterID string) ([]WGPeer, error)
 	GetWGPeer(ctx context.Context, clusterID, id string) (*WGPeer, error)
 	UpdateWGPeerObserved(ctx context.Context, p WGPeer) error
+	// BindWGPeerNode records which joined node paired a worker peer, once.
+	// Later check-ins without the pairing token must come from that node.
+	BindWGPeerNode(ctx context.Context, clusterID, peerID, nodeID string) error
 
 	CreateRemoteNode(ctx context.Context, n RemoteNode) error
 	ListRemoteNodes(ctx context.Context, clusterID string) ([]RemoteNode, error)

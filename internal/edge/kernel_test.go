@@ -180,6 +180,7 @@ nft 'table ip dsim { chain pre { type nat hook prerouting priority -100; fib dad
 	}
 	start(0, py("echo_udp.py", "27015"))
 	start(0, py("echo_tcp.py", "27020"))
+	start(0, py("echo_tcp.py", "2222")) // a host service the edge must not reach
 	start(ctr, py("echo_udp.py", "27016"))
 	start(player, py("echo_udp.py", "27900")) // a master server
 
@@ -255,6 +256,15 @@ nft 'table ip dsim { chain pre { type nat hook prerouting priority -100; fib dad
 	// The origin's own traffic still uses its router.
 	if got := askFrom(0, "udp", "198.51.100.10", "27900", "0"); !strings.HasPrefix(got, "198.51.100.254:") {
 		t.Fatalf("host traffic: master server saw %q, want the router's address", got)
+	}
+
+	// The edge reaches nothing on the origin it does not forward, such as a
+	// host service listening on every address.
+	if out, err := exec.Command("nsenter", append([]string{"-t", strconv.Itoa(edgeNS), "-n"}, py("ask.py", "tcp", "10.66.0.2", "2222", "0")...)...).CombinedOutput(); err == nil {
+		t.Fatalf("the edge reached a host service through the tunnel: %s", out)
+	}
+	if got := askFrom(player, "tcp", "203.0.113.1", "27020", "0"); !strings.HasPrefix(got, "198.51.100.10:") {
+		t.Fatalf("tcp 27020 after the probes: server saw %q", got)
 	}
 
 	// Kill switch: with the tunnel gone the container's outbound traffic

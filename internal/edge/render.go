@@ -49,7 +49,7 @@ func Render(spec Spec, env Env) string {
 		}
 	}
 
-	var preNAT, postNAT, mark, raw, out, mss []string
+	var preNAT, postNAT, mark, raw, out, mss, input, forward []string
 	for _, t := range spec.Tunnels {
 		ifn := quote(IfName(t.ID))
 		self := addrOf(t.Address)
@@ -67,9 +67,18 @@ func Render(spec Spec, env Env) string {
 			postNAT = append(postNAT, fmt.Sprintf("iifname %s ip saddr %s oifname != %s masquerade", ifn, t.Peer, ifn))
 		case RoleOrigin:
 			var udpPorts []string
+			// The edge is another machine: through the tunnel it may reach
+			// only what it forwards, never the origin's own services (SSH,
+			// the control panel) or its LAN. Replies to the origin's own
+			// connections and its ICMP errors still come back.
+			input = append(input, fmt.Sprintf("iifname %s ct state established,related accept", ifn))
+			forward = append(forward,
+				fmt.Sprintf("iifname %s ct state established,related accept", ifn),
+				fmt.Sprintf("iifname %s ct status dnat accept", ifn))
 			for _, f := range t.Forwards {
 				span := portSpan(f.ToPort, f.ToPort+f.last()-f.Port)
 				if f.Target == "" {
+					input = append(input, fmt.Sprintf("iifname %s ip daddr %s %s dport %s accept", ifn, self, f.Protocol, span))
 					preNAT = append(preNAT, fmt.Sprintf("iifname %s ip daddr %s %s dport %s counter name %s",
 						ifn, self, f.Protocol, span, quote(CounterName(t.ID, f.ID))))
 					if f.Protocol == "udp" {
@@ -93,6 +102,8 @@ func Render(spec Spec, env Env) string {
 					ifn, strings.Join(eg, ", "), m))
 			}
 			mark = append(mark, fmt.Sprintf("iifname != %s ct mark %s meta mark set %s", ifn, m, m))
+			input = append(input, fmt.Sprintf("iifname %s counter drop", ifn))
+			forward = append(forward, fmt.Sprintf("iifname %s counter drop", ifn))
 			out = append(out, fmt.Sprintf("ct mark %s meta mark set %s", m, m))
 			// A UDP server on the host network answers from an unconnected
 			// socket: the kernel picks the uplink's address, and a new NAT
@@ -112,6 +123,8 @@ func Render(spec Spec, env Env) string {
 	chain(&b, "output_raw", "type filter hook output priority raw; policy accept;", raw)
 	chain(&b, "output_mark", "type route hook output priority mangle; policy accept;", out)
 	chain(&b, "forward_mss", "type filter hook forward priority mangle; policy accept;", mss)
+	chain(&b, "input_guard", "type filter hook input priority filter - 5; policy accept;", input)
+	chain(&b, "forward_guard", "type filter hook forward priority filter - 5; policy accept;", forward)
 	b.WriteString("}\n")
 	return b.String()
 }

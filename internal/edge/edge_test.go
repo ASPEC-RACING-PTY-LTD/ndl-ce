@@ -71,6 +71,12 @@ func TestRenderOrigin(t *testing.T) {
 		"ip saddr { 172.17.0.2 } ip daddr != @private4 ct state new ct mark set 0x6e640001",
 		"udp sport { 27015 } notrack",
 		"udp sport { 27015 } ip saddr set 10.66.0.6 meta mark set 0x6e640001",
+		// The edge reaches only what it forwards: host ports it carries,
+		// DNATed targets and replies. Everything else from it is dropped.
+		"iifname " + ifn + " ip daddr 10.66.0.6 udp dport 27015 accept",
+		"iifname " + ifn + " ct status dnat accept",
+		"iifname " + ifn + " ct state established,related accept",
+		"iifname " + ifn + " counter drop",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in\n%s", want, out)

@@ -727,12 +727,55 @@ func (e *Engine) RestoreNAT(ctx context.Context) error {
 			continue
 		}
 		any = true
-		_ = e.run(ctx, NFTBin, "-f", filepath.Join(dir, ent.Name()))
+		path := filepath.Join(dir, ent.Name())
+		e.upgradeNATFile(path)
+		_ = e.run(ctx, NFTBin, "-f", path)
 	}
 	if !any {
 		return nil
 	}
 	return e.enableForwarding()
+}
+
+// upgradeNATFile re-renders a persisted isolated-nat table with the
+// current rules, so networks made by an older version get them at the
+// next agent start. Files it cannot read are left as they are.
+func (e *Engine) upgradeNATFile(path string) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	plan, ok := natPlanFromNFT(string(raw))
+	if !ok {
+		return
+	}
+	if fresh := renderNFT(plan); fresh != "" && fresh != string(raw) {
+		_ = os.WriteFile(path, []byte(fresh), 0o600)
+	}
+}
+
+// natPlanFromNFT recovers bridge, egress and subnet from a rendered table:
+// its masquerade line names the subnet and egress, and the egress accept
+// line names the bridge.
+func natPlanFromNFT(text string) (Plan, bool) {
+	var plan Plan
+	for _, line := range strings.Split(text, "\n") {
+		f := strings.Fields(line)
+		if len(f) == 6 && f[0] == "ip" && f[1] == "saddr" && f[3] == "oifname" && f[5] == "masquerade" {
+			plan.IPv4CIDR, plan.EgressIfName = f[2], strings.Trim(f[4], `"`)
+		}
+		if len(f) == 8 && f[0] == "iifname" && f[2] == "oifname" && f[4] == "ip" && f[5] == "saddr" && f[7] == "accept" {
+			plan.BridgeName = strings.Trim(f[1], `"`)
+		}
+	}
+	if plan.IPv4CIDR == "" || plan.EgressIfName == "" || plan.BridgeName == "" {
+		return Plan{}, false
+	}
+	if _, _, err := net.ParseCIDR(plan.IPv4CIDR); err != nil {
+		return Plan{}, false
+	}
+	plan.NAT = true
+	return plan, true
 }
 
 func (e *Engine) probeManagement(host HostView, plan Plan) error {
