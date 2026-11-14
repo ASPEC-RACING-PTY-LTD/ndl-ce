@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -304,7 +305,8 @@ func TestDestAgentReadyReason(t *testing.T) {
 	}
 }
 
-func TestSetDestListenRegistersReadyWorker(t *testing.T) {
+// Saving an address dials it: an agent that does not answer is not Ready.
+func TestSetDestListenChecksTheWorker(t *testing.T) {
 	s, mem, token := testServer(t)
 	cluster, _ := mem.GetCluster(t.Context())
 	control := seedNode(t, mem, cluster.ID, debianInv(), false)
@@ -326,17 +328,20 @@ func TestSetDestListenRegistersReadyWorker(t *testing.T) {
 		t.Fatalf("control dest-listen %d %s", res.StatusCode, raw)
 	}
 
-	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/nodes/"+worker.ID+"/dest-listen", strings.NewReader(`{"listen_addr":"10.64.8.2:9444"}`))
+	ln, _ := net.Listen("tcp", "127.0.0.1:0")
+	closed := ln.Addr().String()
+	_ = ln.Close()
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/nodes/"+worker.ID+"/dest-listen", strings.NewReader(`{"listen_addr":"`+closed+`"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
 	res, _ = ts.Client().Do(req)
 	raw, _ = io.ReadAll(res.Body)
 	_ = res.Body.Close()
-	if res.StatusCode != http.StatusOK || !strings.Contains(string(raw), `"status":"Ready"`) || !strings.Contains(string(raw), "10.64.8.2:9444") {
-		t.Fatalf("worker dest-listen %d %s", res.StatusCode, raw)
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(raw), `"status":"NotReady"`) || !strings.Contains(string(raw), closed) || !strings.Contains(string(raw), "refused") {
+		t.Fatalf("a saved address nobody answers on must not be Ready: %d %s", res.StatusCode, raw)
 	}
 	c, ok := s.destAgentClient(context.Background(), &worker)
-	if !ok || c.TCPAddr != "10.64.8.2:9444" {
+	if !ok || c.TCPAddr != closed {
 		t.Fatalf("advertised dest listen %+v ok=%v", c, ok)
 	}
 }

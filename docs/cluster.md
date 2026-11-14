@@ -61,7 +61,8 @@ No VPN or tunnel is needed. The control node checks every worker every 15
 seconds and records its status, host, CPU and memory. The Cluster page
 shows them, with **Check** to test the link now and **Address** to change
 where the agent is dialed (`nodalctl node dest-listen --id ID --addr
-HOST:PORT`).
+HOST:PORT`). Saving an address dials the agent there: the node shows
+Connected only once the agent answers.
 
 ## Update a worker
 

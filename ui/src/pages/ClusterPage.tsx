@@ -536,7 +536,7 @@ function AddressDialog({
 }: {
   node: NodeSummary | null;
   onClose: () => void;
-  onSaved: (id: string) => Promise<void>;
+  onSaved: (id: string, check?: WorkerLinkCheck) => Promise<void>;
 }) {
   const [via, setVia] = useState<"direct" | "tunnel">("direct");
   const [addr, setAddr] = useState("");
@@ -571,8 +571,11 @@ function AddressDialog({
     setBusy(true);
     setError(null);
     try {
-      await setNodeAgentAddress(node.id, value);
-      await onSaved(node.id);
+      // Saving dials the agent; its check result comes back with the node.
+      const saved = (await setNodeAgentAddress(node.id, value)) as {
+        check?: WorkerLinkCheck;
+      } | null;
+      await onSaved(node.id, saved?.check);
       if (close) {
         onClose();
       }
@@ -693,10 +696,10 @@ export function ClusterPage() {
     };
   }, [reload, reloadNodes]);
 
-  async function onCheck(id: string) {
+  async function onCheck(id: string, done?: WorkerLinkCheck) {
     setChecks((c) => ({ ...c, [id]: "checking" }));
     try {
-      const res = await checkNode(id);
+      const res = done ?? (await checkNode(id));
       setChecks((c) => ({ ...c, [id]: res }));
       await reloadNodes();
     } catch (err) {
@@ -874,7 +877,11 @@ export function ClusterPage() {
                         ) : null}
                         {isWorker(n) &&
                         n.agent?.status !== "Ready" &&
-                        n.agent?.reason ? (
+                        n.agent?.reason &&
+                        (!check ||
+                          check === "checking" ||
+                          check.reachable ||
+                          check.error !== n.agent.reason) ? (
                           <div className="muted">{n.agent.reason}</div>
                         ) : null}
                         {check && check !== "checking" ? (

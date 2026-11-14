@@ -403,10 +403,6 @@ func (s *Server) setDestListen(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	now := s.now()
-	if now.IsZero() {
-		now = time.Now().UTC()
-	}
 	remote, err := s.Store.GetRemoteNode(r.Context(), p.User.ClusterID, node.ID)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -421,20 +417,27 @@ func (s *Server) setDestListen(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// A saved address is not a reached agent: the link is Ready only once
+	// the check below dials it. Last seen stays the last real contact.
 	remote.ListenAddr = listen
-	remote.Status = ndnet.NodeReady
-	remote.Reason = ""
-	remote.LastSeenAt = &now
-	remote.LastHandshakeUnix = now.Unix()
+	remote.Status = ndnet.NodeNotReady
+	remote.Reason = "the control plane has not reached the agent at this address yet"
+	remote.LastHandshakeUnix = 0
 	if err := s.Store.UpdateRemoteNodeSession(r.Context(), *remote); err != nil {
 		writeErr(w, http.StatusInternalServerError, "could not record dest listen")
 		return
 	}
 	got, gerr := s.Store.GetRemoteNode(r.Context(), p.User.ClusterID, node.ID)
-	if gerr != nil || got == nil || got.ListenAddr != listen || got.Status != ndnet.NodeReady {
+	if gerr != nil || got == nil || got.ListenAddr != listen {
 		writeErr(w, http.StatusInternalServerError, "could not record dest listen")
 		return
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "cluster.dest.listen", "ok", node.ID)
-	writeJSON(w, http.StatusOK, remoteNodeJSON(*got, now))
+	check := s.checkWorkerLink(r.Context(), *node)
+	if after, aerr := s.Store.GetRemoteNode(r.Context(), p.User.ClusterID, node.ID); aerr == nil && after != nil {
+		got = after
+	}
+	out := remoteNodeJSON(*got, s.now())
+	out["check"] = check
+	writeJSON(w, http.StatusOK, out)
 }

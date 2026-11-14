@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"encoding/json"
 	"io"
 	"net"
@@ -149,6 +150,67 @@ func TestCheckNodeReachesWorkerOverMutualTLS(t *testing.T) {
 	remote, _ := mem.GetRemoteNode(t.Context(), clusterRow.ID, id)
 	if remote == nil || remote.Status != ndnet.NodeReady || remote.LastSeenAt == nil {
 		t.Fatalf("a reachable worker must be marked ready: %+v", remote)
+	}
+	// Saving the address dials it and reports the agent it reached.
+	code, saved := apiJSON(t, ts, cookie, "POST", "/api/v1/nodes/"+id+"/dest-listen", `{"listen_addr":"`+ln.Addr().String()+`"}`)
+	check, _ := saved["check"].(map[string]any)
+	if code != http.StatusOK || saved["status"] != ndnet.NodeReady || check == nil || check["reachable"] != true {
+		t.Fatalf("saving a reachable address must come back Ready: %d %v", code, saved)
+	}
+
+	// The agent goes away: the next check shows it at once, not after the
+	// last good handshake ages out, and keeps when it was last reached.
+	_ = agentSrv.Close()
+	lastSeen := remote.LastSeenAt
+	_, got = apiJSON(t, ts, cookie, "POST", "/api/v1/nodes/"+id+"/check", `{}`)
+	if got["reachable"] != false {
+		t.Fatalf("a stopped agent must not be reachable: %v", got)
+	}
+	_, list := apiJSON(t, ts, cookie, "GET", "/api/v1/nodes", "")
+	items, _ := list["items"].([]any)
+	for _, it := range items {
+		m := it.(map[string]any)
+		if m["id"] != id {
+			continue
+		}
+		agent, _ := m["agent"].(map[string]any)
+		if agent["status"] == ndnet.NodeReady {
+			t.Fatalf("a failed check must not list the node as connected: %v", agent)
+		}
+	}
+	remote, _ = mem.GetRemoteNode(t.Context(), clusterRow.ID, id)
+	if remote.LastSeenAt == nil || lastSeen == nil || remote.LastSeenAt.Before(*lastSeen) {
+		t.Fatalf("last seen must stay the last real contact: %+v", remote)
+	}
+}
+
+func TestCloudflareLinkErrorNamesTheCause(t *testing.T) {
+	status := 0
+	old := cloudflareEdgeStatus
+	cloudflareEdgeStatus = func(context.Context, string) int { return status }
+	defer func() { cloudflareEdgeStatus = old }()
+	reset := "unavailable: read unix @->@: read: connection reset by peer"
+	cases := []struct {
+		cf     string
+		status int
+		want   string
+	}{
+		{"dial tcp: lookup hs.example.com on 192.168.2.1:53: no such host", 0, "hs.example.com has no DNS record"},
+		{"websocket: bad handshake", 530, "no connector online"},
+		{"websocket: bad handshake", 403, "Cloudflare Access blocked"},
+		{"websocket: bad handshake", 302, "Cloudflare Access blocked"},
+		{"websocket: bad handshake", 404, "HTTP 404"},
+		{"websocket: bad handshake", 0, "Cloudflare refused the tunnel connection"},
+	}
+	for _, c := range cases {
+		status = c.status
+		got := cloudflareLinkError(t.Context(), "hs.example.com", errors.New(reset+" (cloudflared: "+c.cf+")"))
+		if !strings.Contains(got, c.want) || strings.Contains(got, "check cloudflared runs on the node and its route") {
+			t.Fatalf("%q (HTTP %d): %s", c.cf, c.status, got)
+		}
+	}
+	if got := cloudflareLinkError(t.Context(), "hs.example.com", errors.New(reset)); !strings.Contains(got, "did not reach the agent") {
+		t.Fatalf("a bare reset keeps the general advice: %s", got)
 	}
 }
 

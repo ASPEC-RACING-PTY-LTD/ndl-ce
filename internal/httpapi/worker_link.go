@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -47,11 +48,15 @@ func (s *Server) checkWorkerLink(ctx context.Context, node appdb.Node) workerLin
 	version, err := agent.AgentVersion(cctx)
 	if err != nil {
 		out.Error = linkError(err)
-		if _, viaCF := ndnet.CloudflareAgentHost(remote.ListenAddr); viaCF {
-			out.Error = cloudflareLinkError(err)
+		if host, viaCF := ndnet.CloudflareAgentHost(remote.ListenAddr); viaCF {
+			out.Error = cloudflareLinkError(ctx, host, err)
 		}
 		remote.Status = ndnet.NodeNotReady
 		remote.Reason = out.Error
+		// The node list derives Connected from a fresh handshake; a failed
+		// dial must not leave the last good one standing for minutes.
+		// Last seen stays the last real contact.
+		remote.LastHandshakeUnix = 0
 		if s.recordLinkCheck(ctx, *remote) {
 			_ = s.Store.MarkInventoryStale(ctx, node.ID)
 		}
@@ -112,7 +117,9 @@ func linkError(err error) string {
 }
 
 // cloudflareLinkError explains a failed link through a Cloudflare tunnel.
-func cloudflareLinkError(err error) string {
+// What cloudflared said decides the advice: every failure of the child
+// process also surfaces as a reset socket, so that alone says nothing.
+func cloudflareLinkError(ctx context.Context, host string, err error) string {
 	msg := err.Error()
 	low := strings.ToLower(msg)
 	switch {
@@ -120,12 +127,49 @@ func cloudflareLinkError(err error) string {
 		return msg
 	case strings.Contains(low, "revoked"):
 		return "the node's certificate is revoked"
+	case strings.Contains(low, "no such host"):
+		return host + " has no DNS record: add it as a public hostname on the node's tunnel, service TCP, URL localhost:" + defaultWorkerAgentPort + " (" + msg + ")"
+	case strings.Contains(low, "bad handshake"):
+		return cloudflareRefusal(cloudflareEdgeStatus(ctx, host), host) + " (" + msg + ")"
 	case strings.Contains(low, "certificate"):
 		return "TLS handshake failed: the node does not hold this cluster's certificate (" + msg + ")"
 	case strings.Contains(low, "eof"), strings.Contains(low, "reset"), strings.Contains(low, "broken pipe"), strings.Contains(low, "deadline exceeded"), strings.Contains(low, "timeout"):
 		return "the Cloudflare tunnel did not reach the agent: check cloudflared runs on the node and its route sends this hostname to tcp://localhost:" + defaultWorkerAgentPort + " (" + msg + ")"
 	}
 	return "through Cloudflare: " + msg
+}
+
+// cloudflareRefusal says why Cloudflare's edge refused the tunnel
+// connection, from the HTTP status the hostname answers with.
+func cloudflareRefusal(status int, host string) string {
+	switch status {
+	case http.StatusForbidden, http.StatusUnauthorized, http.StatusFound:
+		// 302 is Access sending a browser to its login page.
+		return "Cloudflare Access blocked the connection to " + host + ": give this control node a Bypass or Service Auth policy, or save its service token under Join settings"
+	case 530:
+		return "Cloudflare has no connector online for the tunnel behind " + host + " (error 1033): cloudflared on the node is stopped or the node is offline"
+	case 0:
+		return "Cloudflare refused the tunnel connection to " + host + ": check cloudflared runs on the node and the hostname is a TCP route to localhost:" + defaultWorkerAgentPort
+	}
+	return "Cloudflare refused the tunnel connection to " + host + " (HTTP " + strconv.Itoa(status) + "): the hostname is not a TCP route to localhost:" + defaultWorkerAgentPort + " on a running tunnel"
+}
+
+// cloudflareEdgeStatus asks Cloudflare's edge what it answers for a tunnel
+// hostname; 0 when it could not be asked. A test replaces it.
+var cloudflareEdgeStatus = func(ctx context.Context, host string) int {
+	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(cctx, http.MethodGet, "https://"+host+"/", nil)
+	if err != nil {
+		return 0
+	}
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	res, err := client.Do(req)
+	if err != nil {
+		return 0
+	}
+	_ = res.Body.Close()
+	return res.StatusCode
 }
 
 // ObserveWorkers checks every joined worker's agent link. The control
