@@ -83,8 +83,9 @@ func newSyncFixture(t *testing.T) *fixture {
 			}
 			return got, failed
 		},
-		Now:  func() time.Time { return time.Unix(1731700123, 0) },
-		Work: t.TempDir(),
+		Now:   func() time.Time { return time.Unix(1731700123, 0) },
+		Work:  t.TempDir(),
+		Items: t.TempDir(),
 	}
 	d, err := OpenSyncDir(f.base, SyncDirRel)
 	if err != nil {
@@ -145,7 +146,10 @@ func TestWorkshopSyncDeliversNewAndUpdatedItems(t *testing.T) {
 	if got["200"].State != "updated" || got["200"].Kind != "lua" || got["300"].State != "new" || got["300"].Kind != "lua" {
 		t.Fatalf("labels %+v", m.Items)
 	}
-	body, err := os.ReadFile(filepath.Join(f.base, SyncDirRel, got["300"].File))
+	if got["300"].File != "items/300.gma" {
+		t.Fatalf("file %q", got["300"].File)
+	}
+	body, err := os.ReadFile(filepath.Join(f.engine.Items, "300.gma"))
 	if err != nil || !bytes.HasPrefix(body, []byte("GMAD")) || got["300"].Size != int64(len(body)) || len(got["300"].SHA256) != 64 {
 		t.Fatalf("pack on disk %v %+v", err, got["300"])
 	}
@@ -165,10 +169,10 @@ func TestWorkshopSyncDeliversNewAndUpdatedItems(t *testing.T) {
 	// After a restart the server loads 300 from the Workshop: its pack is deleted.
 	f.status(SyncStatus{Version: 1, Items: []SyncStatusItem{{WSID: "300", TimeUpdated: 3000, State: "in_collection"}, {WSID: "200", TimeUpdated: 2000, State: "mounted"}}})
 	f.check("")
-	if _, err := os.Stat(filepath.Join(f.base, SyncDirRel, "items", "300.gma")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(f.engine.Items, "300.gma")); !os.IsNotExist(err) {
 		t.Fatal("a pack the server loads itself must be deleted")
 	}
-	if _, err := os.Stat(filepath.Join(f.base, SyncDirRel, "items", "200.gma")); err != nil {
+	if _, err := os.Stat(filepath.Join(f.engine.Items, "200.gma")); err != nil {
 		t.Fatal("a pack the server has not marked in_collection must stay")
 	}
 }
@@ -302,5 +306,40 @@ func TestUnpackLegacyWorkshopFile(t *testing.T) {
 	_ = os.Remove(dst)
 	if err := unpackWorkshopFile(src, dst); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Packs go to ndl-ce's own folder, never into the server's.
+func TestWorkshopSyncPacksStayOutOfTheServerFolder(t *testing.T) {
+	f := newSyncFixture(t)
+	f.item("100", 1000, map[string]string{"a.vmt": "x"})
+	f.check("")
+	if _, err := os.Stat(filepath.Join(f.base, SyncDirRel, "items")); !os.IsNotExist(err) {
+		t.Fatal("ndl-ce must not write packs into the server's folder")
+	}
+	if _, err := os.Stat(filepath.Join(f.engine.Items, "100.gma")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStartMountsReadOnlyFolders(t *testing.T) {
+	rt := NewRuntime(t.TempDir())
+	var run []string
+	rt.Run = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		if len(args) > 0 && args[0] == "run" {
+			run = args
+		}
+		return []byte("cid"), nil
+	}
+	_, err := rt.Start(context.Background(), RunSpec{ID: "abc", Image: "img", WorkDir: "/home/container",
+		ReadOnly: []ReadOnlyMount{{Host: "/var/lib/ndl/workshop-sync/abc/items", Rel: SyncItemsRel}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(run, " "), "--mount type=bind,src=/var/lib/ndl/workshop-sync/abc/items,dst=/home/container/garrysmod/data/cs_sync/items,readonly") {
+		t.Fatalf("run %v", run)
+	}
+	if _, err := rt.Start(context.Background(), RunSpec{ID: "abc", Image: "img", ReadOnly: []ReadOnlyMount{{Host: "/x", Rel: "../escape"}}}); err == nil {
+		t.Fatal("a mount outside the server folder must be refused")
 	}
 }

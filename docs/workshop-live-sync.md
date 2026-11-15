@@ -19,11 +19,20 @@ Everything is in the server's `garrysmod/data/cs_sync/`:
 | `request.json` | server | Staff pressed "Check now" |
 | `manifest.json` | ndl-ce | Packs ready to mount |
 | `status.json` | server | What the server did with each item |
-| `items/<wsid>.gma` | ndl-ce | The packs |
+| `items/<wsid>.gma` | ndl-ce | The packs (read-only to the server) |
 
-Both sides write a temporary file in the same folder (`name.tmp`) and rename
-it over the real one. A reader that cannot parse a file waits a second and
-tries again. ndl-ce never follows a link inside this folder.
+Both sides write a temporary file in the same folder and rename it over the
+real one: ndl-ce uses `manifest.json.tmp`, the server `request.tmp.json` and
+`status.tmp.json`. A reader that cannot parse a file waits a second and tries
+again. ndl-ce never follows a link inside this folder.
+
+`items/` is read-only inside the server. ndl-ce keeps the packs in its own
+folder on the host and mounts it there whenever a Garry's Mod server starts,
+so nothing running on the server can add, change or remove a pack, even as
+root. A server that was started before this mount existed must be restarted
+once; until then ndl-ce delivers nothing to it and says so under **Live
+Workshop sync**. The server loads packs only from `items/<wsid>.gma` and
+ignores the manifest's `file` field.
 
 ## When ndl-ce checks
 

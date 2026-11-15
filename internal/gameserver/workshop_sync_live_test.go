@@ -27,7 +27,8 @@ func TestWorkshopSyncLive(t *testing.T) {
 	defer cancel()
 	work := t.TempDir()
 	base := t.TempDir()
-	engine := WorkshopSync{API: SteamWorkshopAPI{}, Fetch: NewRuntime(work).WorkshopDownload, Work: work}
+	items := t.TempDir()
+	engine := WorkshopSync{API: SteamWorkshopAPI{}, Fetch: NewRuntime(work).WorkshopDownload, Work: work, Items: items}
 	var st SyncState
 	if err := engine.Baseline(ctx, &st, collection); err != nil {
 		t.Fatal(err)
@@ -45,7 +46,7 @@ func TestWorkshopSyncLive(t *testing.T) {
 	if len(m.Items) != 1 || m.Items[0].WSID != item || m.Items[0].State != "updated" {
 		t.Fatalf("manifest %+v", m)
 	}
-	info, err := ReadGMA(filepath.Join(base, SyncDirRel, m.Items[0].File))
+	info, err := ReadGMA(filepath.Join(items, m.Items[0].WSID+".gma"))
 	if err != nil {
 		t.Fatal(err)
 	}

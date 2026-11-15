@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -180,6 +181,15 @@ type RunSpec struct {
 	// it). Servers such as srcds hold their console output in a buffer when
 	// it goes to a pipe, so without one the console stays empty.
 	TTY bool `json:",omitempty"`
+	// ReadOnly mounts host folders the server may read but never change,
+	// at paths relative to its working folder.
+	ReadOnly []ReadOnlyMount `json:",omitempty"`
+}
+
+// ReadOnlyMount is a host folder shown read-only inside a game server.
+type ReadOnlyMount struct {
+	Host string
+	Rel  string
 }
 
 // ttyWrapper runs $NDL_START on a pseudo-terminal when script is present,
@@ -219,6 +229,13 @@ func (r *Runtime) Start(ctx context.Context, spec RunSpec) (string, error) {
 	)
 	if ch := r.codeholdCLI(ctx); ch != "" {
 		args = append(args, "-v", ch+":"+chContainerPath+":ro")
+	}
+	for _, m := range spec.ReadOnly {
+		rel, err := cleanArchiveRel(m.Rel)
+		if err != nil || strings.ContainsAny(m.Host+rel, ",\n") {
+			return "", fmt.Errorf("read-only mount %q is not a safe path", m.Rel)
+		}
+		args = append(args, "--mount", "type=bind,src="+m.Host+",dst="+path.Join(workdir, rel)+",readonly")
 	}
 	if spec.MemoryBytes > 0 {
 		args = append(args, "--memory", strconv.FormatInt(spec.MemoryBytes, 10))
@@ -404,4 +421,20 @@ func envArgs(env map[string]string) (flags, secret []string) {
 		flags = append(flags, "-e", k+"="+v)
 	}
 	return flags, secret
+}
+
+// HasReadOnlyMount reports whether the running server has a read-only mount
+// at rel under its working folder.
+func (r *Runtime) HasReadOnlyMount(ctx context.Context, id, workdir, rel string) bool {
+	out, err := r.run(ctx, r.dockerBin(), "inspect", "-f", "{{range .Mounts}}{{.Destination}}|{{.RW}}\n{{end}}", containerName(id))
+	if err != nil {
+		return false
+	}
+	want := path.Join(firstNonEmpty(workdir, "/home/container"), rel) + "|false"
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.TrimSpace(line) == want {
+			return true
+		}
+	}
+	return false
 }

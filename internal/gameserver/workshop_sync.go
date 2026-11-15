@@ -33,6 +33,8 @@ const (
 	SyncManifestFile = "manifest.json"
 	SyncStatusFile   = "status.json"
 	SyncItemsDir     = "items"
+	// SyncItemsRel is where the server sees its packs, read-only.
+	SyncItemsRel = SyncDirRel + "/" + SyncItemsDir
 	// SyncReadyCommand tells the server a new manifest is ready.
 	SyncReadyCommand = "cs_sync_ready"
 	SyncCheckEvery   = time.Hour
@@ -188,6 +190,9 @@ type WorkshopSync struct {
 	Now   func() time.Time
 	// Work is a private scratch folder outside the server's folder.
 	Work string
+	// Items holds the packs, outside the server's folder. The server sees it
+	// read-only as cs_sync/items, so only ndl-ce can put a pack there.
+	Items string
 }
 
 func (w WorkshopSync) now() time.Time {
@@ -278,7 +283,7 @@ func (w WorkshopSync) Check(ctx context.Context, st *SyncState, dir *SyncDir, co
 	if len(want) > 0 {
 		errs = append(errs, w.deliver(ctx, st, dir, want, files, known)...)
 	}
-	w.cleanup(st, dir, status, hasStatus)
+	w.cleanup(st, status, hasStatus)
 
 	st.Seq++
 	m := SyncManifest{Version: 1, Seq: st.Seq, Generated: now.Unix(), Collection: collection, Items: []SyncManifestItem{}, Errors: errs}
@@ -367,14 +372,12 @@ func (w WorkshopSync) deliver(ctx context.Context, st *SyncState, dir *SyncDir, 
 	}
 	defer os.RemoveAll(dl)
 	got, failed := w.Fetch(ctx, want, dl)
-	items, err := dir.Sub(SyncItemsDir)
-	if err != nil {
+	if err := os.MkdirAll(w.Items, 0o755); err != nil {
 		for _, id := range want {
 			errs = append(errs, SyncError{WSID: id, Error: "items folder: " + err.Error()})
 		}
 		return errs
 	}
-	defer items.Close()
 	for _, id := range want {
 		src, ok := got[id]
 		if !ok {
@@ -401,7 +404,7 @@ func (w WorkshopSync) deliver(ctx context.Context, st *SyncState, dir *SyncDir, 
 			continue
 		}
 		h := sha256.New()
-		size, err := items.WriteFromAtomic(id+".gma", io.TeeReader(in, h))
+		size, err := writeFileAtomic(filepath.Join(w.Items, id+".gma"), io.TeeReader(in, h))
 		_ = in.Close()
 		_ = os.Remove(gma)
 		if err != nil {
@@ -424,7 +427,7 @@ func (w WorkshopSync) deliver(ctx context.Context, st *SyncState, dir *SyncDir, 
 
 // cleanup deletes packs the server now loads from the Workshop itself:
 // status.json marks them in_collection at the delivered version or later.
-func (w WorkshopSync) cleanup(st *SyncState, dir *SyncDir, status SyncStatus, hasStatus bool) {
+func (w WorkshopSync) cleanup(st *SyncState, status SyncStatus, hasStatus bool) {
 	if !hasStatus || len(st.Synced) == 0 {
 		return
 	}
@@ -434,18 +437,38 @@ func (w WorkshopSync) cleanup(st *SyncState, dir *SyncDir, status SyncStatus, ha
 			loaded[it.WSID] = it.TimeUpdated
 		}
 	}
-	items, err := dir.Sub(SyncItemsDir)
-	if err != nil {
-		return
-	}
-	defer items.Close()
 	for id, it := range st.Synced {
 		if t, ok := loaded[id]; ok && t >= it.TimeUpdated {
-			if err := items.Remove(id + ".gma"); err == nil || errors.Is(err, os.ErrNotExist) {
+			if err := os.Remove(filepath.Join(w.Items, id+".gma")); err == nil || errors.Is(err, os.ErrNotExist) {
 				delete(st.Synced, id)
 			}
 		}
 	}
+}
+
+// writeFileAtomic writes path through a temporary file and a rename.
+func writeFileAtomic(path string, r io.Reader) (int64, error) {
+	tmp := path + ".tmp"
+	_ = os.Remove(tmp)
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		return 0, err
+	}
+	n, err := io.Copy(f, r)
+	if err == nil {
+		err = f.Sync()
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Rename(tmp, path)
+	}
+	if err != nil {
+		_ = os.Remove(tmp)
+		return 0, err
+	}
+	return n, nil
 }
 
 func readSyncStatus(dir *SyncDir) (SyncStatus, bool) {

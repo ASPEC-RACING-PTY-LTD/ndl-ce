@@ -77,6 +77,11 @@ func (s *Server) syncRoot() string {
 	return filepath.Join(s.gameRuntime().Root, "workshop-sync")
 }
 
+// syncItemsDir holds a server's packs; the server sees it read-only.
+func (s *Server) syncItemsDir(id string) string {
+	return filepath.Join(s.syncRoot(), id, "items")
+}
+
 func (s *Server) syncStatePath(id string) string {
 	return filepath.Join(s.syncRoot(), id, "state.json")
 }
@@ -111,7 +116,7 @@ func (s *Server) syncEngine(id string) gameserver.WorkshopSync {
 	if fetch == nil {
 		fetch = s.gameRuntime().WorkshopDownload
 	}
-	return gameserver.WorkshopSync{API: api, Fetch: fetch, Now: s.now, Work: filepath.Join(s.syncRoot(), id, "work")}
+	return gameserver.WorkshopSync{API: api, Fetch: fetch, Now: s.now, Work: filepath.Join(s.syncRoot(), id, "work"), Items: s.syncItemsDir(id)}
 }
 
 // syncCollection is the collection the server runs: its Workshop collection
@@ -202,6 +207,10 @@ func (s *Server) workshopSyncServer(ctx context.Context, row appdb.GameServer) {
 	collection := s.syncCollection(ctx, row, tmpl)
 	if collection == "" {
 		fail(errors.New("the server has no Workshop collection set"))
+		return
+	}
+	if !s.gameRuntime().HasReadOnlyMount(ctx, row.ID, tmpl.WorkingDir, gameserver.SyncItemsRel) {
+		fail(errors.New("restart the server once: it was started before ndl-ce could attach its read-only packs folder"))
 		return
 	}
 	dir, err := gameserver.OpenSyncDir(row.DataDir, gameserver.SyncDirRel)

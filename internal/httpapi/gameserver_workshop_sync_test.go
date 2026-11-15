@@ -31,7 +31,14 @@ func TestWorkshopSyncSchedule(t *testing.T) {
 	rt := gameserver.NewRuntime(t.TempDir())
 	var mu sync.Mutex
 	var sent []string
+	mounted := false
 	rt.Run = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		if len(args) > 0 && args[0] == "inspect" {
+			if mounted {
+				return []byte("/home/container|true\n/home/container/garrysmod/data/cs_sync/items|false\n"), nil
+			}
+			return []byte("/home/container|true\n"), nil
+		}
 		if len(args) > 0 && args[0] == "exec" {
 			mu.Lock()
 			sent = append(sent, args[len(args)-1])
@@ -81,6 +88,13 @@ func TestWorkshopSyncSchedule(t *testing.T) {
 	if code, got := apiJSON(t, ts, cookie, "PUT", "/api/v1/game-servers/"+row.ID+"/workshop-sync", `{"enabled":true}`); code != http.StatusOK || got["enabled"] != true || got["collection"] != "3520969473" {
 		t.Fatalf("enable %d %v", code, got)
 	}
+	// A server started before the packs folder existed gets nothing.
+	run()
+	if st := s.loadSyncState(row.ID); !strings.Contains(st.LastError, "restart the server once") || manifest().Seq != 0 {
+		t.Fatalf("without the read-only mount: %+v", st)
+	}
+	mounted = true
+	now = now.Add(2 * time.Minute) // past the retry pause
 	// First run after enabling: baseline (what runs now), then a scheduled check.
 	run()
 	if m := manifest(); m.Seq != 1 || len(m.Items) != 0 || fetches != 0 {
