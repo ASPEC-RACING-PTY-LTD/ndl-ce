@@ -79,6 +79,10 @@ scripts/ndl-live-publish.sh control agent --notes "fix upload signing"
 scripts/ndl-live-publish.sh                    # everything
 ```
 
+Bundles take their base version from the same rule as prod packages
+(`packaging/e2e/lib/prod-version.sh`: the highest of the changelog and the
+public releases), so a bundle matches the installed package's major.minor.
+
 It builds what you name, stamps the build ID into it, signs the bundle into
 `out/live/` and then:
 

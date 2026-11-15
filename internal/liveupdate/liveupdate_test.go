@@ -10,6 +10,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -380,4 +381,30 @@ type hostCheck struct{ *fakeSys }
 
 func (h *hostCheck) CheckBinary(ctx context.Context, path, build string) error {
 	return Host{}.CheckBinary(ctx, path, build)
+}
+
+// Prod packages are versioned by packaging/e2e/lib/prod-version.sh, and
+// scripts/ndl-live-publish.sh takes its base from the same helper: a bundle
+// based on the source changelog (1.2.x) is refused on a 1.3.0+prod host.
+func TestLiveBaseMatchesProdPackages(t *testing.T) {
+	helper, _ := filepath.Abs("../../packaging/e2e/lib/prod-version.sh")
+	out, err := exec.Command("sh", "-c", `. "$1"; prod_version 1.2.7 202611141524 v1.3.0`, "sh", helper).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	prod := strings.TrimSpace(string(out))
+	if prod != "1.3.0+prod202611141524" {
+		t.Fatalf("prod version %q", prod)
+	}
+	base := strings.SplitN(prod, "+prod", 2)[0]
+	for want, b := range map[string]string{"applied": base, "refused": "1.2.7"} {
+		f := newFixture(t)
+		f.sys.pkg = prod
+		f.bundle("r1", map[string]string{"ui/index.html": "x"}, func(m *Manifest) { m.BaseVersion = b; m.Version = b + "+live.1" })
+		_ = f.u.Run(context.Background())
+		st := f.state()
+		if got := st.History[len(st.History)-1].Result; got != want {
+			t.Fatalf("base %s on %s: %s, want %s", b, prod, got, want)
+		}
+	}
 }

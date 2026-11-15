@@ -28,14 +28,22 @@ done
 [ ${#COMPONENTS[@]} -gt 0 ] || COMPONENTS=(ui control agent)
 [ -f "$KEY" ] || { echo "no signing key at $KEY" >&2; exit 1; }
 
-BASE="$(dpkg-parsechangelog -l "$ROOT/packaging/debian/changelog" -SVersion)"
+# The base must match how prod packages are versioned: hosts refuse a bundle
+# for another major.minor than the installed package, and prod builds sort
+# above every public release (packaging/e2e/lib/prod-version.sh).
+# shellcheck source=packaging/e2e/lib/prod-version.sh
+. "$ROOT/packaging/e2e/lib/prod-version.sh"
 SEQ="$(date -u +%Y%m%d%H%M%S)"
+# shellcheck disable=SC2046
+BASE="$(prod_version "$(dpkg-parsechangelog -l "$ROOT/packaging/debian/changelog" -SVersion)" "$SEQ" \
+  $(git -C "$ROOT" tag --list 'v*' 2>/dev/null) $(public_release_tags))"
+BASE="${BASE%+prod*}"
 VERSION="${BASE}+live.${SEQ}"
 ID="${SEQ}-$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo local)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/src/bin"
-LDFLAGS="-X github.com/no-dal/ndl-ce/internal/buildinfo.Version=${BASE} -X github.com/no-dal/ndl-ce/internal/buildinfo.Build=${ID}"
+LDFLAGS="-X github.com/no-dal/ndl-ce/internal/buildinfo.Version=${VERSION} -X github.com/no-dal/ndl-ce/internal/buildinfo.Build=${ID}"
 
 for c in "${COMPONENTS[@]}"; do
   case "$c" in
