@@ -540,9 +540,12 @@ function ConfigPane({ id }: { id: string }) {
   );
 }
 
-function StartupPane({ id }: { id: string }) {
+export function StartupPane({ id }: { id: string }) {
   const [startup, setStartup] = useState("");
   const [env, setEnv] = useState<Record<string, string>>({});
+  // What was loaded: a save sends only what changed here, so it cannot put
+  // back old values over settings saved elsewhere (the Config tab) since.
+  const [loaded, setLoaded] = useState<{ startup: string; env: Record<string, string> }>({ startup: "", env: {} });
   const [vars, setVars] = useState<{ env: string; name: string; description?: string; secret?: boolean }[]>([]);
   const [note, setNote] = useState<string | null>(null);
   useEffect(() => {
@@ -554,8 +557,27 @@ function StartupPane({ id }: { id: string }) {
         next[v.env] = v.value;
       }
       setEnv(next);
+      setLoaded({ startup: r.startup, env: next });
     });
   }, [id]);
+  function save() {
+    const changed: Record<string, string> = {};
+    for (const [k, v] of Object.entries(env)) {
+      if (loaded.env[k] !== v) {
+        changed[k] = v;
+      }
+    }
+    const body: Record<string, unknown> = { env: changed };
+    if (startup !== loaded.startup) {
+      body.startup = startup;
+    }
+    void putGameStartup(id, body)
+      .then(() => {
+        setLoaded({ startup, env: { ...env } });
+        setNote("Startup saved.");
+      })
+      .catch((err) => setNote(errText(err, "Save failed")));
+  }
   return (
     <div className="gs-form">
       <label>
@@ -580,11 +602,7 @@ function StartupPane({ id }: { id: string }) {
         <button
           type="button"
           className="btn btn-sm btn-primary"
-          onClick={() =>
-            void putGameStartup(id, { startup, env })
-              .then(() => setNote("Startup saved."))
-              .catch((err) => setNote(errText(err, "Save failed")))
-          }
+          onClick={save}
         >
           Save startup
         </button>
