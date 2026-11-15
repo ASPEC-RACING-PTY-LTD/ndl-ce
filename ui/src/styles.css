@@ -5638,6 +5638,21 @@ thead th[data-autosort="desc"]::after {
   margin-top: 0.75rem;
 }
 
+.gs-config-parts {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.gs-config-part + .gs-config-part {
+  border-top: 1px solid var(--line);
+  padding-top: 1.25rem;
+}
+
+.gs-config-part > h3 {
+  margin: 0 0 0.75rem;
+  font-size: 0.95rem;
+}
+
 .gs-diff {
   margin: 0;
   padding-left: 1.1rem;

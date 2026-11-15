@@ -213,17 +213,25 @@ const gmodServerCfg = "garrysmod/cfg/server.cfg"
 const gmodServerCfgSeed = `// server.cfg runs every time a map loads. The Config tab edits these
 // settings; anything else you add here is kept as written.
 sv_lan 0
-sv_region 255
+sv_region 5                 // Australia
+sv_location "au"
 sv_password ""
 sv_allowupload 0
 sv_allowdownload 1
+sv_downloadurl ""
+sv_loadingurl ""
+net_maxfilesize 64
+sv_hibernate_think 1
 
-// An empty RCON password turns remote console off.
+// An empty RCON password turns remote console off. Administer through an
+// in-game admin panel or the console instead.
 rcon_password ""
 
+// Logging
 log on
-sv_logfile 1
 sv_logecho 1
+sv_logfile 1
+lua_log_sv 1
 `
 
 func gmodTemplate() Template {
@@ -276,20 +284,20 @@ func gmodTemplate() Template {
 			{ID: "gamemode", Label: "Gamemode", Help: "Must match an installed gamemode folder.", Kind: "text", Env: "GAMEMODE", Restart: true},
 			{ID: "slots", Label: "Player slots", Help: "How many clients can join.", Kind: "number", Env: "MAX_PLAYERS", Restart: true},
 			{ID: "sv_password", Label: "Join password", Help: "Players must enter it to join. Leave empty for a public server.", Kind: "password", File: gmodServerCfg, Key: "sv_password", Restart: true},
-			{ID: "sv_region", Label: "Region", Help: "Server browser region: 0 US East, 1 US West, 2 South America, 3 Europe, 4 Asia, 5 Australia, 6 Middle East, 7 Africa, 255 world.", Kind: "number", File: gmodServerCfg, Key: "sv_region", Default: "255", Restart: true},
-			{ID: "sv_location", Label: "Country", Help: "Two-letter country code shown in the browser, for example au.", Kind: "text", File: gmodServerCfg, Key: "sv_location", Restart: true},
+			{ID: "sv_region", Label: "Region", Help: "Server browser region: 0 US East, 1 US West, 2 South America, 3 Europe, 4 Asia, 5 Australia, 6 Middle East, 7 Africa, 255 world.", Kind: "number", File: gmodServerCfg, Key: "sv_region", Default: "5", Restart: true},
+			{ID: "sv_location", Label: "Country", Help: "Two-letter country code shown in the browser, for example au.", Kind: "text", File: gmodServerCfg, Key: "sv_location", Default: "au", Restart: true},
 			{ID: "sv_loadingurl", Label: "Loading screen URL", Help: "Page shown while players join. %s is the player's SteamID, %m the map.", Kind: "text", File: gmodServerCfg, Key: "sv_loadingurl", Restart: true},
 			{ID: "sv_downloadurl", Label: "FastDL URL", Help: "Web server players download custom content from. Leave empty when everything comes from the workshop.", Kind: "text", File: gmodServerCfg, Key: "sv_downloadurl", Restart: true},
 			{ID: "sv_allowdownload", Label: "Allow downloads", Help: "Let players download content from the server or the FastDL URL.", Kind: "toggle", File: gmodServerCfg, Key: "sv_allowdownload", Default: "true", Restart: true},
-			{ID: "sv_allowupload", Label: "Allow uploads", Help: "Let players upload sprays and other custom files.", Kind: "toggle", File: gmodServerCfg, Key: "sv_allowupload", Default: "true", Restart: true},
+			{ID: "sv_allowupload", Label: "Allow uploads", Help: "Let players upload sprays and other custom files.", Kind: "toggle", File: gmodServerCfg, Key: "sv_allowupload", Default: "false", Restart: true},
 			{ID: "rcon_password", Label: "RCON password", Help: "Remote console password. Empty turns RCON off, the safe choice; use a long random password if you need it.", Kind: "password", File: gmodServerCfg, Key: "rcon_password", Restart: true, Advanced: true},
 			{ID: "sv_lan", Label: "LAN only", Help: "Only players on the local network can join.", Kind: "toggle", File: gmodServerCfg, Key: "sv_lan", Default: "false", Restart: true, Advanced: true},
-			{ID: "net_maxfilesize", Label: "Largest download (MB)", Help: "Biggest file players may download from the server, up to 64.", Kind: "number", File: gmodServerCfg, Key: "net_maxfilesize", Default: "16", Restart: true, Advanced: true},
-			{ID: "sv_hibernate_think", Label: "Run while empty", Help: "Keep timers and hooks running with no players on.", Kind: "toggle", File: gmodServerCfg, Key: "sv_hibernate_think", Default: "false", Restart: true, Advanced: true},
-			{ID: "log", Label: "Server logging", Help: "Write server logs.", Kind: "toggle", File: gmodServerCfg, Key: "log", Options: []string{"on", "off"}, Default: "false", Restart: true, Advanced: true},
+			{ID: "net_maxfilesize", Label: "Largest download (MB)", Help: "Biggest file players may download from the server, up to 64.", Kind: "number", File: gmodServerCfg, Key: "net_maxfilesize", Default: "64", Restart: true, Advanced: true},
+			{ID: "sv_hibernate_think", Label: "Run while empty", Help: "Keep timers and hooks running with no players on.", Kind: "toggle", File: gmodServerCfg, Key: "sv_hibernate_think", Default: "true", Restart: true, Advanced: true},
+			{ID: "log", Label: "Server logging", Help: "Write server logs.", Kind: "toggle", File: gmodServerCfg, Key: "log", Options: []string{"on", "off"}, Default: "true", Restart: true, Advanced: true},
 			{ID: "sv_logfile", Label: "Log to files", Help: "Keep logs in garrysmod/logs.", Kind: "toggle", File: gmodServerCfg, Key: "sv_logfile", Default: "true", Restart: true, Advanced: true},
 			{ID: "sv_logecho", Label: "Echo logs to the console", Kind: "toggle", File: gmodServerCfg, Key: "sv_logecho", Default: "true", Restart: true, Advanced: true},
-			{ID: "lua_log_sv", Label: "Log Lua errors", Help: "Write server Lua errors to the log.", Kind: "toggle", File: gmodServerCfg, Key: "lua_log_sv", Default: "false", Restart: true, Advanced: true},
+			{ID: "lua_log_sv", Label: "Log Lua errors", Help: "Write server Lua errors to the log.", Kind: "toggle", File: gmodServerCfg, Key: "lua_log_sv", Default: "true", Restart: true, Advanced: true},
 		},
 		Content: ContentSpec{Provider: "workshop", Kind: "addon", InstallDir: "garrysmod/addons", GameID: "4000", Dependencies: false},
 	}

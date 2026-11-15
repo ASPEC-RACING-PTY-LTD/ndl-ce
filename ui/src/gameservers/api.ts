@@ -264,7 +264,7 @@ export async function putGameStartup(id: string, body: Record<string, unknown>):
   return readJson(`/game-servers/${id}/startup`, { method: "PUT", body: JSON.stringify(body) });
 }
 
-export async function getGameConfig(id: string): Promise<{ settings: { id: string; label: string; help?: string; kind: string; options?: string[]; restart?: boolean; advanced?: boolean }[]; values: Record<string, string> }> {
+export async function getGameConfig(id: string): Promise<{ settings: { id: string; label: string; help?: string; kind: string; options?: string[]; restart?: boolean; advanced?: boolean; env?: string; file?: string }[]; values: Record<string, string> }> {
   return readJson(`/game-servers/${id}/config`);
 }
 

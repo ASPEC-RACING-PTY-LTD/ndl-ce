@@ -136,3 +136,38 @@ func TestSeedFilesReplaceOnlyBlankFiles(t *testing.T) {
 		t.Fatal("a seed must never be written through a link")
 	}
 }
+
+// Saving fills the template's defaults the file lacks, so the panel and the
+// game agree; untouched files are left alone.
+func TestConsoleCfgSaveFillsMissingDefaults(t *testing.T) {
+	tmpl := gmodTemplate()
+	files := map[string]string{gmodServerCfg: "sv_password \"x\"\n"}
+	next, _, err := applyFriendly(tmpl.FriendlyConfig, tmpl.ConfigFiles, map[string]string{"sv_region": "3"}, files, map[string]string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := next[gmodServerCfg]
+	for _, want := range []string{"sv_region 3\n", "sv_hibernate_think 1\n", "net_maxfilesize 64\n", "log on\n", `sv_location "au"`, "sv_allowupload 0\n"} {
+		if !strings.Contains(cfg, want) {
+			t.Fatalf("missing %q in:\n%s", want, cfg)
+		}
+	}
+	if strings.Contains(cfg, "hostname") || strings.Contains(cfg, "rcon_password") {
+		t.Fatalf("settings without a default must not be written:\n%s", cfg)
+	}
+	next, _, _ = applyFriendly(tmpl.FriendlyConfig, tmpl.ConfigFiles, map[string]string{"map": "gm_construct"}, files, map[string]string{})
+	if next[gmodServerCfg] != files[gmodServerCfg] {
+		t.Fatal("a save that does not touch server.cfg must leave it alone")
+	}
+}
+
+// The seed and the setting defaults describe the same server.
+func TestGmodSeedMatchesSettingDefaults(t *testing.T) {
+	tmpl := gmodTemplate()
+	got := readFriendly(tmpl.FriendlyConfig, tmpl.ConfigFiles, map[string]string{gmodServerCfg: gmodServerCfgSeed}, map[string]string{})
+	for _, s := range tmpl.FriendlyConfig {
+		if s.File == gmodServerCfg && s.Default != "" && got[s.ID] != s.Default {
+			t.Fatalf("%s: seed says %q, default is %q", s.ID, got[s.ID], s.Default)
+		}
+	}
+}

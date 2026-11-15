@@ -11,11 +11,9 @@ import { gameServerTabList, gameTabAllow } from "../nav/gameServersNav";
 import {
   createGameBackup,
   createGameSchedule,
-  createGameUser,
   deleteGameBackup,
   deleteGameSchedule,
   deleteGameServer,
-  deleteGameUser,
   diffGameConfig,
   gameActivity,
   gameDiagnostics,
@@ -30,7 +28,6 @@ import {
   listGameBackups,
   listGameContent,
   listGameSchedules,
-  listGameUsers,
   putGameConfig,
   putGameNetwork,
   putGameNotes,
@@ -388,11 +385,7 @@ function SettingsPane({ server, anchor, access }: { server: GameServer; anchor: 
   const id = server.id;
   const { featureEnabled } = useNavDisclosure();
   const all: SettingsSection[] = [
-    ...(hasCap(server, "config") ? [{ id: "config", title: "Configuration", render: () => <ConfigPane id={id} /> }] : []),
-    ...(hasCap(server, "startup") ? [{ id: "startup", title: "Startup", render: () => <StartupPane id={id} /> }] : []),
-    ...(hasCap(server, "resources") ? [{ id: "resources", title: "Resources", render: () => <ResourcesPane id={id} /> }] : []),
-    ...(hasCap(server, "network") ? [{ id: "network", title: "Networking", render: () => <NetworkPane id={id} /> }] : []),
-    { id: "public-address", title: "Public address", render: () => <GameEdgePane id={id} /> },
+    { id: "config", title: "Configuration", render: () => <ConfigurationPane server={server} access={access} /> },
     ...(featureEnabled.ddos ? [{ id: "ddos", title: "DDoS protection", render: () => <GameDDoSPane id={id} /> }] : []),
     ...(hasCap(server, "databases")
       ? [
@@ -407,13 +400,12 @@ function SettingsPane({ server, anchor, access }: { server: GameServer; anchor: 
           },
         ]
       : []),
-    { id: "users", title: "Access", render: () => <UsersPane id={id} /> },
     { id: "notes", title: "Notes", render: () => <NotesPane id={id} /> },
     { id: "activity", title: "Activity", render: () => <ActivityPane id={id} /> },
     { id: "diagnostics", title: "Diagnostics", render: () => <DiagnosticsPane id={id} /> },
   ];
   // A grant on this one server opens its configuration only; the rest needs a role.
-  const sections = access.role ? all : all.filter((s) => (s.id === "config" || s.id === "startup") && access.can("gameserver.config"));
+  const sections = access.role ? all : all.filter((s) => s.id === "config" && access.can("gameserver.config"));
 
   useEffect(() => {
     if (anchor) {
@@ -467,6 +459,31 @@ function DiagnosticsPane({ id }: { id: string }) {
   return <pre className="gs-log">{diag || "Collecting"}</pre>;
 }
 
+// ConfigurationPane is everything that configures the server, in one
+// place: settings, the startup line, resources, ports and public address.
+// Each part keeps its own Save.
+function ConfigurationPane({ server, access }: { server: GameServer; access: GameAccess }) {
+  const id = server.id;
+  const parts: { key: string; title: string; body: ReactNode }[] = [
+    ...(hasCap(server, "config") ? [{ key: "settings", title: "Server settings", body: <ConfigPane id={id} /> }] : []),
+    ...(hasCap(server, "startup") ? [{ key: "startup", title: "Startup", body: <StartupPane id={id} /> }] : []),
+    // A grant on this one server opens its settings only; the rest needs a role.
+    ...(access.role && hasCap(server, "resources") ? [{ key: "resources", title: "Resources", body: <ResourcesPane id={id} /> }] : []),
+    ...(access.role && hasCap(server, "network") ? [{ key: "network", title: "Networking", body: <NetworkPane id={id} /> }] : []),
+    ...(access.role ? [{ key: "public-address", title: "Public address", body: <GameEdgePane id={id} /> }] : []),
+  ];
+  return (
+    <div className="gs-config-parts">
+      {parts.map((p) => (
+        <section key={p.key} id={`gs-part-${p.key}`} className="gs-config-part" aria-labelledby={`gs-part-${p.key}-title`}>
+          <h3 id={`gs-part-${p.key}-title`}>{p.title}</h3>
+          {p.body}
+        </section>
+      ))}
+    </div>
+  );
+}
+
 export function ConfigPane({ id }: { id: string }) {
   const [values, setValues] = useState<Record<string, string>>({});
   const [settings, setSettings] = useState<{ id: string; label: string; help?: string; kind: string; options?: string[]; restart?: boolean; advanced?: boolean }[]>([]);
@@ -474,7 +491,7 @@ export function ConfigPane({ id }: { id: string }) {
   const [advanced, setAdvanced] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   // What was loaded: a save sends only what changed here, so it cannot put
-  // back old values over settings saved elsewhere (the Startup tab) since,
+  // back old values over settings saved elsewhere (the Startup part) since,
   // nor write every default into the config file.
   const [loaded, setLoaded] = useState<Record<string, string>>({});
   const load = useCallback(() => {
@@ -565,10 +582,18 @@ export function StartupPane({ id }: { id: string }) {
   const [startup, setStartup] = useState("");
   const [env, setEnv] = useState<Record<string, string>>({});
   // What was loaded: a save sends only what changed here, so it cannot put
-  // back old values over settings saved elsewhere (the Config tab) since.
+  // back old values over settings saved elsewhere (Server settings) since.
   const [loaded, setLoaded] = useState<{ startup: string; env: Record<string, string> }>({ startup: "", env: {} });
   const [vars, setVars] = useState<{ env: string; name: string; description?: string; secret?: boolean }[]>([]);
   const [note, setNote] = useState<string | null>(null);
+  // Variables that Server settings already edit (name, map, gamemode,
+  // slots) are not repeated here.
+  const [managed, setManaged] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    void getGameConfig(id)
+      .then((r) => setManaged(new Set((r.settings ?? []).map((s) => s.env ?? "").filter(Boolean))))
+      .catch(() => undefined);
+  }, [id]);
   useEffect(() => {
     void getGameStartup(id).then((r) => {
       setStartup(r.startup);
@@ -606,7 +631,7 @@ export function StartupPane({ id }: { id: string }) {
         <textarea className="field-input gs-editor is-short" value={startup} onChange={(e) => setStartup(e.target.value)} />
       </label>
       <div className="gs-form-grid">
-        {vars.map((v) => (
+        {vars.filter((v) => !managed.has(v.env)).map((v) => (
           <label key={v.env}>
             {v.name}
             <input
@@ -714,55 +739,6 @@ function ResourcesPane({ id }: { id: string }) {
         </button>
         {note ? <span className="meta">{note}</span> : null}
       </div>
-    </div>
-  );
-}
-
-function UsersPane({ id }: { id: string }) {
-  const [items, setItems] = useState<{ user_id: string; username: string; grants: string[] }[]>([]);
-  const [username, setUsername] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const reload = useCallback(() => listGameUsers(id).then((r) => setItems(r.items ?? [])), [id]);
-  useEffect(() => {
-    void reload().catch(() => undefined);
-  }, [reload]);
-  return (
-    <div className="gs-form">
-      {error ? <ErrorNotice error={error} /> : null}
-      <form
-        className="gs-inline-form"
-        onSubmit={(e) => {
-          e.preventDefault();
-          setError(null);
-          void createGameUser(id, username, ["view", "console", "power"])
-            .then(() => {
-              setUsername("");
-              return reload();
-            })
-            .catch((err) => setError(errText(err, "Could not grant access")));
-        }}
-      >
-        <label>
-          Username
-          <input className="field-input" value={username} onChange={(e) => setUsername(e.target.value)} required />
-        </label>
-        <button type="submit" className="btn btn-sm btn-primary">
-          Grant console and power
-        </button>
-      </form>
-      <ul className="gs-list">
-        {items.map((u) => (
-          <li key={u.user_id}>
-            <span>
-              <strong>{u.username}</strong>
-              <span className="meta"> · {(u.grants || []).join(", ")}</span>
-            </span>
-            <button type="button" className="btn btn-sm btn-ghost" onClick={() => void deleteGameUser(id, u.user_id).then(reload)}>
-              Revoke
-            </button>
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }

@@ -167,7 +167,35 @@ func applyFriendly(settings []Setting, configFiles []ConfigFile, values map[stri
 			nextEnv[s.Env] = val
 		}
 	}
+	fillConsoleDefaults(settings, parsers, files, nextFiles)
 	return nextFiles, nextEnv, nil
+}
+
+// fillConsoleDefaults writes the template's defaults for settings missing
+// from a console script being saved. The panel shows a missing setting at
+// its default, but the game would use its own built-in value instead, so
+// the file must hold the default for the two to agree.
+func fillConsoleDefaults(settings []Setting, parsers map[string]string, before, next map[string]string) {
+	for path, body := range next {
+		if parsers[path] != ParserConsoleCfg || body == before[path] {
+			continue
+		}
+		cur := ParseConsoleCfg(body)
+		added := false
+		for _, s := range settings {
+			if s.File != path || s.Key == "" || s.Default == "" {
+				continue
+			}
+			if _, ok := cur.Get(s.Key); ok {
+				continue
+			}
+			cur.Set(s.Key, consoleValue(s, s.Default), s.Kind != "number" && s.Kind != "toggle")
+			added = true
+		}
+		if added {
+			next[path] = cur.Bytes()
+		}
+	}
 }
 
 func readFriendly(settings []Setting, configFiles []ConfigFile, files map[string]string, env map[string]string) map[string]string {

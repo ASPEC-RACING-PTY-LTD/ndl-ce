@@ -16,7 +16,7 @@ vi.mock("../gameservers/api", async (orig) => ({
   putGameStartup: (...args: unknown[]) => putGameStartup(...args),
   getGameConfig: vi.fn().mockResolvedValue({
     settings: [
-      { id: "map", label: "Start map", kind: "text" },
+      { id: "map", label: "Start map", kind: "text", env: "MAP" },
       { id: "sv_password", label: "Join password", kind: "password" },
       { id: "sv_region", label: "Region", kind: "number" },
     ],
@@ -35,6 +35,9 @@ describe("StartupPane", () => {
   it("saves only what changed here", async () => {
     render(<StartupPane id="gs-1" />);
     const name = await screen.findByDisplayValue("Dev");
+    // Map is edited under Server settings, so Startup does not repeat it.
+    await waitFor(() => expect(screen.queryByDisplayValue("gm_flatgrass")).toBeNull());
+    expect(screen.getByDisplayValue("sandbox")).toBeInTheDocument();
     fireEvent.change(name, { target: { value: "Dev 2" } });
     fireEvent.click(screen.getByRole("button", { name: "Save startup" }));
     await waitFor(() => expect(putGameStartup).toHaveBeenCalledTimes(1));
