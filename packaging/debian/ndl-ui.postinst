@@ -21,7 +21,8 @@ case "$1" in
   configure)
     # A package install replaces live updates: serve the packaged UI.
     if command -v ndl-live >/dev/null 2>&1; then
-      ndl-live package-installed "$2" >/dev/null 2>&1 || true
+      # $2 is the version being replaced; record the one now installed.
+      ndl-live package-installed "$(dpkg-query -W -f='${Version}' ndl-ui 2>/dev/null)" >/dev/null 2>&1 || true
     fi
     restart_ui_host
     ;;
