@@ -125,18 +125,19 @@ func TestWorkshopSyncSchedule(t *testing.T) {
 		t.Fatalf("console %v", sent)
 	}
 
-	// A request inside the 5 minutes waits for the next allowed check.
+	// A request seconds after a check (repeated presses) waits a moment.
 	steam.updated = 2000
 	request("req-1")
-	now = now.Add(time.Minute)
+	now = now.Add(3 * time.Second)
 	run()
 	if m := manifest(); m.Seq != 1 {
-		t.Fatal("a request inside the window must wait")
+		t.Fatal("a request seconds after a check must wait")
 	}
 	if got := state(); got.Pending != "req-1" {
 		t.Fatalf("pending %q", got.Pending)
 	}
-	now = now.Add(5 * time.Minute)
+	// Otherwise it is answered straight away: there is no 5 minute wait.
+	now = now.Add(10 * time.Second)
 	run()
 	m := manifest()
 	if m.Seq != 2 || m.RequestID == nil || *m.RequestID != "req-1" || len(m.Items) != 1 || m.Items[0].State != "updated" || fetches != 1 {

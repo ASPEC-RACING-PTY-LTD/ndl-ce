@@ -41,9 +41,10 @@ ignores the manifest's `file` field.
   5 seconds.
 - **Check now** in the panel queues the same kind of request.
 
-At most one check runs per 5 minutes, whatever asked for it. A request inside
-that window is answered by the next allowed check. A request `id` is never
-handled twice. ndl-ce leaves `request.json` in place.
+A request is answered within seconds. Checks never overlap, and a new one
+starts at least 10 seconds after the last, so repeated presses do not run
+back-to-back checks: a request inside those seconds is answered by the next
+check. A request `id` is never handled twice. ndl-ce leaves `request.json` in place.
 
 ```json
 { "version": 1, "id": "1731700000-4821", "type": "check",

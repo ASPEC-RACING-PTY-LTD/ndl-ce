@@ -38,7 +38,9 @@ const (
 	// SyncReadyCommand tells the server a new manifest is ready.
 	SyncReadyCommand = "cs_sync_ready"
 	SyncCheckEvery   = time.Hour
-	SyncMinInterval  = 5 * time.Minute
+	// SyncMinInterval only stops repeated presses from running back-to-back
+	// checks; a request is otherwise answered within seconds.
+	SyncMinInterval  = 10 * time.Second
 	syncMaxItemBytes = 4 << 30
 	syncMaxJSONBytes = 1 << 20
 	gmodWorkshopApp  = "4000"
