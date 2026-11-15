@@ -61,6 +61,9 @@ absent.
      `time_updated`.
    - Without one: the collection as it was when the server started. ndl-ce
      notes the versions within seconds of each start.
+   - A `status.json` written before the server's latest start is from the
+     previous run, so it counts as none (its `blocked` list still counts).
+     Write a fresh one at every startup.
    - Plus every version ndl-ce has already delivered.
 3. Decide what to fetch:
    - An item is `new` if the server has no version of it.

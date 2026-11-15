@@ -58,18 +58,21 @@ func WorkshopSyncSupported(t Template) bool {
 // SyncState is ndl-ce's own record for one server. It lives outside the
 // server's folder, where the server cannot change it.
 type SyncState struct {
-	Enabled     bool                  `json:"enabled"`
-	Seq         int64                 `json:"seq"`
-	LastCheck   int64                 `json:"last_check,omitempty"`
-	LastResult  string                `json:"last_result,omitempty"`
-	LastError   string                `json:"last_error,omitempty"`
-	LastErrors  []SyncError           `json:"last_errors,omitempty"`
-	Pending     string                `json:"pending_request,omitempty"`
-	Handled     []string              `json:"handled_requests,omitempty"`
-	ContainerID string                `json:"container_id,omitempty"`
-	Baseline    map[string]int64      `json:"baseline,omitempty"`
-	Synced      map[string]SyncedItem `json:"synced,omitempty"`
-	Blocked     []string              `json:"blocked,omitempty"`
+	Enabled     bool             `json:"enabled"`
+	Seq         int64            `json:"seq"`
+	LastCheck   int64            `json:"last_check,omitempty"`
+	LastResult  string           `json:"last_result,omitempty"`
+	LastError   string           `json:"last_error,omitempty"`
+	LastErrors  []SyncError      `json:"last_errors,omitempty"`
+	Pending     string           `json:"pending_request,omitempty"`
+	Handled     []string         `json:"handled_requests,omitempty"`
+	ContainerID string           `json:"container_id,omitempty"`
+	Baseline    map[string]int64 `json:"baseline,omitempty"`
+	// BaselineAt is when the baseline was taken, just after the server
+	// started. A status.json older than that is from the previous run.
+	BaselineAt int64                 `json:"baseline_at,omitempty"`
+	Synced     map[string]SyncedItem `json:"synced,omitempty"`
+	Blocked    []string              `json:"blocked,omitempty"`
 }
 
 // SyncedItem is a pack ndl-ce delivered and still keeps in items/.
@@ -214,6 +217,7 @@ func (w WorkshopSync) Baseline(ctx context.Context, st *SyncState, collection st
 		return err
 	}
 	st.Baseline = map[string]int64{}
+	st.BaselineAt = w.now().Unix()
 	for id, f := range files {
 		if f.Available {
 			st.Baseline[id] = f.TimeUpdated
@@ -228,8 +232,14 @@ func (w WorkshopSync) Baseline(ctx context.Context, st *SyncState, collection st
 func (w WorkshopSync) Check(ctx context.Context, st *SyncState, dir *SyncDir, collection, requestID string) (SyncManifest, error) {
 	now := w.now()
 	st.LastCheck = now.Unix()
-	status, hasStatus := readSyncStatus(dir)
+	status, statusAt, hasStatus := readSyncStatus(dir)
 	blocked := w.blocked(st, status)
+	if hasStatus && st.BaselineAt > 0 && statusAt < st.BaselineAt*int64(time.Second) {
+		// Written before this run of the server: it describes what the
+		// last run loaded, so the baseline is the truth until the server
+		// writes a new one. Its blocklist still counts.
+		status, hasStatus = SyncStatus{}, false
+	}
 
 	ids, err := w.API.Collection(ctx, collection)
 	if err != nil {
@@ -471,13 +481,15 @@ func writeFileAtomic(path string, r io.Reader) (int64, error) {
 	return n, nil
 }
 
-func readSyncStatus(dir *SyncDir) (SyncStatus, bool) {
+// readSyncStatus returns the server's status and when it was written, in
+// nanoseconds.
+func readSyncStatus(dir *SyncDir) (SyncStatus, int64, bool) {
 	var s SyncStatus
-	raw, _, err := dir.Read(SyncStatusFile, syncMaxJSONBytes)
+	raw, mtime, err := dir.Read(SyncStatusFile, syncMaxJSONBytes)
 	if err != nil || json.Unmarshal(raw, &s) != nil {
-		return SyncStatus{}, false
+		return SyncStatus{}, 0, false
 	}
-	return s, true
+	return s, mtime, true
 }
 
 // ReadSyncRequest returns the server's request and when it was written.

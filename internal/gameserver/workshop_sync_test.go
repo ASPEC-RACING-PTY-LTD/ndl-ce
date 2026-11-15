@@ -222,6 +222,35 @@ func TestWorkshopSyncBaselineWithoutStatus(t *testing.T) {
 	}
 }
 
+// A status.json left by the last run is not what the server runs now: right
+// after a restart it lists versions the server has since replaced, and
+// trusting it downloaded every pack updated between the two runs.
+func TestWorkshopSyncIgnoresStatusFromTheLastRun(t *testing.T) {
+	f := newSyncFixture(t)
+	f.item("100", 2000, map[string]string{"a.vmt": "x"})
+	f.item("200", 1500, map[string]string{"b.vmt": "y"})
+	f.status(SyncStatus{Version: 1, Blocked: []string{"200"}, Items: []SyncStatusItem{{WSID: "100", TimeUpdated: 1000, State: "in_collection"}}})
+	old := time.Unix(1731700000, 0) // before the restart
+	if err := os.Chtimes(filepath.Join(f.base, SyncDirRel, SyncStatusFile), old, old); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.engine.Baseline(context.Background(), &f.st, "1"); err != nil {
+		t.Fatal(err)
+	}
+	m := f.check("")
+	if len(f.asked) != 0 || len(m.Items) != 0 {
+		t.Fatalf("the server loaded 100 at 2000 this run; nothing to fetch: asked %v, %+v", f.asked, m)
+	}
+	if len(m.Errors) != 1 || m.Errors[0].WSID != "200" || m.Errors[0].Error != "blocked" {
+		t.Fatalf("the old file's blocklist still counts: %+v", m.Errors)
+	}
+	// Once the server writes its status for this run, it is the truth again.
+	f.status(SyncStatus{Version: 1, Items: []SyncStatusItem{{WSID: "100", TimeUpdated: 1000, State: "in_collection"}}})
+	if m := f.check(""); len(f.asked) != 1 || len(m.Items) != 1 || m.Items[0].State != "updated" {
+		t.Fatalf("a fresh status listing an old version: asked %v, %+v", f.asked, m)
+	}
+}
+
 // The server's folder is the game's to change; ndl-ce never follows a link
 // out of it.
 func TestSyncDirRefusesLinks(t *testing.T) {
