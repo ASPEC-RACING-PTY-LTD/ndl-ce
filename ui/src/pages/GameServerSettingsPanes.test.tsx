@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const putGameStartup = vi.fn().mockResolvedValue({});
 const putGameConfig = vi.fn().mockResolvedValue({});
-const syncState = { supported: true, enabled: false, collection: "3520969473", running: true, checking: false, seq: 0, errors: [], items: [] };
+let syncState: Record<string, unknown> = { supported: true, enabled: false, collection: "3520969473", running: true, checking: false, seq: 0, errors: [], items: [] };
 const putWorkshopSync = vi.fn().mockResolvedValue({ ...syncState, enabled: true });
 const checkWorkshopSync = vi.fn().mockResolvedValue({ ...syncState, enabled: true, pending_request: "panel-1" });
 vi.mock("../gameservers/api", async (orig) => ({
@@ -64,6 +64,13 @@ describe("ConfigPane", () => {
 });
 
 describe("WorkshopSyncPane", () => {
+  it("renders when the lists come back null", async () => {
+    const saved = syncState;
+    syncState = { ...saved, errors: null, items: null };
+    render(<WorkshopSyncPane id="gs-1" />);
+    expect(await screen.findByText("3520969473")).toBeTruthy();
+    syncState = saved;
+  });
   it("turns live sync on, then allows Check now", async () => {
     render(<WorkshopSyncPane id="gs-1" />);
     expect(await screen.findByText("3520969473")).toBeInTheDocument();

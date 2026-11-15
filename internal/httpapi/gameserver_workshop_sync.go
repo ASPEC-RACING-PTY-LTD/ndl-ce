@@ -264,6 +264,10 @@ func (s *Server) workshopSyncJSON(ctx context.Context, row appdb.GameServer) map
 	tmpl, _ := s.resolveTemplate(ctx, row.ClusterID, row.TemplateID)
 	st := s.loadSyncState(row.ID)
 	items := []map[string]any{}
+	errs := st.LastErrors
+	if errs == nil {
+		errs = []gameserver.SyncError{}
+	}
 	for id, it := range st.Synced {
 		items = append(items, map[string]any{
 			"wsid": id, "title": it.Title, "state": it.State, "kind": it.Kind,
@@ -274,10 +278,7 @@ func (s *Server) workshopSyncJSON(ctx context.Context, row appdb.GameServer) map
 		"supported": gameserver.WorkshopSyncSupported(tmpl), "enabled": st.Enabled,
 		"collection": s.syncCollection(ctx, row, tmpl), "running": row.Status == gameserver.StatusRunning,
 		"checking": s.wsync.checking(row.ID), "seq": st.Seq, "pending_request": st.Pending,
-		"last_result": st.LastResult, "last_error": st.LastError, "errors": st.LastErrors, "items": items,
-	}
-	if out["errors"] == nil {
-		out["errors"] = []gameserver.SyncError{}
+		"last_result": st.LastResult, "last_error": st.LastError, "errors": errs, "items": items,
 	}
 	if st.LastCheck > 0 {
 		out["last_check"] = time.Unix(st.LastCheck, 0).UTC().Format(time.RFC3339)

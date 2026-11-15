@@ -540,9 +540,9 @@ export function WorkshopSyncPane({ id }: { id: string }) {
         ) : null}
       </dl>
       {data.last_error ? <ErrorNotice error={data.last_error} /> : null}
-      {data.items.length > 0 ? (
+      {(data.items ?? []).length > 0 ? (
         <ul className="gs-list">
-          {data.items.map((it) => (
+          {(data.items ?? []).map((it) => (
             <li key={it.wsid}>
               <span>
                 <strong>{it.title || it.wsid}</strong>
@@ -555,9 +555,9 @@ export function WorkshopSyncPane({ id }: { id: string }) {
           ))}
         </ul>
       ) : null}
-      {data.errors.length > 0 ? (
+      {(data.errors ?? []).length > 0 ? (
         <ul className="gs-diff">
-          {data.errors.map((e) => (
+          {(data.errors ?? []).map((e) => (
             <li key={e.wsid}>
               {e.wsid}: {e.error}
             </li>

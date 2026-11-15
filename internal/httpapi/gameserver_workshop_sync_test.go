@@ -88,6 +88,14 @@ func TestWorkshopSyncSchedule(t *testing.T) {
 	if code, got := apiJSON(t, ts, cookie, "PUT", "/api/v1/game-servers/"+row.ID+"/workshop-sync", `{"enabled":true}`); code != http.StatusOK || got["enabled"] != true || got["collection"] != "3520969473" {
 		t.Fatalf("enable %d %v", code, got)
 	}
+	// The panel reads .length on both lists: never null.
+	if code, got := apiJSON(t, ts, cookie, "GET", "/api/v1/game-servers/"+row.ID+"/workshop-sync", ``); code != http.StatusOK {
+		t.Fatalf("get %d", code)
+	} else if _, ok := got["errors"].([]any); !ok {
+		t.Fatalf("errors must be a list: %#v", got["errors"])
+	} else if _, ok := got["items"].([]any); !ok {
+		t.Fatalf("items must be a list: %#v", got["items"])
+	}
 	// A server started before the packs folder existed gets nothing.
 	run()
 	if st := s.loadSyncState(row.ID); !strings.Contains(st.LastError, "restart the server once") || manifest().Seq != 0 {
