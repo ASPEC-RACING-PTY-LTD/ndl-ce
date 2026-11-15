@@ -3,6 +3,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const putGameStartup = vi.fn().mockResolvedValue({});
 const putGameConfig = vi.fn().mockResolvedValue({});
+const syncState = { supported: true, enabled: false, collection: "3520969473", running: true, checking: false, seq: 0, errors: [], items: [] };
+const putWorkshopSync = vi.fn().mockResolvedValue({ ...syncState, enabled: true });
+const checkWorkshopSync = vi.fn().mockResolvedValue({ ...syncState, enabled: true, pending_request: "panel-1" });
 vi.mock("../gameservers/api", async (orig) => ({
   ...(await orig<typeof import("../gameservers/api")>()),
   getGameStartup: vi.fn().mockResolvedValue({
@@ -23,9 +26,12 @@ vi.mock("../gameservers/api", async (orig) => ({
     values: { map: "rp_ag_jvs", sv_password: "", sv_region: "255" },
   }),
   putGameConfig: (...args: unknown[]) => putGameConfig(...args),
+  getWorkshopSync: () => Promise.resolve(syncState),
+  putWorkshopSync: (...args: unknown[]) => putWorkshopSync(...args),
+  checkWorkshopSync: (...args: unknown[]) => checkWorkshopSync(...args),
 }));
 
-import { ConfigPane, StartupPane } from "./GameServerDetailPage";
+import { ConfigPane, StartupPane, WorkshopSyncPane } from "./GameServerDetailPage";
 
 afterEach(cleanup);
 
@@ -54,5 +60,19 @@ describe("ConfigPane", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
     await waitFor(() => expect(putGameConfig).toHaveBeenCalledTimes(1));
     expect(putGameConfig).toHaveBeenCalledWith("gs-1", { sv_region: "5" });
+  });
+});
+
+describe("WorkshopSyncPane", () => {
+  it("turns live sync on, then allows Check now", async () => {
+    render(<WorkshopSyncPane id="gs-1" />);
+    expect(await screen.findByText("3520969473")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Check now" })).toBeDisabled();
+    fireEvent.click(screen.getByLabelText("Live Workshop sync"));
+    await waitFor(() => expect(putWorkshopSync).toHaveBeenCalledWith("gs-1", true));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Check now" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Check now" }));
+    await waitFor(() => expect(checkWorkshopSync).toHaveBeenCalledWith("gs-1"));
+    expect(await screen.findByText(/\(requested\)/)).toBeInTheDocument();
   });
 });

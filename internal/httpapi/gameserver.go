@@ -612,6 +612,7 @@ func (s *Server) gameServerDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = s.gameHost().Kill(r.Context(), row.ID)
 	_ = s.gameHost().RemoveData(r.Context(), row.ID)
+	s.removeWorkshopSync(row.ID)
 	if err := s.Store.DeleteGameServer(r.Context(), p.User.ClusterID, row.ID); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return

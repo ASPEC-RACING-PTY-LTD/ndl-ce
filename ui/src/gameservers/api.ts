@@ -454,3 +454,31 @@ export async function getGameSettings(): Promise<{ curseforge_key_set: boolean }
 export async function putGameSettings(body: { curseforge_key?: string; clear_curseforge?: boolean }): Promise<{ curseforge_key_set: boolean }> {
   return readJson("/game-servers/settings", { method: "PUT", body: JSON.stringify(body) });
 }
+
+export type WorkshopSync = {
+  supported: boolean;
+  enabled: boolean;
+  collection: string;
+  running: boolean;
+  checking: boolean;
+  seq: number;
+  pending_request?: string;
+  last_check?: string;
+  next_check?: string;
+  last_result?: string;
+  last_error?: string;
+  errors: { wsid: string; error: string }[];
+  items: { wsid: string; title: string; state: string; kind: string; time_updated: number; size: number }[];
+};
+
+export async function getWorkshopSync(id: string): Promise<WorkshopSync> {
+  return readJson(`/game-servers/${id}/workshop-sync`);
+}
+
+export async function putWorkshopSync(id: string, enabled: boolean): Promise<WorkshopSync> {
+  return readJson(`/game-servers/${id}/workshop-sync`, { method: "PUT", body: JSON.stringify({ enabled }) });
+}
+
+export async function checkWorkshopSync(id: string): Promise<WorkshopSync> {
+  return readJson(`/game-servers/${id}/workshop-sync/check`, { method: "POST", body: "{}" });
+}

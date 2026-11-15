@@ -18,7 +18,7 @@ Description: No-dal Community Edition metapackage
 
 Package: ndl-control
 Architecture: amd64
-Depends: postgresql-16 | postgresql, adduser, ${misc:Depends}
+Depends: postgresql-16 | postgresql, adduser, xz-utils, ${misc:Depends}
 Description: No-dal unprivileged control plane
  HTTP API, TLS settings, and static UI host. Must not run as root.
  Prepares local PostgreSQL 16 and the ndl-control service user.

@@ -206,7 +206,9 @@ type Server struct {
 	GameHost  gameserver.Host
 	gameLocal *gameserver.LocalHost
 	gameMu    sync.Mutex
-	PhysFS    inventory.FS
+	// wsync runs live Workshop sync (gameserver_workshop_sync.go).
+	wsync  workshopSyncRunner
+	PhysFS inventory.FS
 	// refresh shares live host observations between concurrent reads.
 	refresh refreshGate
 }
@@ -417,6 +419,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/game-servers/{id}/restart", s.gameServerRestart)
 	mux.HandleFunc("POST /api/v1/game-servers/{id}/kill", s.gameServerKill)
 	mux.HandleFunc("POST /api/v1/game-servers/{id}/reinstall", s.gameServerReinstall)
+	mux.HandleFunc("GET /api/v1/game-servers/{id}/workshop-sync", s.getWorkshopSync)
+	mux.HandleFunc("PUT /api/v1/game-servers/{id}/workshop-sync", s.putWorkshopSync)
+	mux.HandleFunc("POST /api/v1/game-servers/{id}/workshop-sync/check", s.checkWorkshopSync)
 	mux.HandleFunc("POST /api/v1/game-servers/{id}/delete", s.gameServerDelete)
 	mux.HandleFunc("POST /api/v1/game-servers/{id}/favorite", s.gameServerFavorite)
 	mux.HandleFunc("GET /api/v1/game-servers/{id}/console", s.gameServerConsole)

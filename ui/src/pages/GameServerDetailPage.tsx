@@ -24,6 +24,10 @@ import {
   getGameResources,
   getGameServer,
   getGameStartup,
+  getWorkshopSync,
+  putWorkshopSync,
+  checkWorkshopSync,
+  type WorkshopSync,
   installGameContent,
   listGameBackups,
   listGameContent,
@@ -471,6 +475,7 @@ function ConfigurationPane({ server, access }: { server: GameServer; access: Gam
     ...(access.role && hasCap(server, "resources") ? [{ key: "resources", title: "Resources", body: <ResourcesPane id={id} /> }] : []),
     ...(access.role && hasCap(server, "network") ? [{ key: "network", title: "Networking", body: <NetworkPane id={id} /> }] : []),
     ...(access.role ? [{ key: "public-address", title: "Public address", body: <GameEdgePane id={id} /> }] : []),
+    ...(access.role && server.game === "gmod" ? [{ key: "workshop-sync", title: "Live Workshop sync", body: <WorkshopSyncPane id={id} /> }] : []),
   ];
   return (
     <div className="gs-config-parts">
@@ -480,6 +485,91 @@ function ConfigurationPane({ server, access }: { server: GameServer; access: Gam
           {p.body}
         </section>
       ))}
+    </div>
+  );
+}
+
+// WorkshopSyncPane turns live Workshop sync on or off for a Garry's Mod
+// server and shows what it last delivered.
+export function WorkshopSyncPane({ id }: { id: string }) {
+  const [data, setData] = useState<WorkshopSync | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const load = useCallback(() => {
+    void getWorkshopSync(id)
+      .then(setData)
+      .catch((err) => setNote(errText(err, "Could not load")));
+  }, [id]);
+  useEffect(() => {
+    load();
+    const timer = window.setInterval(load, 15000);
+    return () => window.clearInterval(timer);
+  }, [load]);
+  if (!data) {
+    return <p className="muted">{note ?? "Loading"}</p>;
+  }
+  const act = (fn: () => Promise<WorkshopSync>, done: string) =>
+    void fn()
+      .then((r) => {
+        setData(r);
+        setNote(done);
+      })
+      .catch((err) => setNote(errText(err, "Failed")));
+  return (
+    <div className="gs-form">
+      <p className="muted">
+        New and updated items in the Workshop collection go live without a restart: ndl-ce checks the collection every hour, or when the server asks, downloads what changed into
+        garrysmod/data/cs_sync and tells the server. The server needs the addon that mounts them.
+      </p>
+      <label className="gs-check">
+        <input type="checkbox" checked={data.enabled} onChange={(e) => act(() => putWorkshopSync(id, e.target.checked), e.target.checked ? "Live sync is on." : "Live sync is off.")} />
+        Live Workshop sync
+      </label>
+      <dl className="gs-facts">
+        <dt>Collection</dt>
+        <dd>{data.collection || "None set"}</dd>
+        <dt>Last check</dt>
+        <dd>
+          {data.checking ? "Checking now" : data.last_check ? formatWhen(data.last_check) : "Not yet"}
+          {data.last_result ? ` · ${data.last_result}` : ""}
+        </dd>
+        {data.enabled ? (
+          <>
+            <dt>Next check</dt>
+            <dd>{!data.running ? "When the server runs" : data.next_check ? formatWhen(data.next_check) : "Within a minute"}{data.pending_request ? " (requested)" : ""}</dd>
+          </>
+        ) : null}
+      </dl>
+      {data.last_error ? <ErrorNotice error={data.last_error} /> : null}
+      {data.items.length > 0 ? (
+        <ul className="gs-list">
+          {data.items.map((it) => (
+            <li key={it.wsid}>
+              <span>
+                <strong>{it.title || it.wsid}</strong>
+                <span className="meta">
+                  {" "}
+                  · {it.wsid} · {it.state} · {it.kind === "lua" ? "has Lua" : "assets only"} · {formatBytes(it.size)}
+                </span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {data.errors.length > 0 ? (
+        <ul className="gs-diff">
+          {data.errors.map((e) => (
+            <li key={e.wsid}>
+              {e.wsid}: {e.error}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <div className="btn-row is-flush">
+        <button type="button" className="btn btn-sm" disabled={!data.enabled || data.checking} onClick={() => act(() => checkWorkshopSync(id), "Check requested.")}>
+          Check now
+        </button>
+        {note ? <span className="meta">{note}</span> : null}
+      </div>
     </div>
   );
 }
