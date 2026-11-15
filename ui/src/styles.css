@@ -3031,6 +3031,12 @@ a.gs-tab {
 .gs-tone-source::before { background: oklch(0.7 0.12 30); }
 .gs-tone-mind::before { background: oklch(0.74 0.14 110); }
 
+/* Server cards: the top bar shows status, like the badge. */
+.gs-card.gs-state-ok::before { background: var(--ok); }
+.gs-card.gs-state-bad::before { background: var(--danger); }
+.gs-card.gs-state-busy::before { background: var(--warn); }
+.gs-card.gs-state-idle::before { background: var(--line); }
+
 .gs-card h3 {
   margin: 0.4rem 0 0;
   font-size: 1.15rem;

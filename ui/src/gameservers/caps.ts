@@ -38,6 +38,24 @@ export function familyTone(family?: string): string {
   }
 }
 
+// statusTone colours a server card's top bar by what the server is doing,
+// matching its status badge: red only when it failed.
+export function statusTone(status?: string): string {
+  switch (status) {
+    case "running":
+      return "gs-state-ok";
+    case "failed":
+      return "gs-state-bad";
+    case "pending":
+    case "installing":
+    case "starting":
+    case "stopping":
+      return "gs-state-busy";
+    default:
+      return "gs-state-idle";
+  }
+}
+
 export function statusLabel(status?: string): string {
   switch (status) {
     case "pending":

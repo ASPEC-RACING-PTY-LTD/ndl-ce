@@ -6,7 +6,7 @@ import { Link } from "../components/Link";
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState, ErrorState, LoadingState } from "../components/EmptyState";
 import { ErrorNotice } from "../components/ErrorNotice";
-import { familyTone, formatRam, hasCap, statusLabel } from "../gameservers/caps";
+import { formatRam, hasCap, statusLabel, statusTone } from "../gameservers/caps";
 import {
   deleteGameServer,
   favoriteGameServer,
@@ -374,7 +374,7 @@ export function GameServersHomePage() {
 
           <div className={"gs-board is-" + view}>
             {visible.map((server) => (
-              <article key={server.id} className={"gs-card " + familyTone(server.family)}>
+              <article key={server.id} className={"gs-card " + statusTone(server.status)}>
                 <label className="gs-select">
                   <input
                     type="checkbox"
