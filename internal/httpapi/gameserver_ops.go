@@ -742,7 +742,7 @@ func (s *Server) gameServerConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"settings": tmpl.FriendlyConfig,
-		"values":   gameserver.ReadFriendly(tmpl.FriendlyConfig, files, env),
+		"values":   gameserver.ReadFriendly(tmpl.FriendlyConfig, tmpl.ConfigFiles, files, env),
 		"files":    files,
 		"env":      gameserver.RedactEnv(env),
 	})
@@ -774,8 +774,8 @@ func (s *Server) putGameServerConfig(w http.ResponseWriter, r *http.Request) {
 			curFiles[cf.Path] = string(body)
 		}
 	}
-	s.saveConfigSnapshot(row, gameserver.ReadFriendly(tmpl.FriendlyConfig, curFiles, env), curFiles, env)
-	nextFiles, nextEnv, err := gameserver.ApplyFriendly(tmpl.FriendlyConfig, req.Values, curFiles, env)
+	s.saveConfigSnapshot(row, gameserver.ReadFriendly(tmpl.FriendlyConfig, tmpl.ConfigFiles, curFiles, env), curFiles, env)
+	nextFiles, nextEnv, err := gameserver.ApplyFriendly(tmpl.FriendlyConfig, tmpl.ConfigFiles, req.Values, curFiles, env)
 	if err != nil {
 		writeErr(w, http.StatusUnprocessableEntity, err.Error())
 		return
@@ -817,7 +817,7 @@ func (s *Server) gameServerConfigDiff(w http.ResponseWriter, r *http.Request) {
 			files[cf.Path] = string(body)
 		}
 	}
-	before := gameserver.ReadFriendly(tmpl.FriendlyConfig, files, env)
+	before := gameserver.ReadFriendly(tmpl.FriendlyConfig, tmpl.ConfigFiles, files, env)
 	writeJSON(w, http.StatusOK, map[string]any{"changes": gameserver.DiffSettings(tmpl.FriendlyConfig, before, req.Values)})
 }
 

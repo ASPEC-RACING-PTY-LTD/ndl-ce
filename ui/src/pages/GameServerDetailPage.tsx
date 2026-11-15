@@ -467,18 +467,33 @@ function DiagnosticsPane({ id }: { id: string }) {
   return <pre className="gs-log">{diag || "Collecting"}</pre>;
 }
 
-function ConfigPane({ id }: { id: string }) {
+export function ConfigPane({ id }: { id: string }) {
   const [values, setValues] = useState<Record<string, string>>({});
   const [settings, setSettings] = useState<{ id: string; label: string; help?: string; kind: string; options?: string[]; restart?: boolean; advanced?: boolean }[]>([]);
   const [diff, setDiff] = useState<{ label: string; from: string; to: string; restart?: boolean }[]>([]);
   const [advanced, setAdvanced] = useState(false);
   const [note, setNote] = useState<string | null>(null);
-  useEffect(() => {
+  // What was loaded: a save sends only what changed here, so it cannot put
+  // back old values over settings saved elsewhere (the Startup tab) since,
+  // nor write every default into the config file.
+  const [loaded, setLoaded] = useState<Record<string, string>>({});
+  const load = useCallback(() => {
     void getGameConfig(id).then((r) => {
       setValues(r.values ?? {});
+      setLoaded(r.values ?? {});
       setSettings(r.settings ?? []);
     });
   }, [id]);
+  useEffect(load, [load]);
+  const changed = () => {
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(values)) {
+      if (loaded[k] !== v) {
+        out[k] = v;
+      }
+    }
+    return out;
+  };
   const run = (fn: () => Promise<unknown>, done: string) =>
     void fn()
       .then(() => setNote(done))
@@ -508,20 +523,26 @@ function ConfigPane({ id }: { id: string }) {
                   <option value="false">No</option>
                 </select>
               ) : (
-                <input className="field-input" value={values[s.id] ?? ""} onChange={(e) => setValues((cur) => ({ ...cur, [s.id]: e.target.value }))} />
+                <input
+                  className="field-input"
+                  type={s.kind === "password" ? "password" : s.kind === "number" ? "number" : "text"}
+                  autoComplete={s.kind === "password" ? "new-password" : undefined}
+                  value={values[s.id] ?? ""}
+                  onChange={(e) => setValues((cur) => ({ ...cur, [s.id]: e.target.value }))}
+                />
               )}
               {s.help ? <span className="field-hint">{s.help}</span> : null}
             </label>
           ))}
       </div>
       <div className="btn-row is-flush">
-        <button type="button" className="btn btn-sm btn-ghost" onClick={() => void diffGameConfig(id, values).then((r) => setDiff(r.changes ?? []))}>
+        <button type="button" className="btn btn-sm btn-ghost" onClick={() => void diffGameConfig(id, changed()).then((r) => setDiff(r.changes ?? []))}>
           Preview changes
         </button>
-        <button type="button" className="btn btn-sm btn-primary" onClick={() => run(() => putGameConfig(id, values), "Settings saved.")}>
+        <button type="button" className="btn btn-sm btn-primary" onClick={() => run(() => putGameConfig(id, changed()).then(() => setLoaded({ ...values })), "Settings saved.")}>
           Save settings
         </button>
-        <button type="button" className="btn btn-sm btn-ghost" onClick={() => run(() => revertGameConfig(id), "Last save undone.")}>
+        <button type="button" className="btn btn-sm btn-ghost" onClick={() => run(() => revertGameConfig(id).then(load), "Last save undone.")}>
           Undo last save
         </button>
         {note ? <span className="meta">{note}</span> : null}

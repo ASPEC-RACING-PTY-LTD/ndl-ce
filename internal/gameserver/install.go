@@ -75,7 +75,42 @@ func (r *Runtime) Install(ctx context.Context, srv Server, tmpl Template) error 
 			return fmt.Errorf("runtime dependencies failed: %w", err)
 		}
 	}
+	if err := writeSeedFiles(dir, tmpl.SeedFiles); err != nil {
+		return err
+	}
 	r.progress(srv.ID, "ready", "install finished")
+	return nil
+}
+
+// writeSeedFiles writes a template's starter files where the file is
+// missing or holds only whitespace (Valve ships an empty server.cfg).
+func writeSeedFiles(dir string, seeds []SeedFile) error {
+	for _, seed := range seeds {
+		rel, err := cleanArchiveRel(seed.Path)
+		if err != nil {
+			return fmt.Errorf("seed file %q: %w", seed.Path, err)
+		}
+		path := filepath.Join(dir, rel)
+		// Never write through a link: the folder holds user content and the
+		// installer runs as root.
+		if st, err := os.Lstat(path); err == nil && !st.Mode().IsRegular() {
+			continue
+		}
+		if cur, err := os.ReadFile(path); err == nil && strings.TrimSpace(string(cur)) != "" {
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return err
+		}
+		root, rerr := filepath.EvalSymlinks(dir)
+		parent, perr := filepath.EvalSymlinks(filepath.Dir(path))
+		if rerr != nil || perr != nil || (parent != root && !strings.HasPrefix(parent, root+string(filepath.Separator))) {
+			continue
+		}
+		if err := os.WriteFile(path, []byte(seed.Body), 0o644); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

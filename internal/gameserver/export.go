@@ -54,12 +54,12 @@ func ValidatePublicURL(raw string) error {
 	return validatePublicURL(raw)
 }
 
-func ApplyFriendly(settings []Setting, values map[string]string, files map[string]string, env map[string]string) (map[string]string, map[string]string, error) {
-	return applyFriendly(settings, values, files, env)
+func ApplyFriendly(settings []Setting, configFiles []ConfigFile, values map[string]string, files map[string]string, env map[string]string) (map[string]string, map[string]string, error) {
+	return applyFriendly(settings, configFiles, values, files, env)
 }
 
-func ReadFriendly(settings []Setting, files map[string]string, env map[string]string) map[string]string {
-	return readFriendly(settings, files, env)
+func ReadFriendly(settings []Setting, configFiles []ConfigFile, files map[string]string, env map[string]string) map[string]string {
+	return readFriendly(settings, configFiles, files, env)
 }
 
 func DiffSettings(settings []Setting, before, after map[string]string) []ConfigChange {

@@ -8,37 +8,40 @@ import (
 // Template is No-DAL's internal game-server blueprint. External eggs are
 // normalized into this shape and never executed as raw upstream JSON.
 type Template struct {
-	ID              string            `json:"id"`
-	Name            string            `json:"name"`
-	Game            string            `json:"game"`
-	Implementation  string            `json:"implementation"`
-	Summary         string            `json:"summary"`
-	Family          string            `json:"family"`
-	Capabilities    []string          `json:"capabilities"`
-	Images          map[string]string `json:"images"`
-	DefaultImage    string            `json:"default_image"`
-	Startup         string            `json:"startup"`
-	Stop            string            `json:"stop"`
-	Done            string            `json:"startup_done"`
-	WorkingDir      string            `json:"working_dir"`
-	InstallImage    string            `json:"install_image"`
-	InstallScript   string            `json:"install_script,omitempty"`
-	InstallBuiltin  string            `json:"install_builtin,omitempty"`
-	Variables       []Variable        `json:"variables"`
-	ConfigFiles     []ConfigFile      `json:"config_files"`
-	FriendlyConfig  []Setting         `json:"friendly_config"`
-	Content         ContentSpec       `json:"content"`
-	DefaultPorts    []Port            `json:"default_ports"`
-	DefaultMemoryMB int               `json:"default_memory_mb"`
-	DefaultDiskMB   int               `json:"default_disk_mb"`
-	DefaultCPUs     int               `json:"default_cpus"`
-	SourceURL       string            `json:"source_url,omitempty"`
-	SourceKind      string            `json:"source_kind,omitempty"`
-	UpdateURL       string            `json:"update_url,omitempty"`
-	Tags            []string          `json:"tags,omitempty"`
-	Aliases         []string          `json:"aliases,omitempty"`
-	StartRequires   []string          `json:"start_requires,omitempty"`
-	Hint            string            `json:"hint,omitempty"`
+	ID             string            `json:"id"`
+	Name           string            `json:"name"`
+	Game           string            `json:"game"`
+	Implementation string            `json:"implementation"`
+	Summary        string            `json:"summary"`
+	Family         string            `json:"family"`
+	Capabilities   []string          `json:"capabilities"`
+	Images         map[string]string `json:"images"`
+	DefaultImage   string            `json:"default_image"`
+	Startup        string            `json:"startup"`
+	Stop           string            `json:"stop"`
+	Done           string            `json:"startup_done"`
+	WorkingDir     string            `json:"working_dir"`
+	InstallImage   string            `json:"install_image"`
+	InstallScript  string            `json:"install_script,omitempty"`
+	InstallBuiltin string            `json:"install_builtin,omitempty"`
+	Variables      []Variable        `json:"variables"`
+	ConfigFiles    []ConfigFile      `json:"config_files"`
+	// SeedFiles are starter files written at the end of an install where
+	// the file is missing or blank, never over one with content.
+	SeedFiles       []SeedFile  `json:"seed_files,omitempty"`
+	FriendlyConfig  []Setting   `json:"friendly_config"`
+	Content         ContentSpec `json:"content"`
+	DefaultPorts    []Port      `json:"default_ports"`
+	DefaultMemoryMB int         `json:"default_memory_mb"`
+	DefaultDiskMB   int         `json:"default_disk_mb"`
+	DefaultCPUs     int         `json:"default_cpus"`
+	SourceURL       string      `json:"source_url,omitempty"`
+	SourceKind      string      `json:"source_kind,omitempty"`
+	UpdateURL       string      `json:"update_url,omitempty"`
+	Tags            []string    `json:"tags,omitempty"`
+	Aliases         []string    `json:"aliases,omitempty"`
+	StartRequires   []string    `json:"start_requires,omitempty"`
+	Hint            string      `json:"hint,omitempty"`
 
 	// Catalogue and provisioning metadata. Every field below is optional and
 	// additive so templates stored by older releases still decode unchanged.
@@ -138,6 +141,12 @@ type ConfigFile struct {
 	Restart  bool   `json:"restart"`
 	Parser   string `json:"parser,omitempty"`
 	DenyEdit bool   `json:"deny_edit,omitempty"`
+}
+
+// SeedFile is a starter file a template writes on install.
+type SeedFile struct {
+	Path string `json:"path"`
+	Body string `json:"body"`
 }
 
 // Setting is a friendly control mapped onto a config file or env var.

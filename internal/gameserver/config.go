@@ -121,7 +121,8 @@ func diffSettings(settings []Setting, before, after map[string]string) []ConfigC
 	return out
 }
 
-func applyFriendly(settings []Setting, values map[string]string, files map[string]string, env map[string]string) (map[string]string, map[string]string, error) {
+func applyFriendly(settings []Setting, configFiles []ConfigFile, values map[string]string, files map[string]string, env map[string]string) (map[string]string, map[string]string, error) {
+	parsers := fileParsers(configFiles)
 	nextFiles := map[string]string{}
 	for k, v := range files {
 		nextFiles[k] = v
@@ -135,6 +136,10 @@ func applyFriendly(settings []Setting, values map[string]string, files map[strin
 		if !ok {
 			continue
 		}
+		// A line break would add lines of its own to the config file.
+		if strings.ContainsAny(val, "\n\r") {
+			return nil, nil, fmt.Errorf("%s cannot contain line breaks", s.Label)
+		}
 		if s.Kind == "number" && val != "" {
 			for _, r := range val {
 				if r < '0' || r > '9' {
@@ -145,9 +150,18 @@ func applyFriendly(settings []Setting, values map[string]string, files map[strin
 			}
 		}
 		if s.File != "" && s.Key != "" {
-			cur := ParseProperties(nextFiles[s.File])
-			cur.Set(s.Key, val)
-			nextFiles[s.File] = cur.Bytes()
+			if parsers[s.File] == ParserConsoleCfg {
+				if err := checkConsoleValue(s.Label, val); err != nil {
+					return nil, nil, err
+				}
+				cur := ParseConsoleCfg(nextFiles[s.File])
+				cur.Set(s.Key, consoleValue(s, val), s.Kind != "number" && s.Kind != "toggle")
+				nextFiles[s.File] = cur.Bytes()
+			} else {
+				cur := ParseProperties(nextFiles[s.File])
+				cur.Set(s.Key, val)
+				nextFiles[s.File] = cur.Bytes()
+			}
 		}
 		if s.Env != "" {
 			nextEnv[s.Env] = val
@@ -156,12 +170,18 @@ func applyFriendly(settings []Setting, values map[string]string, files map[strin
 	return nextFiles, nextEnv, nil
 }
 
-func readFriendly(settings []Setting, files map[string]string, env map[string]string) map[string]string {
+func readFriendly(settings []Setting, configFiles []ConfigFile, files map[string]string, env map[string]string) map[string]string {
+	parsers := fileParsers(configFiles)
 	out := map[string]string{}
 	for _, s := range settings {
 		if s.File != "" && s.Key != "" {
 			if raw, ok := files[s.File]; ok {
-				if v, ok := ParseProperties(raw).Get(s.Key); ok {
+				if parsers[s.File] == ParserConsoleCfg {
+					if v, ok := ParseConsoleCfg(raw).Get(s.Key); ok {
+						out[s.ID] = friendlyValue(s, v)
+						continue
+					}
+				} else if v, ok := ParseProperties(raw).Get(s.Key); ok {
 					out[s.ID] = v
 					continue
 				}
@@ -178,4 +198,43 @@ func readFriendly(settings []Setting, files map[string]string, env map[string]st
 		}
 	}
 	return out
+}
+
+func fileParsers(configFiles []ConfigFile) map[string]string {
+	out := map[string]string{}
+	for _, f := range configFiles {
+		out[f.Path] = f.Parser
+	}
+	return out
+}
+
+// A toggle is true/false in the panel. Console scripts use 1/0, or the two
+// words in Options (on, off) when the command takes words.
+func consoleToggleWords(s Setting) (on, off string) {
+	if len(s.Options) == 2 {
+		return s.Options[0], s.Options[1]
+	}
+	return "1", "0"
+}
+
+func consoleValue(s Setting, v string) string {
+	if s.Kind != "toggle" {
+		return v
+	}
+	on, off := consoleToggleWords(s)
+	if strings.EqualFold(v, "true") {
+		return on
+	}
+	return off
+}
+
+func friendlyValue(s Setting, v string) string {
+	if s.Kind != "toggle" {
+		return v
+	}
+	on, _ := consoleToggleWords(s)
+	if strings.EqualFold(v, on) || v == "1" || strings.EqualFold(v, "true") {
+		return "true"
+	}
+	return "false"
 }
