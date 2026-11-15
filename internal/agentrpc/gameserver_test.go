@@ -199,3 +199,53 @@ func TestGameHostStreamsUploadsThroughTheAgent(t *testing.T) {
 		}
 	}
 }
+
+// The control plane cannot pick host folders to mount: the agent mounts
+// only its own Workshop sync packs folder, and keeps the sync state.
+func TestWorkshopSyncRunsInTheAgent(t *testing.T) {
+	gh, host, calls := startGameAgent(t)
+	ctx := context.Background()
+	id := "8ba6c873-a1fd-4120-b306-9004faad9103"
+	if _, err := gh.Start(ctx, gameserver.RunSpec{ID: id, Image: "img", WorkDir: "/home/container", WorkshopSync: true,
+		ReadOnly: []gameserver.ReadOnlyMount{{Host: "/etc", Rel: "garrysmod/data/x"}}}); err != nil {
+		t.Fatal(err)
+	}
+	var run []string
+	for _, c := range calls() {
+		if len(c) > 1 && c[1] == "run" {
+			run = c
+		}
+	}
+	joined := strings.Join(run, " ")
+	want := "type=bind,src=" + host.SyncItemsDir(id) + ",dst=/home/container/garrysmod/data/cs_sync/items,readonly"
+	if !strings.Contains(joined, want) || strings.Contains(joined, "src=/etc") {
+		t.Fatalf("mounts: %s", joined)
+	}
+	if fi, err := os.Stat(host.SyncItemsDir(id)); err != nil || !fi.IsDir() {
+		t.Fatalf("packs folder: %v", err)
+	}
+
+	// Settings and checks go through the agent.
+	r, err := gh.WorkshopSync(ctx, id, gameserver.SyncCall{Op: gameserver.SyncOpCheck, RequestID: "panel-1"})
+	if err == nil || r.State.Enabled {
+		t.Fatalf("a check while off must fail: %v %+v", err, r)
+	}
+	if r, err = gh.WorkshopSync(ctx, id, gameserver.SyncCall{Op: gameserver.SyncOpSet, Enabled: true}); err != nil || !r.State.Enabled {
+		t.Fatalf("enable: %v %+v", err, r)
+	}
+	if r, err = gh.WorkshopSync(ctx, id, gameserver.SyncCall{Op: gameserver.SyncOpCheck, RequestID: "panel-1"}); err != nil || r.State.Pending != "panel-1" {
+		t.Fatalf("check: %v %+v", err, r)
+	}
+	if r, err = gh.WorkshopSync(ctx, id, gameserver.SyncCall{Op: gameserver.SyncOpGet}); err != nil || !r.State.Enabled {
+		t.Fatalf("get: %v %+v", err, r)
+	}
+	if _, err := gh.WorkshopSync(ctx, id, gameserver.SyncCall{Op: gameserver.SyncOpGet, Collection: "1; rm"}); err == nil {
+		t.Fatal("a bad collection id must be refused")
+	}
+	if _, err := gh.WorkshopSync(ctx, id, gameserver.SyncCall{Op: gameserver.SyncOpRemove}); err != nil {
+		t.Fatal(err)
+	}
+	if r, _ = gh.WorkshopSync(ctx, id, gameserver.SyncCall{Op: gameserver.SyncOpGet}); r.State.Enabled {
+		t.Fatal("remove must forget the state")
+	}
+}

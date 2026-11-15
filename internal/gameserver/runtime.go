@@ -181,9 +181,13 @@ type RunSpec struct {
 	// it). Servers such as srcds hold their console output in a buffer when
 	// it goes to a pipe, so without one the console stays empty.
 	TTY bool `json:",omitempty"`
+	// WorkshopSync asks the agent to mount the server's live Workshop sync
+	// packs folder read-only.
+	WorkshopSync bool `json:",omitempty"`
 	// ReadOnly mounts host folders the server may read but never change,
-	// at paths relative to its working folder.
-	ReadOnly []ReadOnlyMount `json:",omitempty"`
+	// at paths relative to its working folder. Set only by the agent itself,
+	// never sent over the wire.
+	ReadOnly []ReadOnlyMount `json:"-"`
 }
 
 // ReadOnlyMount is a host folder shown read-only inside a game server.

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -49,6 +50,8 @@ type Host interface {
 	Backup(ctx context.Context, id, backupID string) (BackupFile, error)
 	RestoreBackup(ctx context.Context, id, backupID string) error
 	DeleteBackup(ctx context.Context, id, backupID string) error
+	// WorkshopSync runs one live Workshop sync operation.
+	WorkshopSync(ctx context.Context, id string, call SyncCall) (SyncReply, error)
 }
 
 // ProgressFunc receives install phase changes with the current log tail.
@@ -87,9 +90,16 @@ func ValidHostID(id string) bool {
 type LocalHost struct {
 	RT *Runtime
 
+	// Tests replace Steam, SteamCMD and the clock, and run sync inline.
+	SyncAPI    WorkshopAPI
+	SyncFetch  WorkshopFetcher
+	SyncNow    func() time.Time
+	SyncInline bool
+
 	mu       sync.Mutex
 	progress map[string]ProgressFunc
 	hooked   bool
+	sync     syncRunner
 }
 
 // Ready reports whether game servers can run on this host.
@@ -184,6 +194,17 @@ func (h *LocalHost) LogTail(_ context.Context, id string, max int) string {
 func (h *LocalHost) Start(ctx context.Context, spec RunSpec) (string, error) {
 	if !ValidHostID(spec.ID) {
 		return "", fmt.Errorf("game server id is invalid")
+	}
+	// Host folders are never taken from the caller: the only one is the
+	// agent's own Workshop sync packs folder, shown read-only.
+	spec.ReadOnly = nil
+	if spec.WorkshopSync {
+		items := h.SyncItemsDir(spec.ID)
+		if err := os.MkdirAll(items, 0o755); err != nil {
+			log.Printf("game server %s: starting without the Workshop sync folder: %v", spec.ID, err)
+		} else {
+			spec.ReadOnly = []ReadOnlyMount{{Host: items, Rel: SyncItemsRel}}
+		}
 	}
 	return h.RT.Start(ctx, spec)
 }

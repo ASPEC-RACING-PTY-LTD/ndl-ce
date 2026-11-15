@@ -51,8 +51,18 @@ func TestWorkshopSyncSchedule(t *testing.T) {
 	s.Now = func() time.Time { return now }
 	steam := &stubWorkshop{updated: 1000}
 	fetches := 0
-	s.wsync.api = steam
-	s.wsync.fetch = func(_ context.Context, ids []string, dir string) (map[string]string, map[string]string) {
+	host := s.gameHost().(*gameserver.LocalHost)
+	host.SyncAPI = steam
+	host.SyncNow = func() time.Time { return now }
+	host.SyncInline = true
+	state := func() gameserver.SyncState {
+		r, err := host.WorkshopSync(context.Background(), "11111111-2222-3333-4444-555555555555", gameserver.SyncCall{Op: gameserver.SyncOpGet})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r.State
+	}
+	host.SyncFetch = func(_ context.Context, ids []string, dir string) (map[string]string, map[string]string) {
 		fetches++
 		got := map[string]string{}
 		for _, id := range ids {
@@ -67,7 +77,10 @@ func TestWorkshopSyncSchedule(t *testing.T) {
 	cookie := claimAdmin(t, ts, token)
 	cluster, _ := mem.GetCluster(context.Background())
 	enableGameServers(t, mem, cluster.ID)
-	data := t.TempDir()
+	data := rt.DataDir("11111111-2222-3333-4444-555555555555")
+	if err := os.MkdirAll(data, 0o750); err != nil {
+		t.Fatal(err)
+	}
 	row := appdb.GameServer{ID: "11111111-2222-3333-4444-555555555555", ClusterID: cluster.ID, Name: "JvS", TemplateID: "ndl-gmod", Game: "gmod",
 		Status: gameserver.StatusRunning, ContainerID: "c1", DataDir: data, EnvJSON: []byte(`{"WORKSHOP_COLLECTION":"3520969473"}`)}
 	if err := mem.CreateGameServer(context.Background(), row); err != nil {
@@ -98,7 +111,7 @@ func TestWorkshopSyncSchedule(t *testing.T) {
 	}
 	// A server started before the packs folder existed gets nothing.
 	run()
-	if st := s.loadSyncState(row.ID); !strings.Contains(st.LastError, "restart the server once") || manifest().Seq != 0 {
+	if st := state(); !strings.Contains(st.LastError, "restart the server once") || manifest().Seq != 0 {
 		t.Fatalf("without the read-only mount: %+v", st)
 	}
 	mounted = true
@@ -120,7 +133,7 @@ func TestWorkshopSyncSchedule(t *testing.T) {
 	if m := manifest(); m.Seq != 1 {
 		t.Fatal("a request inside the window must wait")
 	}
-	if got := s.loadSyncState(row.ID); got.Pending != "req-1" {
+	if got := state(); got.Pending != "req-1" {
 		t.Fatalf("pending %q", got.Pending)
 	}
 	now = now.Add(5 * time.Minute)
@@ -144,7 +157,7 @@ func TestWorkshopSyncSchedule(t *testing.T) {
 	// A restart takes a new baseline.
 	row.ContainerID = "c2"
 	run()
-	if st := s.loadSyncState(row.ID); st.ContainerID != "c2" || st.Baseline["100"] != 2000 {
+	if st := state(); st.ContainerID != "c2" || st.Baseline["100"] != 2000 {
 		t.Fatalf("baseline after restart %+v", st)
 	}
 	// Check now from the panel queues a request.

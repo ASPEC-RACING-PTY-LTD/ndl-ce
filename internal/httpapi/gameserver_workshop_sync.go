@@ -5,14 +5,10 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/no-dal/ndl-ce/internal/appdb"
@@ -20,103 +16,16 @@ import (
 	"github.com/no-dal/ndl-ce/internal/rbac"
 )
 
-// Live Workshop sync: per server, ndl-ce checks the Workshop collection
-// hourly or when the server asks (request.json), downloads what changed and
-// tells the server with the cs_sync_ready console command. The engine is
-// gameserver.WorkshopSync; this file schedules it and serves its settings.
+// Live Workshop sync: the agent does the work next to the server folders
+// (gameserver.LocalHost.WorkshopSync). The control plane only tells it what
+// the database knows, every few seconds, and serves the panel.
 
-type workshopSyncRunner struct {
-	mu    sync.Mutex
-	locks map[string]*sync.Mutex
-	busy  map[string]bool
-	retry map[string]time.Time
-	// Tests replace Steam and SteamCMD.
-	api   gameserver.WorkshopAPI
-	fetch gameserver.WorkshopFetcher
-}
-
-func (w *workshopSyncRunner) lock(id string) *sync.Mutex {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.locks == nil {
-		w.locks = map[string]*sync.Mutex{}
+// syncCall fills in what the agent needs to know about a server.
+func (s *Server) syncCall(ctx context.Context, op string, row appdb.GameServer, tmpl gameserver.Template) gameserver.SyncCall {
+	return gameserver.SyncCall{
+		Op: op, Running: row.Status == gameserver.StatusRunning, ContainerID: row.ContainerID,
+		WorkDir: tmpl.WorkingDir, Collection: s.syncCollection(ctx, row, tmpl),
 	}
-	if w.locks[id] == nil {
-		w.locks[id] = &sync.Mutex{}
-	}
-	return w.locks[id]
-}
-
-func (w *workshopSyncRunner) start(id string) bool {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.busy == nil {
-		w.busy = map[string]bool{}
-	}
-	if w.busy[id] {
-		return false
-	}
-	w.busy[id] = true
-	return true
-}
-
-func (w *workshopSyncRunner) done(id string) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	delete(w.busy, id)
-}
-
-func (w *workshopSyncRunner) checking(id string) bool {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.busy[id]
-}
-
-// syncRoot holds ndl-ce's own sync state, outside every server's folder.
-func (s *Server) syncRoot() string {
-	return filepath.Join(s.gameRuntime().Root, "workshop-sync")
-}
-
-// syncItemsDir holds a server's packs; the server sees it read-only.
-func (s *Server) syncItemsDir(id string) string {
-	return filepath.Join(s.syncRoot(), id, "items")
-}
-
-func (s *Server) syncStatePath(id string) string {
-	return filepath.Join(s.syncRoot(), id, "state.json")
-}
-
-func (s *Server) loadSyncState(id string) gameserver.SyncState {
-	var st gameserver.SyncState
-	if raw, err := os.ReadFile(s.syncStatePath(id)); err == nil {
-		_ = json.Unmarshal(raw, &st)
-	}
-	return st
-}
-
-func (s *Server) saveSyncState(id string, st gameserver.SyncState) error {
-	path := s.syncStatePath(id)
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	raw, _ := json.MarshalIndent(st, "", "  ")
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
-}
-
-func (s *Server) syncEngine(id string) gameserver.WorkshopSync {
-	api := s.wsync.api
-	if api == nil {
-		api = gameserver.SteamWorkshopAPI{}
-	}
-	fetch := s.wsync.fetch
-	if fetch == nil {
-		fetch = s.gameRuntime().WorkshopDownload
-	}
-	return gameserver.WorkshopSync{API: api, Fetch: fetch, Now: s.now, Work: filepath.Join(s.syncRoot(), id, "work"), Items: s.syncItemsDir(id)}
 }
 
 // syncCollection is the collection the server runs: its Workshop collection
@@ -130,8 +39,9 @@ func (s *Server) syncCollection(ctx context.Context, row appdb.GameServer, tmpl 
 	return gameserver.WorkshopCollection(ctx, s.gameHost(), row.ID, tmpl.Content, gameserver.Workshop{})
 }
 
-// RunWorkshopSync looks at every server with live sync on every few seconds:
-// a new request is noticed within that time; checks run when due.
+// RunWorkshopSync asks the agent every few seconds to do what is due for
+// each running Garry's Mod server: a new request is noticed within that
+// time, and checks run in the agent when due.
 func (s *Server) RunWorkshopSync(ctx context.Context) {
 	t := time.NewTicker(5 * time.Second)
 	defer t.Stop()
@@ -146,123 +56,36 @@ func (s *Server) RunWorkshopSync(ctx context.Context) {
 }
 
 func (s *Server) workshopSyncTick(ctx context.Context) {
-	entries, err := os.ReadDir(s.syncRoot())
-	if err != nil {
-		return
-	}
 	cl, err := s.Store.GetCluster(ctx)
 	if err != nil || cl == nil {
 		return
 	}
-	for _, e := range entries {
-		if !e.IsDir() || !s.loadSyncState(e.Name()).Enabled {
+	rows, err := s.Store.ListGameServers(ctx, cl.ID)
+	if err != nil {
+		return
+	}
+	for _, row := range rows {
+		if row.Status != gameserver.StatusRunning || row.ContainerID == "" {
 			continue
 		}
-		row, err := s.Store.GetGameServer(ctx, cl.ID, e.Name())
-		if err != nil || row == nil {
-			continue
-		}
-		if !s.wsync.start(row.ID) {
-			continue
-		}
-		go func(row appdb.GameServer) {
-			defer s.wsync.done(row.ID)
-			s.workshopSyncServer(context.WithoutCancel(ctx), row)
-		}(*row)
+		s.workshopSyncServer(ctx, row)
 	}
 }
 
-// workshopSyncServer does what one server needs now: a new baseline after a
-// restart, picking up a request, and a check when one is due.
+// workshopSyncServer hands one server's due work to the agent.
 func (s *Server) workshopSyncServer(ctx context.Context, row appdb.GameServer) {
-	mu := s.wsync.lock(row.ID)
-	mu.Lock()
-	defer mu.Unlock()
-	st := s.loadSyncState(row.ID)
-	if !st.Enabled || row.Status != gameserver.StatusRunning || row.ContainerID == "" {
-		return
-	}
-	now := s.now()
-	s.wsync.mu.Lock()
-	wait := s.wsync.retry[row.ID]
-	s.wsync.mu.Unlock()
-	if now.Before(wait) {
-		return
-	}
-	fail := func(err error) {
-		st.LastError = err.Error()
-		_ = s.saveSyncState(row.ID, st)
-		s.wsync.mu.Lock()
-		if s.wsync.retry == nil {
-			s.wsync.retry = map[string]time.Time{}
-		}
-		s.wsync.retry[row.ID] = now.Add(time.Minute)
-		s.wsync.mu.Unlock()
-	}
 	tmpl, err := s.resolveTemplate(ctx, row.ClusterID, row.TemplateID)
 	if err != nil || !gameserver.WorkshopSyncSupported(tmpl) {
-		fail(errors.New("this server's game does not support live Workshop sync"))
 		return
 	}
-	collection := s.syncCollection(ctx, row, tmpl)
-	if collection == "" {
-		fail(errors.New("the server has no Workshop collection set"))
-		return
-	}
-	if !s.gameRuntime().HasReadOnlyMount(ctx, row.ID, tmpl.WorkingDir, gameserver.SyncItemsRel) {
-		fail(errors.New("restart the server once: it was started before ndl-ce could attach its read-only packs folder"))
-		return
-	}
-	dir, err := gameserver.OpenSyncDir(row.DataDir, gameserver.SyncDirRel)
-	if err != nil {
-		fail(fmt.Errorf("opening %s: %w", gameserver.SyncDirRel, err))
-		return
-	}
-	defer dir.Close()
-	engine := s.syncEngine(row.ID)
-	cctx, cancel := context.WithTimeout(ctx, 45*time.Minute)
-	defer cancel()
-
-	if st.ContainerID != row.ContainerID {
-		// The server (re)started: what it loaded is the collection as it is now.
-		if err := engine.Baseline(cctx, &st, collection); err != nil {
-			fail(fmt.Errorf("reading the collection: %w", err))
-			return
-		}
-		st.ContainerID = row.ContainerID
-		st.LastError = ""
-		_ = s.saveSyncState(row.ID, st)
-	}
-	if req, _, err := gameserver.ReadSyncRequest(dir); err == nil && req.Valid() && !st.Seen(req.ID) {
-		st.Pending = req.ID
-		_ = s.saveSyncState(row.ID, st)
-	}
-	last := time.Unix(st.LastCheck, 0)
-	due := (st.Pending != "" && now.Sub(last) >= gameserver.SyncMinInterval) || now.Sub(last) >= gameserver.SyncCheckEvery
-	if !due {
-		return
-	}
-	reqID := st.Pending
-	m, err := engine.Check(cctx, &st, dir, collection, reqID)
-	if err != nil {
-		fail(err)
-		return
-	}
-	if reqID != "" {
-		st.Handle(reqID)
-	}
-	_ = s.saveSyncState(row.ID, st)
-	if err := s.gameHost().Send(ctx, row.ID, fmt.Sprintf("%s %d", gameserver.SyncReadyCommand, m.Seq)); err != nil {
-		log.Printf("workshop sync: %s: telling the server about manifest %d: %v", row.ID, m.Seq, err)
-	}
-	if len(m.Items) > 0 || len(m.Errors) > 0 {
-		log.Printf("workshop sync: %s: manifest %d, %d item(s) ready, %d error(s)", row.ID, m.Seq, len(m.Items), len(m.Errors))
+	if _, err := s.gameHost().WorkshopSync(ctx, row.ID, s.syncCall(ctx, gameserver.SyncOpTick, row, tmpl)); err != nil {
+		log.Printf("workshop sync: %s: %v", row.ID, err)
 	}
 }
 
-func (s *Server) workshopSyncJSON(ctx context.Context, row appdb.GameServer) map[string]any {
+func (s *Server) workshopSyncJSON(ctx context.Context, row appdb.GameServer, reply gameserver.SyncReply) map[string]any {
 	tmpl, _ := s.resolveTemplate(ctx, row.ClusterID, row.TemplateID)
-	st := s.loadSyncState(row.ID)
+	st := reply.State
 	items := []map[string]any{}
 	errs := st.LastErrors
 	if errs == nil {
@@ -277,7 +100,7 @@ func (s *Server) workshopSyncJSON(ctx context.Context, row appdb.GameServer) map
 	out := map[string]any{
 		"supported": gameserver.WorkshopSyncSupported(tmpl), "enabled": st.Enabled,
 		"collection": s.syncCollection(ctx, row, tmpl), "running": row.Status == gameserver.StatusRunning,
-		"checking": s.wsync.checking(row.ID), "seq": st.Seq, "pending_request": st.Pending,
+		"checking": reply.Checking, "seq": st.Seq, "pending_request": st.Pending,
 		"last_result": st.LastResult, "last_error": st.LastError, "errors": errs, "items": items,
 	}
 	if st.LastCheck > 0 {
@@ -300,7 +123,12 @@ func (s *Server) getWorkshopSync(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, s.workshopSyncJSON(r.Context(), *row))
+	reply, err := s.gameHost().WorkshopSync(r.Context(), row.ID, gameserver.SyncCall{Op: gameserver.SyncOpGet})
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "could not read the sync state: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, s.workshopSyncJSON(r.Context(), *row, reply))
 }
 
 func (s *Server) putWorkshopSync(w http.ResponseWriter, r *http.Request) {
@@ -324,29 +152,18 @@ func (s *Server) putWorkshopSync(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnprocessableEntity, "live Workshop sync is for Garry's Mod servers")
 		return
 	}
-	mu := s.wsync.lock(row.ID)
-	if !mu.TryLock() {
-		writeErr(w, http.StatusConflict, "a check is running; try again when it finishes")
-		return
-	}
-	st := s.loadSyncState(row.ID)
-	if *req.Enabled && !st.Enabled {
-		// What the server runs now is the starting point.
-		st.ContainerID = ""
-	}
-	st.Enabled = *req.Enabled
-	err := s.saveSyncState(row.ID, st)
-	mu.Unlock()
+	reply, err := s.gameHost().WorkshopSync(r.Context(), row.ID, gameserver.SyncCall{Op: gameserver.SyncOpSet, Enabled: *req.Enabled})
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "could not save the setting")
+		writeErr(w, http.StatusConflict, "could not save the setting: "+err.Error())
 		return
 	}
+	st := reply.State
 	state := "off"
 	if st.Enabled {
 		state = "on"
 	}
 	s.noteGame(r, p, row.ID, "workshop-sync", "Live Workshop sync turned "+state, "")
-	writeJSON(w, http.StatusOK, s.workshopSyncJSON(r.Context(), *row))
+	writeJSON(w, http.StatusOK, s.workshopSyncJSON(r.Context(), *row, reply))
 }
 
 // checkWorkshopSync is "Check now" from the panel. It queues a request like
@@ -360,36 +177,25 @@ func (s *Server) checkWorkshopSync(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	mu := s.wsync.lock(row.ID)
-	if !mu.TryLock() {
-		writeErr(w, http.StatusConflict, "a check is running now")
-		return
-	}
-	st := s.loadSyncState(row.ID)
-	if !st.Enabled {
-		mu.Unlock()
-		writeErr(w, http.StatusUnprocessableEntity, "turn live Workshop sync on first")
-		return
-	}
-	if st.Pending == "" {
-		b := make([]byte, 4)
-		_, _ = rand.Read(b)
-		st.Pending = fmt.Sprintf("panel-%d-%s", s.now().Unix(), hex.EncodeToString(b))
-	}
-	err := s.saveSyncState(row.ID, st)
-	mu.Unlock()
+	b := make([]byte, 4)
+	_, _ = rand.Read(b)
+	reqID := fmt.Sprintf("panel-%d-%s", s.now().Unix(), hex.EncodeToString(b))
+	reply, err := s.gameHost().WorkshopSync(r.Context(), row.ID, gameserver.SyncCall{Op: gameserver.SyncOpCheck, RequestID: reqID})
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "could not queue the check")
+		code := http.StatusConflict
+		if !reply.State.Enabled {
+			code = http.StatusUnprocessableEntity
+		}
+		writeErr(w, code, err.Error())
 		return
 	}
 	s.noteGame(r, p, row.ID, "workshop-sync", "Workshop check requested", "")
-	writeJSON(w, http.StatusAccepted, s.workshopSyncJSON(r.Context(), *row))
+	writeJSON(w, http.StatusAccepted, s.workshopSyncJSON(r.Context(), *row, reply))
 }
 
 // removeWorkshopSync forgets a deleted server's sync state.
-func (s *Server) removeWorkshopSync(id string) {
-	if id == "" || strings.ContainsAny(id, "/.") {
-		return
+func (s *Server) removeWorkshopSync(ctx context.Context, id string) {
+	if _, err := s.gameHost().WorkshopSync(ctx, id, gameserver.SyncCall{Op: gameserver.SyncOpRemove}); err != nil {
+		log.Printf("workshop sync: %s: forgetting the deleted server: %v", id, err)
 	}
-	_ = os.RemoveAll(filepath.Join(s.syncRoot(), id))
 }

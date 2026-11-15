@@ -207,7 +207,6 @@ type Server struct {
 	gameLocal *gameserver.LocalHost
 	gameMu    sync.Mutex
 	// wsync runs live Workshop sync (gameserver_workshop_sync.go).
-	wsync  workshopSyncRunner
 	PhysFS inventory.FS
 	// refresh shares live host observations between concurrent reads.
 	refresh refreshGate

@@ -43,6 +43,7 @@ const (
 	gsRestoreBackup   = "restore-backup"
 	gsDeleteBackup    = "delete-backup"
 	gsReady           = "runtime-ready"
+	gsWorkshopSync    = "workshop-sync"
 )
 
 // gameSpec carries the typed arguments for every game server action.
@@ -59,6 +60,7 @@ type gameSpec struct {
 	Server    *gameserver.Server   `json:"server,omitempty"`
 	Template  *gameserver.Template `json:"template,omitempty"`
 	Run       *gameserver.RunSpec  `json:"run,omitempty"`
+	Sync      *gameserver.SyncCall `json:"sync,omitempty"`
 }
 
 // gameResult is the JSON result of a game server action.
@@ -73,6 +75,7 @@ type gameResult struct {
 	Listing  *gameserver.DirListing `json:"listing,omitempty"`
 	Backup   *gameserver.BackupFile `json:"backup,omitempty"`
 	NotFound bool                   `json:"not_found,omitempty"`
+	Sync     *gameserver.SyncReply  `json:"sync,omitempty"`
 }
 
 // gameProgress is the latest install phase per server, read by the
@@ -167,6 +170,13 @@ func (h *Handler) execGameServer(ctx context.Context, m *agentv1.GameServer) (*c
 		res.Running = host.Running(ctx, id)
 	case gsSend:
 		err = host.Send(ctx, id, spec.Line)
+	case gsWorkshopSync:
+		if spec.Sync == nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("workshop sync needs an operation"))
+		}
+		var reply gameserver.SyncReply
+		reply, err = host.WorkshopSync(ctx, id, *spec.Sync)
+		res.Sync = &reply
 	case gsLogs:
 		res.Text, err = host.Logs(ctx, id, spec.Tail)
 	case gsListDir:

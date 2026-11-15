@@ -144,6 +144,14 @@ func (g GameHost) Send(ctx context.Context, id, line string) error {
 	return err
 }
 
+func (g GameHost) WorkshopSync(ctx context.Context, id string, call gameserver.SyncCall) (gameserver.SyncReply, error) {
+	res, err := g.call(ctx, gsWorkshopSync, id, gameSpec{Sync: &call}, nil)
+	if err != nil || res.Sync == nil {
+		return gameserver.SyncReply{}, err
+	}
+	return *res.Sync, nil
+}
+
 func (g GameHost) Logs(ctx context.Context, id string, tail int) (string, error) {
 	res, err := g.call(ctx, gsLogs, id, gameSpec{Tail: tail}, nil)
 	return res.Text, err

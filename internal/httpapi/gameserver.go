@@ -541,24 +541,16 @@ func (s *Server) startGame(ctx context.Context, rt gameserver.Host, row *appdb.G
 		}
 	}
 	startup := gameserver.ExpandStartup(tmpl.Startup, env, gameserver.MemoryMB(row.MemoryBytes), gameserver.PrimaryPort(ports))
-	// Live Workshop sync packs are shown read-only, so the server cannot add
-	// one of its own. Mounted on every start, so turning sync on later needs
-	// no restart.
-	var readOnly []gameserver.ReadOnlyMount
-	if gameserver.WorkshopSyncSupported(tmpl) {
-		items := s.syncItemsDir(row.ID)
-		if err := os.MkdirAll(items, 0o755); err != nil {
-			return fmt.Errorf("creating the Workshop sync folder: %w", err)
-		}
-		readOnly = append(readOnly, gameserver.ReadOnlyMount{Host: items, Rel: gameserver.SyncItemsRel})
-	}
 	cid, err := rt.Start(ctx, gameserver.RunSpec{
 		ID: row.ID, Image: row.Image, Startup: startup, Env: env, Ports: ports,
 		CPUs: row.CPUs, MemoryBytes: row.MemoryBytes, WorkDir: tmpl.WorkingDir,
 		Dependencies: tmpl.Dependencies, NetworkMode: s.gameRuntime().NetworkMode,
 		// srcds and hlds hold their console output while it goes to a pipe.
-		TTY:      tmpl.Family == "source",
-		ReadOnly: readOnly,
+		TTY: tmpl.Family == "source",
+		// The agent mounts its live Workshop sync packs read-only, so the
+		// server cannot add one of its own. Mounted on every start, so
+		// turning sync on later needs no restart.
+		WorkshopSync: gameserver.WorkshopSyncSupported(tmpl),
 	})
 	if err != nil {
 		return err
@@ -624,7 +616,7 @@ func (s *Server) gameServerDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = s.gameHost().Kill(r.Context(), row.ID)
 	_ = s.gameHost().RemoveData(r.Context(), row.ID)
-	s.removeWorkshopSync(row.ID)
+	s.removeWorkshopSync(r.Context(), row.ID)
 	if err := s.Store.DeleteGameServer(r.Context(), p.User.ClusterID, row.ID); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
