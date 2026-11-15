@@ -197,6 +197,9 @@ func Run(cfg Config) error {
 	if n := srv.ReconcileInterruptedBackupRuns(recCtx); n > 0 {
 		log.Printf("backup: marked %d interrupted run(s) after control restart", n)
 	}
+	if n := srv.ReconcileInterruptedGameInstalls(recCtx); n > 0 {
+		log.Printf("game servers: marked %d interrupted install(s) after control restart", n)
+	}
 	recCancel()
 	if n, b := httpapi.SweepStaleTempDirs(os.TempDir()); n > 0 {
 		log.Printf("backup: removed %d interrupted staging folder(s), %d bytes", n, b)

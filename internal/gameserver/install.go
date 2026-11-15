@@ -80,20 +80,23 @@ func (r *Runtime) Install(ctx context.Context, srv Server, tmpl Template) error 
 }
 
 func (r *Runtime) runInstallContainer(ctx context.Context, srv Server, dir, image, script string) error {
+	name := containerName(srv.ID) + "-install"
+	// An install cut off by a control restart can leave its container
+	// running, and the name would then refuse every reinstall.
+	_, _ = r.run(ctx, r.dockerBin(), "rm", "-f", name)
 	args := []string{
 		"run", "--rm",
-		"--name", containerName(srv.ID) + "-install",
+		"--name", name,
 		"-v", dir + ":/mnt/server",
 		"-w", "/mnt/server",
 	}
 	args = append(args, r.networkArgs()...)
 	args = append(args, "--security-opt", "no-new-privileges")
 	args = append(args, "--entrypoint", "/bin/sh")
-	for _, k := range sortedKeys(srv.Env) {
-		args = append(args, "-e", k+"="+srv.Env[k])
-	}
+	envFlags, secretEnv := envArgs(srv.Env)
+	args = append(args, envFlags...)
 	args = append(args, image, script)
-	out, err := r.run(ctx, r.dockerBin(), args...)
+	out, err := r.runWithEnv(ctx, secretEnv, r.dockerBin(), args...)
 	r.appendLog(srv.ID, string(out))
 	if err != nil {
 		return fmt.Errorf("%s", strings.TrimSpace(string(out)+" "+err.Error()))

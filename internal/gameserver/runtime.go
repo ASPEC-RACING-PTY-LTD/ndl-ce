@@ -122,12 +122,23 @@ func networkArgsFor(mode string) []string {
 }
 
 func (r *Runtime) run(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return r.runWithEnv(ctx, nil, name, args...)
+}
+
+// runWithEnv runs a command with extra NAME=value pairs in its environment.
+func (r *Runtime) runWithEnv(ctx context.Context, extra []string, name string, args ...string) ([]byte, error) {
 	if r.Run != nil {
 		return r.Run(ctx, name, args...)
 	}
 	cmd := exec.CommandContext(ctx, name, args...)
 	if host := strings.TrimSpace(r.DockerHost); host != "" {
 		cmd.Env = append(os.Environ(), "DOCKER_HOST="+host)
+	}
+	if len(extra) > 0 {
+		if cmd.Env == nil {
+			cmd.Env = os.Environ()
+		}
+		cmd.Env = append(cmd.Env, extra...)
 	}
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
@@ -234,9 +245,8 @@ func (r *Runtime) Start(ctx context.Context, spec RunSpec) (string, error) {
 		// server folder rather than the image's ephemeral /root.
 		args = append(args, "-e", "HOME="+workdir)
 	}
-	for _, k := range sortedKeys(spec.Env) {
-		args = append(args, "-e", k+"="+spec.Env[k])
-	}
+	envFlags, secretEnv := envArgs(spec.Env)
+	args = append(args, envFlags...)
 	switch {
 	case strings.TrimSpace(spec.Startup) != "" && spec.TTY:
 		args = append(args, "-e", "SHELL=/bin/sh", "-e", "NDL_START="+spec.Startup, "--entrypoint", "/bin/sh")
@@ -247,7 +257,7 @@ func (r *Runtime) Start(ctx context.Context, spec RunSpec) (string, error) {
 	default:
 		args = append(args, image)
 	}
-	out, err := r.run(ctx, r.dockerBin(), args...)
+	out, err := r.runWithEnv(ctx, secretEnv, r.dockerBin(), args...)
 	if err != nil {
 		return "", fmt.Errorf("%s", strings.TrimSpace(string(out)+" "+err.Error()))
 	}
@@ -377,4 +387,21 @@ func (r *Runtime) Available(ctx context.Context) error {
 		return fmt.Errorf("%s", msg)
 	}
 	return nil
+}
+
+// envArgs turns a server's settings into docker run -e flags. A secret
+// (a GSLT, a password, a licence key) is passed as a bare -e NAME and its
+// value through the docker client's environment, so it never shows on a
+// command line where any user of the host could read it with ps.
+func envArgs(env map[string]string) (flags, secret []string) {
+	for _, k := range sortedKeys(env) {
+		v := env[k]
+		if strings.TrimSpace(v) != "" && (looksSecretName(k) || looksSecretValue(v)) {
+			flags = append(flags, "-e", k)
+			secret = append(secret, k+"="+v)
+			continue
+		}
+		flags = append(flags, "-e", k+"="+v)
+	}
+	return flags, secret
 }

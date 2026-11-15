@@ -307,9 +307,13 @@ func (s *Server) createGameServer(w http.ResponseWriter, r *http.Request) {
 func (s *Server) installGame(row appdb.GameServer, tmpl gameserver.Template) {
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
 	defer cancel()
-	row.Status = gameserver.StatusInstalling
-	row.InstallPhase = "downloading"
-	_ = s.Store.UpdateGameServer(ctx, row)
+	// The install owns only its own fields. Each write re-reads the server,
+	// so a rename or other change made while it runs is kept, and a server
+	// deleted meanwhile is not written back.
+	s.saveInstallState(ctx, row, func(g *appdb.GameServer) {
+		g.Status = gameserver.StatusInstalling
+		g.InstallPhase = "downloading"
+	})
 	host := s.gameHost()
 	env := map[string]string{}
 	_ = json.Unmarshal(row.EnvJSON, &env)
@@ -319,25 +323,90 @@ func (s *Server) installGame(row appdb.GameServer, tmpl gameserver.Template) {
 	}
 	srv := gameserver.Server{ID: row.ID, Env: env, Image: row.Image}
 	err := host.Install(ctx, srv, tmpl, func(phase, _ string, logTail string) {
-		row.InstallPhase = phase
-		row.InstallLog = logTail
-		_ = s.Store.UpdateGameServer(context.Background(), row)
+		s.saveInstallState(context.Background(), row, func(g *appdb.GameServer) {
+			g.InstallPhase = phase
+			g.InstallLog = logTail
+		})
 	})
-	row.InstallLog = host.LogTail(ctx, row.ID, 200)
+	logTail := host.LogTail(ctx, row.ID, 200)
 	if err != nil {
-		row.Status = gameserver.StatusFailed
-		row.ErrorRaw = err.Error()
-		row.ErrorHuman = gameserver.HumanError(err.Error())
-		row.InstallPhase = "failed"
-		_ = s.Store.UpdateGameServer(ctx, row)
-		_ = s.Store.InsertGameEvent(ctx, appdb.GameEvent{ID: uuid.NewString(), ServerID: row.ID, ClusterID: row.ClusterID, Kind: "install.failed", Summary: row.ErrorHuman, Detail: clipGame(err.Error(), 800), CreatedAt: s.now()})
+		human := gameserver.HumanError(err.Error())
+		if s.saveInstallState(ctx, row, func(g *appdb.GameServer) {
+			g.Status = gameserver.StatusFailed
+			g.ErrorRaw = err.Error()
+			g.ErrorHuman = human
+			g.InstallPhase = "failed"
+			g.InstallLog = logTail
+		}) {
+			_ = s.Store.InsertGameEvent(ctx, appdb.GameEvent{ID: uuid.NewString(), ServerID: row.ID, ClusterID: row.ClusterID, Kind: "install.failed", Summary: human, Detail: clipGame(err.Error(), 800), CreatedAt: s.now()})
+		}
 		return
 	}
-	row.Status = gameserver.StatusReady
-	row.InstallPhase = "ready"
-	row.ErrorHuman, row.ErrorRaw = "", ""
-	_ = s.Store.UpdateGameServer(ctx, row)
-	_ = s.Store.InsertGameEvent(ctx, appdb.GameEvent{ID: uuid.NewString(), ServerID: row.ID, ClusterID: row.ClusterID, Kind: "install.ok", Summary: "Install finished", CreatedAt: s.now()})
+	if s.saveInstallState(ctx, row, func(g *appdb.GameServer) {
+		g.Status = gameserver.StatusReady
+		g.InstallPhase = "ready"
+		g.InstallLog = logTail
+		g.ErrorHuman, g.ErrorRaw = "", ""
+	}) {
+		_ = s.Store.InsertGameEvent(ctx, appdb.GameEvent{ID: uuid.NewString(), ServerID: row.ID, ClusterID: row.ClusterID, Kind: "install.ok", Summary: "Install finished", CreatedAt: s.now()})
+	}
+}
+
+// saveInstallState applies an install's change to the server as stored now.
+// It reports false when the server is gone.
+func (s *Server) saveInstallState(ctx context.Context, row appdb.GameServer, apply func(*appdb.GameServer)) bool {
+	cur, err := s.Store.GetGameServer(ctx, row.ClusterID, row.ID)
+	if err != nil || cur == nil {
+		return false
+	}
+	apply(cur)
+	cur.UpdatedAt = s.now()
+	return s.Store.UpdateGameServer(ctx, *cur) == nil
+}
+
+// gameInstalling reports a server whose install has not finished; starting
+// it or installing again would run alongside the install.
+func gameInstalling(row *appdb.GameServer) bool {
+	return row.Status == gameserver.StatusInstalling || row.Status == gameserver.StatusPending
+}
+
+// gameInstallInterrupted is the error on an install a control restart cut
+// off; gameserver.HumanError maps its raw form to the same words.
+var gameInstallInterrupted = gameserver.HumanError(gameInstallInterruptedRaw)
+
+const gameInstallInterruptedRaw = "install interrupted by control restart"
+
+// ReconcileInterruptedGameInstalls marks installs that a control restart
+// cut off as failed. Installs run inside the control process, so after a
+// restart nothing is left to finish them and they would show as installing
+// for ever, blocking start and reinstall.
+func (s *Server) ReconcileInterruptedGameInstalls(ctx context.Context) int {
+	cl, err := s.Store.GetCluster(ctx)
+	if err != nil || cl == nil {
+		return 0
+	}
+	rows, err := s.Store.ListGameServers(ctx, cl.ID)
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for i := range rows {
+		row := rows[i]
+		if !gameInstalling(&row) {
+			continue
+		}
+		row.Status = gameserver.StatusFailed
+		row.InstallPhase = "failed"
+		row.ErrorHuman = gameInstallInterrupted
+		row.ErrorRaw = gameInstallInterruptedRaw
+		row.UpdatedAt = s.now()
+		if s.Store.UpdateGameServer(ctx, row) != nil {
+			continue
+		}
+		_ = s.Store.InsertGameEvent(ctx, appdb.GameEvent{ID: uuid.NewString(), ServerID: row.ID, ClusterID: row.ClusterID, Kind: "install.failed", Summary: gameInstallInterrupted, CreatedAt: s.now()})
+		n++
+	}
+	return n
 }
 
 func (s *Server) getGameServer(w http.ResponseWriter, r *http.Request) {
@@ -384,6 +453,10 @@ func (s *Server) powerGame(w http.ResponseWriter, r *http.Request, action string
 	}
 	row, ok := s.loadGame(w, r, p, "power")
 	if !ok {
+		return
+	}
+	if gameInstalling(row) && action != "stop" && action != "kill" {
+		writeErr(w, http.StatusConflict, "the server is still installing; start it once the install finishes")
 		return
 	}
 	rt := s.gameHost()
@@ -504,6 +577,10 @@ func (s *Server) gameServerReinstall(w http.ResponseWriter, r *http.Request) {
 	}
 	row, ok := s.loadGame(w, r, p, "reinstall")
 	if !ok {
+		return
+	}
+	if gameInstalling(row) {
+		writeErr(w, http.StatusConflict, "the server is still installing; wait for it to finish")
 		return
 	}
 	tmpl, err := s.resolveTemplate(r.Context(), p.User.ClusterID, row.TemplateID)
