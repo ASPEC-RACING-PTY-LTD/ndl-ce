@@ -58,6 +58,7 @@ import { AuditPage } from "./pages/AuditPage";
 import { GpuPage } from "./pages/GpuPage";
 import { OciPage } from "./pages/OciPage";
 import { ClaudeAgentPage } from "./pages/ClaudeAgentPage";
+import { HelixPage } from "./pages/HelixPage";
 import { CodeholdPage } from "./pages/CodeholdPage";
 import { DockerHubPage } from "./pages/DockerHubPage";
 import { WorkloadExtensionsPage } from "./pages/WorkloadExtensionsPage";
@@ -429,6 +430,15 @@ function matchPage(path: string) {
   }
   if (path === "/groups" || path === "/roles" || path === "/roles/permissions") {
     return <Redirect to="/iam/access" />;
+  }
+  if (path === "/iam/helix") {
+    return (
+      <IAMLayout>
+        <RequireGrant anyPermission={["helix.manage", "helix.kill"]}>
+          <HelixPage />
+        </RequireGrant>
+      </IAMLayout>
+    );
   }
   if (path === "/iam/access") {
     return (

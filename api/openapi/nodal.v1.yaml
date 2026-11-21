@@ -3954,6 +3954,657 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
+  /helix:
+    get:
+      operationId: getHelix
+      summary: Helix integration settings: enabled, kill switch, credentials (no secrets), allowed addresses, event settings, every machine with its grant, approvals and running operations. Requires helix.manage (SuperAdmin).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /helix/settings:
+    put:
+      operationId: putHelixSettings
+      summary: Change enabled, allowed_ips, global_events or thresholds (cpu_percent, memory_percent). Turning it off stops running Helix operations. Requires helix.manage.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /helix/machines:
+    put:
+      operationId: putHelixMachines
+      summary: Replace the machine grants: grants[] of machine_id, caps (read, logs, write, execute, deploy, power), protected, destructive, run_as, exec_users. Requires helix.manage.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /helix/credentials:
+    post:
+      operationId: createHelixCredential
+      summary: Create a Helix credential (name, ttl_days). The hlx_ token is returned once. Requires helix.manage.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /helix/credentials/{id}/revoke:
+    post:
+      operationId: revokeHelixCredential
+      summary: Revoke a Helix credential at once. Requires helix.manage.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /helix/approvals/{id}/{decision}:
+    post:
+      operationId: decideHelixApproval
+      summary: Approve or deny (decision) an operation Helix is waiting on, with an optional note. An approval is good for one exact request within an hour. Requires helix.manage.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: decision
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /helix/kill:
+    get:
+      operationId: getHelixKill
+      summary: Kill switch state. Requires helix.kill (Admin and above).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    post:
+      operationId: engageHelixKill
+      summary: Engage the Helix kill switch (reason, revoke_credentials): refuses every Helix request and cancels running commands and Helix's deployments. Requires helix.kill.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /helix/kill/release:
+    post:
+      operationId: releaseHelixKill
+      summary: Release the Helix kill switch. Requires helix.manage.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /helix/activity:
+    get:
+      operationId: helixActivity
+      summary: The latest 200 audit entries for Helix (its calls and settings changes). Requires helix.manage.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /helix/v1/whoami:
+    get:
+      operationId: helixWhoami
+      summary: The calling credential, limits and API version. Helix credential (Authorization: Bearer hlx_...); see docs/helix-integration.md.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /helix/v1/machines:
+    get:
+      operationId: helixMachines
+      summary: Machines shared with Helix (read granted), with status, resources, addresses and the grant. Helix credential (Authorization: Bearer hlx_...); see docs/helix-integration.md.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /helix/v1/machines/{id}:
+    get:
+      operationId: helixMachineGet
+      summary: One shared machine. Helix credential (Authorization: Bearer hlx_...); see docs/helix-integration.md.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /helix/v1/machines/{id}/metrics:
+    get:
+      operationId: helixMachineMetrics
+      summary: CPU and memory series for the last minutes (default 60, at most 1440) and the latest values. Helix credential (Authorization: Bearer hlx_...); see docs/helix-integration.md.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /helix/v1/machines/{id}/network:
+    get:
+      operationId: helixMachineNetwork
+      summary: Configured interfaces and, for running system containers, /proc/net/dev counters. Helix credential (Authorization: Bearer hlx_...); see docs/helix-integration.md.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /helix/v1/machines/{id}/containers:
+    get:
+      operationId: helixContainers
+      summary: Docker containers on the machine with state and health. Helix credential (Authorization: Bearer hlx_...); see docs/helix-integration.md.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /helix/v1/machines/{id}/containers/{cid}/logs:
+    get:
+      operationId: helixContainerLogs
+      summary: A container's log (tail, default 200, at most 5000). Needs logs. Helix credential (Authorization: Bearer hlx_...); see docs/helix-integration.md.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: cid
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /helix/v1/machines/{id}/containers/{cid}/{action}:
+    post:
+      operationId: helixContainerAction
+      summary: Start, stop or restart a container. Needs write; may answer 202 approval_required. Helix credential (Authorization: Bearer hlx_...); see docs/helix-integration.md.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: cid
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: action
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /helix/v1/machines/{id}/services:
+    get:
+      operationId: helixServices
+      summary: systemd services in a system container. Helix credential (Authorization: Bearer hlx_...); see docs/helix-integration.md.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /helix/v1/machines/{id}/services/{unit}/logs:
+    get:
+      operationId: helixServiceLogs
+      summary: A service's journal (lines, default 200, at most 5000). Needs logs. Helix credential (Authorization: Bearer hlx_...); see docs/helix-integration.md.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: unit
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /helix/v1/machines/{id}/services/{unit}/{action}:
+    post:
+      operationId: helixServiceAction
+      summary: Start, stop, restart or reload a service. Needs write; may answer 202 approval_required. Helix credential (Authorization: Bearer hlx_...); see docs/helix-integration.md.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: unit
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: action
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /helix/v1/machines/{id}/exec:
+    post:
+      operationId: helixExec
+      summary: Run a command in a system container (command, cwd, run_as, timeout_sec up to 120, approval_id). Needs execute; may answer 202 approval_required. Helix credential (Authorization: Bearer hlx_...); see docs/helix-integration.md.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /helix/v1/machines/{id}/power/{action}:
+    post:
+      operationId: helixPower
+      summary: Start, stop or restart the machine. Needs power; stop and restart need approval unless the grant allows destructive operations. Helix credential (Authorization: Bearer hlx_...); see docs/helix-integration.md.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: action
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /helix/v1/projects:
+    get:
+      operationId: helixProjects
+      summary: Deployment projects on shared machines. Helix credential (Authorization: Bearer hlx_...); see docs/helix-integration.md.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /helix/v1/projects/{id}/deploy:
+    post:
+      operationId: helixDeploy
+      summary: Queue a deployment of the project. Needs deploy. Helix credential (Authorization: Bearer hlx_...); see docs/helix-integration.md.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /helix/v1/projects/{id}/rollback:
+    post:
+      operationId: helixRollback
+      summary: Roll the project back to a deployment's starting commit (deployment_id) or a commit. Needs deploy and approval unless destructive operations are allowed. Helix credential (Authorization: Bearer hlx_...); see docs/helix-integration.md.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /helix/v1/deployments/{id}:
+    get:
+      operationId: helixDeployment
+      summary: A deployment's status on a shared machine. Helix credential (Authorization: Bearer hlx_...); see docs/helix-integration.md.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /helix/v1/deployments/{id}/log:
+    get:
+      operationId: helixDeploymentLog
+      summary: A deployment's log by offset. Needs logs or deploy. Helix credential (Authorization: Bearer hlx_...); see docs/helix-integration.md.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /helix/v1/approvals/{id}:
+    get:
+      operationId: helixApprovalGet
+      summary: An approval's status. Helix credential (Authorization: Bearer hlx_...); see docs/helix-integration.md.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /helix/v1/events:
+    get:
+      operationId: helixEvents
+      summary: Events after a cursor (after, limit up to 500, wait up to 30 seconds for long polling). Without after, returns the current cursor. Helix credential (Authorization: Bearer hlx_...); see docs/helix-integration.md.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /game-servers/{id}/workshop-sync:
+    get:
+      operationId: getWorkshopSync
+      summary: Live Workshop sync for a Garry's Mod server: enabled, collection, last and next check, delivered packs and errors. Requires gameserver.config.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    put:
+      operationId: putWorkshopSync
+      summary: Turn live Workshop sync on or off (enabled). Requires gameserver.config.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /game-servers/{id}/workshop-sync/check:
+    post:
+      operationId: checkWorkshopSync
+      summary: Queue a Workshop check now, like a request from the server. Requires gameserver.config.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
   /claude-agent:
     get:
       operationId: getClaudeAgent

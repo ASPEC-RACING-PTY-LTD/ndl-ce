@@ -69,6 +69,7 @@ export const ADMIN_SECTIONS: Section[] = [
         anyPermission: ["roles.manage", "identity.group.manage", "api_access.manage", "identity.token.create"],
         match: exact("/iam/access", "/api-access"),
       },
+      { id: "helix", label: "Helix", href: "/iam/helix", anyPermission: ["helix.manage", "helix.kill"], match: exact("/iam/helix") },
     ],
   },
   {

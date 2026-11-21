@@ -230,6 +230,7 @@ func Run(cfg Config) error {
 	go srv.RunUpdateHousekeeping(runCtx)
 	go srv.RunSearchIndexer(runCtx)
 	go srv.RunWorkshopSync(runCtx)
+	go srv.RunHelix(runCtx)
 	go observer{
 		Store: st, Agent: agent, Hub: hub, Nightly: srv.TickNightlyBackups,
 		Alerts: srv.TickAlerts, Workers: srv.ObserveWorkers, UpdateCheck: srv.TickUpdateCheck,

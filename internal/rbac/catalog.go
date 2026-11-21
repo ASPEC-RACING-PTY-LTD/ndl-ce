@@ -104,6 +104,7 @@ func AllPermissions() []string {
 		CloudflareCredentials,
 		DDoSRead,
 		DDoSManage,
+		HelixKill,
 		SearchManage,
 		AppearanceManage,
 		PermissionsAssign,

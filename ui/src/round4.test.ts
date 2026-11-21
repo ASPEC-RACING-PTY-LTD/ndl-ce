@@ -47,7 +47,7 @@ describe("navigation model", () => {
     expect(system?.children?.map((c) => c.id)).toEqual(expect.arrayContaining(["features", "updates", "appearance", "search", "certificates", "license", "store", "docs", "audit"]));
     expect(all).not.toEqual(expect.arrayContaining(["features", "updates", "appearance", "search", "security", "catalog"]));
     const iam = visibleSections(ADMIN_SECTIONS, superadmin, () => true).find((s) => s.id === "iam");
-    expect(iam?.children?.map((c) => c.id)).toEqual(["users", "access"]);
+    expect(iam?.children?.map((c) => c.id)).toEqual(["users", "access", "helix"]);
     expect(visibleSections(ADMIN_SECTIONS, superadmin, () => false).find((s) => s.id === "infrastructure")?.children?.map((c) => c.id)).not.toContain("docker");
   });
 

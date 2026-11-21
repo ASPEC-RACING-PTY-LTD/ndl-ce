@@ -235,6 +235,7 @@ func (s *Server) automationEmit(ctx context.Context, clusterID, kind, target, no
 	if clusterID == "" {
 		return
 	}
+	s.helixPlatformEvent(ctx, clusterID, kind, target, payload)
 	s.automation().bus.Publish(engine.Event{
 		ClusterID: clusterID, Kind: kind, Target: target, NodeID: nodeID, CausedByRun: automationRunFrom(ctx), Payload: payload, At: s.now(),
 	})

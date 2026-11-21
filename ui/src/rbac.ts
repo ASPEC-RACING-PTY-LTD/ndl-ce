@@ -39,6 +39,7 @@ const ADMIN_PERMS = [
   "gameserver.reinstall", "gameserver.delete", "gameserver.admin",
   "cloudflare.read", "cloudflare.manage", "search.manage",
   "ddos.read", "ddos.manage",
+  "helix.kill",
 ];
 
 const USER_PERMS = [

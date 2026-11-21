@@ -18,6 +18,8 @@ const SECTIONS: Section[] = [
     permissions: ["roles.manage", "identity.group.manage", "api_access.manage", "identity.token.create"],
     also: ["/api-access"],
   },
+  // Helix: SuperAdmins configure it; Admins see its kill switch.
+  { href: "/iam/helix", label: "Helix", icon: "key", permissions: ["helix.manage", "helix.kill"] },
 ];
 
 /** IAM sections the user may open, in bar order. */

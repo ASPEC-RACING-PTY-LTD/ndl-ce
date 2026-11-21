@@ -240,6 +240,18 @@ type Store interface {
 	ClaudeAgentConfig(ctx context.Context, clusterID string) ([]byte, error)
 	// PutClaudeAgentConfig replaces the Claude Agent document.
 	PutClaudeAgentConfig(ctx context.Context, clusterID string, body []byte, by string) error
+	// HelixConfig returns the Helix integration document; nil when never saved.
+	HelixConfig(ctx context.Context, clusterID string) ([]byte, error)
+	// PutHelixConfig replaces the Helix integration document.
+	PutHelixConfig(ctx context.Context, clusterID string, body []byte, by string) error
+	// InsertHelixEvent appends to the Helix event feed and returns its seq.
+	InsertHelixEvent(ctx context.Context, e HelixEvent) (int64, error)
+	// ListHelixEvents returns feed entries after seq, oldest first.
+	ListHelixEvents(ctx context.Context, clusterID string, after int64, limit int) ([]HelixEvent, error)
+	// LatestHelixEventSeq is the newest seq, or 0.
+	LatestHelixEventSeq(ctx context.Context, clusterID string) (int64, error)
+	// PruneHelixEvents drops feed entries older than before.
+	PruneHelixEvents(ctx context.Context, clusterID string, before time.Time) error
 	// SetBackupPolicyRunQueued records or drops a Run now queued while paused.
 	SetBackupPolicyRunQueued(ctx context.Context, clusterID, id string, queued bool) error
 

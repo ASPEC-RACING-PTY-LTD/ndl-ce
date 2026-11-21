@@ -4573,6 +4573,68 @@ export type ListCTLeftoversPath = "/api/v1/workloads/leftovers";
 
 export type RemoveCTLeftoversPath = "/api/v1/workloads/leftovers/remove";
 
+export type GetHelixPath = "/api/v1/helix";
+
+export type PutHelixSettingsPath = "/api/v1/helix/settings";
+
+export type PutHelixMachinesPath = "/api/v1/helix/machines";
+
+export type CreateHelixCredentialPath = "/api/v1/helix/credentials";
+
+export type RevokeHelixCredentialPath = "/api/v1/helix/credentials/{id}/revoke";
+
+export type DecideHelixApprovalPath = "/api/v1/helix/approvals/{id}/{decision}";
+
+export type GetHelixKillPath = "/api/v1/helix/kill";
+
+export type ReleaseHelixKillPath = "/api/v1/helix/kill/release";
+
+export type HelixActivityPath = "/api/v1/helix/activity";
+
+export type HelixWhoamiPath = "/api/v1/helix/v1/whoami";
+
+export type HelixMachinesPath = "/api/v1/helix/v1/machines";
+
+export type HelixMachineGetPath = "/api/v1/helix/v1/machines/{id}";
+
+export type HelixMachineMetricsPath = "/api/v1/helix/v1/machines/{id}/metrics";
+
+export type HelixMachineNetworkPath = "/api/v1/helix/v1/machines/{id}/network";
+
+export type HelixContainersPath = "/api/v1/helix/v1/machines/{id}/containers";
+
+export type HelixContainerLogsPath = "/api/v1/helix/v1/machines/{id}/containers/{cid}/logs";
+
+export type HelixContainerActionPath = "/api/v1/helix/v1/machines/{id}/containers/{cid}/{action}";
+
+export type HelixServicesPath = "/api/v1/helix/v1/machines/{id}/services";
+
+export type HelixServiceLogsPath = "/api/v1/helix/v1/machines/{id}/services/{unit}/logs";
+
+export type HelixServiceActionPath = "/api/v1/helix/v1/machines/{id}/services/{unit}/{action}";
+
+export type HelixExecPath = "/api/v1/helix/v1/machines/{id}/exec";
+
+export type HelixPowerPath = "/api/v1/helix/v1/machines/{id}/power/{action}";
+
+export type HelixProjectsPath = "/api/v1/helix/v1/projects";
+
+export type HelixDeployPath = "/api/v1/helix/v1/projects/{id}/deploy";
+
+export type HelixRollbackPath = "/api/v1/helix/v1/projects/{id}/rollback";
+
+export type HelixDeploymentPath = "/api/v1/helix/v1/deployments/{id}";
+
+export type HelixDeploymentLogPath = "/api/v1/helix/v1/deployments/{id}/log";
+
+export type HelixApprovalGetPath = "/api/v1/helix/v1/approvals/{id}";
+
+export type HelixEventsPath = "/api/v1/helix/v1/events";
+
+export type GetWorkshopSyncPath = "/api/v1/game-servers/{id}/workshop-sync";
+
+export type CheckWorkshopSyncPath = "/api/v1/game-servers/{id}/workshop-sync/check";
+
 export type GetClaudeAgentPath = "/api/v1/claude-agent";
 
 export type SetupClaudeAgentPath = "/api/v1/claude-agent/setup";

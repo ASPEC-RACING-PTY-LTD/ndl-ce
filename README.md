@@ -95,7 +95,7 @@ nodalctl backup run --workload ID --target TARGET
 | Containers and apps | [Docker](docs/docker.md) · [Deployments](docs/deployments.md) · [Store](docs/store.md) |
 | Networking | [Edge forwarding](docs/edge-forwarding.md) · [DDoS protection](docs/ddos-protection.md) · [Cloudflare](docs/cloudflare.md) · [Caddy and Nginx](docs/reverse-proxies.md) |
 | Administration | [Management](docs/management.md) · [Live updates](docs/live-updates.md) · [Cluster](docs/cluster.md) · [Migration](docs/migration.md) |
-| Extras | [AI](docs/ai.md) · [Claude Agent](docs/claude-agent.md) · [CodeHold](docs/codehold.md) · [API compatibility](docs/api-compatibility.md) |
+| Extras | [AI](docs/ai.md) · [Claude Agent](docs/claude-agent.md) · [Helix integration](docs/helix-integration.md) · [CodeHold](docs/codehold.md) · [API compatibility](docs/api-compatibility.md) |
 
 The public guide lives at **[no-dal.com/docs](https://no-dal.com/docs)**.
 

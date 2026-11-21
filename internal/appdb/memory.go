@@ -165,6 +165,7 @@ type Memory struct {
 	edge               edgeMem
 	access             accessMem
 	claudeAgent        claudeAgentMem
+	helix              helixMem
 	ui                 uiMem
 	tmpl               tmplMem
 }

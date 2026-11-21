@@ -6141,3 +6141,36 @@ thead th[data-autosort="desc"]::after {
 .codehold-cli-section {
   margin-top: var(--space-5, 2rem);
 }
+
+/* Helix integration (pages/HelixPage.tsx) */
+.hx-kill.is-engaged {
+  border-color: var(--danger, #c0392b);
+}
+.hx-form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3, 1rem);
+  align-items: flex-end;
+}
+.hx-scroll {
+  overflow-x: auto;
+}
+.hx-grants td,
+.hx-grants th {
+  text-align: center;
+}
+.hx-grants td:first-child,
+.hx-grants th:first-child {
+  text-align: left;
+}
+.hx-runas {
+  min-width: 10rem;
+}
+.hx-detail {
+  max-width: 40rem;
+  word-break: break-word;
+}
+.hx-approval {
+  padding: var(--space-2, 0.5rem) 0;
+  border-bottom: 1px solid var(--border, rgba(127, 127, 127, 0.25));
+}

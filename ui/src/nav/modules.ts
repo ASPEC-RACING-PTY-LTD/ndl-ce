@@ -25,6 +25,8 @@ export const IAM_PERMISSIONS = [
   "settings.security.manage",
   "identity.group.manage",
   "approvals.view",
+  "helix.manage",
+  "helix.kill",
 ];
 
 /** Paths that belong to IAM (Identity and Access Management). */

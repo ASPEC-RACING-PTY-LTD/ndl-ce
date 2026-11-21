@@ -284,6 +284,8 @@ const PERMISSION_LABELS: Record<string, string> = {
   "cloudflare.host_tunnel": "Manage the host's Cloudflare tunnel",
   "ddos.read": "View DDoS protection",
   "ddos.manage": "Manage DDoS protection",
+  "helix.manage": "Manage the Helix integration",
+  "helix.kill": "Stop Helix with the kill switch",
   "search.manage": "Manage search",
   "search.host_files": "Index host files in search",
   "lab.manage": "Manage the lab",

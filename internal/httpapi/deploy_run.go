@@ -427,6 +427,7 @@ func (s *Server) afterDeployment(ctx context.Context, d appdb.Deployment) {
 		result = d.Status
 	}
 	s.auditInternal(d.ClusterID, "", "docker.deploy.finish", result, detail)
+	s.helixDeploymentEvent(ctx, d)
 	s.deployFinished(ctx, d, proj)
 	if proj != nil && d.Status == appdb.DeploySucceeded {
 		go s.deployHealth(context.WithoutCancel(ctx), d, *proj)

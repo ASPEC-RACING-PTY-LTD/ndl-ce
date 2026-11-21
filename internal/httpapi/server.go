@@ -166,6 +166,9 @@ type Server struct {
 	cf          cfState
 	ch          chState
 	claudeAgent caState
+	// helixState is the Helix integration's runtime (helix.go).
+	helixOnce  sync.Once
+	helixState *helixRuntime
 	// CHKeyPath overrides the key that seals the CodeHold credential, and
 	// CodeholdHTTP the client used to reach CodeHold (tests).
 	CHKeyPath    string
@@ -685,6 +688,36 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/workloads/{id}/force-stop", s.lifecycleWorkload("force-stop"))
 	mux.HandleFunc("POST /api/v1/workloads/{id}/delete", s.lifecycleWorkload("delete"))
 	mux.HandleFunc("GET /api/v1/workloads/leftovers", s.listCTLeftovers)
+	mux.HandleFunc("GET /api/v1/helix", s.getHelix)
+	mux.HandleFunc("PUT /api/v1/helix/settings", s.putHelixSettings)
+	mux.HandleFunc("PUT /api/v1/helix/machines", s.putHelixMachines)
+	mux.HandleFunc("POST /api/v1/helix/credentials", s.createHelixCredential)
+	mux.HandleFunc("POST /api/v1/helix/credentials/{id}/revoke", s.revokeHelixCredential)
+	mux.HandleFunc("POST /api/v1/helix/approvals/{id}/{decision}", s.decideHelixApproval)
+	mux.HandleFunc("GET /api/v1/helix/kill", s.getHelixKill)
+	mux.HandleFunc("POST /api/v1/helix/kill", s.engageHelixKill)
+	mux.HandleFunc("POST /api/v1/helix/kill/release", s.releaseHelixKill)
+	mux.HandleFunc("GET /api/v1/helix/activity", s.helixActivity)
+	mux.HandleFunc("GET /api/v1/helix/v1/whoami", s.helixWhoami)
+	mux.HandleFunc("GET /api/v1/helix/v1/machines", s.helixMachines)
+	mux.HandleFunc("GET /api/v1/helix/v1/machines/{id}", s.helixMachineGet)
+	mux.HandleFunc("GET /api/v1/helix/v1/machines/{id}/metrics", s.helixMachineMetrics)
+	mux.HandleFunc("GET /api/v1/helix/v1/machines/{id}/network", s.helixMachineNetwork)
+	mux.HandleFunc("GET /api/v1/helix/v1/machines/{id}/containers", s.helixContainers)
+	mux.HandleFunc("GET /api/v1/helix/v1/machines/{id}/containers/{cid}/logs", s.helixContainerLogs)
+	mux.HandleFunc("POST /api/v1/helix/v1/machines/{id}/containers/{cid}/{action}", s.helixContainerAction)
+	mux.HandleFunc("GET /api/v1/helix/v1/machines/{id}/services", s.helixServices)
+	mux.HandleFunc("GET /api/v1/helix/v1/machines/{id}/services/{unit}/logs", s.helixServiceLogs)
+	mux.HandleFunc("POST /api/v1/helix/v1/machines/{id}/services/{unit}/{action}", s.helixServiceAction)
+	mux.HandleFunc("POST /api/v1/helix/v1/machines/{id}/exec", s.helixExec)
+	mux.HandleFunc("POST /api/v1/helix/v1/machines/{id}/power/{action}", s.helixPower)
+	mux.HandleFunc("GET /api/v1/helix/v1/projects", s.helixProjects)
+	mux.HandleFunc("POST /api/v1/helix/v1/projects/{id}/deploy", s.helixDeploy)
+	mux.HandleFunc("POST /api/v1/helix/v1/projects/{id}/rollback", s.helixRollback)
+	mux.HandleFunc("GET /api/v1/helix/v1/deployments/{id}", s.helixDeployment)
+	mux.HandleFunc("GET /api/v1/helix/v1/deployments/{id}/log", s.helixDeploymentLog)
+	mux.HandleFunc("GET /api/v1/helix/v1/approvals/{id}", s.helixApprovalGet)
+	mux.HandleFunc("GET /api/v1/helix/v1/events", s.helixEvents)
 	mux.HandleFunc("GET /api/v1/claude-agent", s.getClaudeAgent)
 	mux.HandleFunc("POST /api/v1/claude-agent/setup", s.setupClaudeAgent)
 	mux.HandleFunc("POST /api/v1/claude-agent/login", s.claudeAgentLogin)
@@ -1579,6 +1612,7 @@ func (s *Server) audit(r *http.Request, clusterID, actor, action, result, detail
 		Detail:      body,
 		CreatedAt:   s.now(),
 	})
+	s.helixSecurityAudit(r.Context(), clusterID, action, result, s.clientIP(r), detail)
 }
 
 func (s *Server) lock() *auth.Lockout {
