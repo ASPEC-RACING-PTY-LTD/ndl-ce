@@ -2,6 +2,7 @@ package claudeagent
 
 import (
 	"context"
+	"encoding/binary"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -64,6 +65,7 @@ func TestHostGrantStaysInsideTheServer(t *testing.T) {
 	h := Host{
 		DataDir: func(id string) string { return filepath.Join(root, "gameservers", id) },
 		SetFACL: func(_ context.Context, args ...string) ([]byte, error) { calls = append(calls, args); return nil, nil },
+		ReadACL: func(string, string) ([]byte, error) { return nil, os.ErrNotExist },
 	}
 	mounts, err := h.Grant(context.Background(), 101000, 100000, []HostACL{{ServerID: "s1", Path: "garrysmod/addons", Write: true}})
 	if err != nil {
@@ -80,7 +82,7 @@ func TestHostGrantStaysInsideTheServer(t *testing.T) {
 		"-m u:100000:--x " + filepath.Dir(realRoot),
 		"-m u:100000:--x " + realRoot,
 		"-m u:100000:--x " + filepath.Join(realRoot, "garrysmod"),
-		"-R -P -m u:101000:rwX,d:u:101000:rwX " + real,
+		"-P -m u:101000:rwX,d:u:101000:rwX " + real,
 	}
 	if len(calls) != len(want) {
 		t.Fatalf("setfacl calls %v", calls)
@@ -192,5 +194,88 @@ func TestScriptsParse(t *testing.T) {
 		if out, err := exec.Command("sh", "-n", "-c", script).CombinedOutput(); err != nil {
 			t.Errorf("%s script: %v: %s", name, err, out)
 		}
+	}
+}
+
+// aclBytes builds a posix ACL xattr: user::rwx, the named user, group,
+// mask and other.
+func aclBytes(uid, perm, mask int) []byte {
+	out := []byte{2, 0, 0, 0}
+	add := func(tag, perm, id int) {
+		b := make([]byte, 8)
+		binary.LittleEndian.PutUint16(b[0:], uint16(tag))
+		binary.LittleEndian.PutUint16(b[2:], uint16(perm))
+		binary.LittleEndian.PutUint32(b[4:], uint32(id))
+		out = append(out, b...)
+	}
+	add(0x01, 7, 0xffffffff)
+	if perm >= 0 {
+		add(aclTagUser, perm, uid)
+	}
+	add(0x04, 5, 0xffffffff)
+	add(aclTagMask, mask, 0xffffffff)
+	add(0x20, 0, 0xffffffff)
+	return out
+}
+
+// Saving the same grants again must not touch a file: each ACL rewrite
+// changes the file's change time, and a game watching its files reloads
+// for every one (JvS did, once per file, for minutes).
+func TestHostGrantTouchesOnlyWhatLacksAccess(t *testing.T) {
+	root := t.TempDir()
+	data := filepath.Join(root, "gameservers", "s1")
+	dir := filepath.Join(data, "garrysmod", "gamemodes")
+	_ = os.MkdirAll(filepath.Join(dir, "rp", "gamemode"), 0o750)
+	_ = os.WriteFile(filepath.Join(dir, "rp", "gamemode", "init.lua"), []byte("x"), 0o640)
+	_ = os.WriteFile(filepath.Join(dir, "rp", "gamemode", "new.lua"), []byte("x"), 0o640)
+	_ = os.WriteFile(filepath.Join(dir, "rp", "run.sh"), []byte("x"), 0o750)
+	realRoot, _ := filepath.EvalSymlinks(data)
+	realDir, _ := filepath.EvalSymlinks(dir)
+	newFile := filepath.Join(realDir, "rp", "gamemode", "new.lua")
+	runSh := filepath.Join(realDir, "rp", "run.sh")
+	var calls [][]string
+	h := Host{
+		DataDir: func(id string) string { return filepath.Join(root, "gameservers", id) },
+		SetFACL: func(_ context.Context, args ...string) ([]byte, error) { calls = append(calls, args); return nil, nil },
+		ReadACL: func(p, name string) ([]byte, error) {
+			switch {
+			case p == newFile:
+				return nil, os.ErrNotExist // added without the access
+			case p == runSh && name == aclXattrAccess:
+				return aclBytes(101000, 6, 7), nil // rw-, but X wants x here
+			case strings.HasPrefix(p, realDir):
+				return aclBytes(101000, 7, 7), nil
+			default:
+				return aclBytes(100000, 1, 7), nil // the folders on the way
+			}
+		},
+	}
+	if _, err := h.Grant(context.Background(), 101000, 100000, []HostACL{{ServerID: "s1", Path: "garrysmod/gamemodes", Write: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("setfacl calls %v", calls)
+	}
+	got := strings.Join(calls[0], " ")
+	if !strings.HasPrefix(got, "-P -m u:101000:rwX ") || !strings.Contains(got, newFile) || !strings.Contains(got, runSh) || strings.Contains(got, "init.lua") || strings.Contains(got, realRoot+" ") {
+		t.Fatalf("touched %s", got)
+	}
+	// Everything granted already: nothing at all is written.
+	calls = nil
+	h.ReadACL = func(p, name string) ([]byte, error) {
+		if strings.HasPrefix(p, realDir) {
+			return aclBytes(101000, 7, 7), nil
+		}
+		return aclBytes(100000, 1, 7), nil
+	}
+	if _, err := h.Grant(context.Background(), 101000, 100000, []HostACL{{ServerID: "s1", Path: "garrysmod/gamemodes", Write: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 0 {
+		t.Fatalf("a repeat grant wrote ACLs: %v", calls)
+	}
+	// A mask that hides write means the access is not really there.
+	if parseACL(aclBytes(101000, 7, 5), 101000).has(6) {
+		t.Fatal("mask ignored")
 	}
 }

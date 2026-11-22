@@ -21,6 +21,8 @@ type Host struct {
 	DataDir func(serverID string) string
 	// SetFACL runs setfacl; nil runs /usr/bin/setfacl.
 	SetFACL ACLRunner
+	// ReadACL reads an ACL attribute; nil reads the real one.
+	ReadACL ACLReader
 }
 
 func (h Host) setfacl(ctx context.Context, args ...string) ([]byte, error) {
@@ -101,6 +103,9 @@ func (h Host) Grant(ctx context.Context, uid, rootUID int, acls []HostACL) ([]Mo
 			return nil, err
 		}
 		for _, dir := range traversal(root, real) {
+			if h.hasSearch(dir, rootUID) {
+				continue
+			}
 			if b, err := h.setfacl(ctx, "-m", fmt.Sprintf("u:%d:--x", rootUID), dir); err != nil {
 				return nil, fmt.Errorf("letting the agent's container reach %s failed: %v: %s", a.Path, err, strings.TrimSpace(string(b)))
 			}
@@ -109,9 +114,23 @@ func (h Host) Grant(ctx context.Context, uid, rootUID int, acls []HostACL) ([]Mo
 		if a.Write {
 			perm = "rwX"
 		}
-		spec := fmt.Sprintf("u:%d:%s,d:u:%d:%s", uid, perm, uid, perm)
-		if b, err := h.setfacl(ctx, "-R", "-P", "-m", spec, real); err != nil {
-			return nil, fmt.Errorf("giving access to %s failed: %v: %s", a.Path, err, strings.TrimSpace(string(b)))
+		// Only what lacks the access is touched (acl_pending.go): saving
+		// the same grants again changes nothing on disk.
+		files, dirs, err := h.pendingGrant(real, uid, a.Write)
+		if err != nil {
+			return nil, fmt.Errorf("reading access on %s failed: %v", a.Path, err)
+		}
+		for _, batch := range pathBatches(dirs, 200) {
+			spec := fmt.Sprintf("u:%d:%s,d:u:%d:%s", uid, perm, uid, perm)
+			if b, err := h.setfacl(ctx, append([]string{"-P", "-m", spec}, batch...)...); err != nil {
+				return nil, fmt.Errorf("giving access to %s failed: %v: %s", a.Path, err, strings.TrimSpace(string(b)))
+			}
+		}
+		for _, batch := range pathBatches(files, 200) {
+			spec := fmt.Sprintf("u:%d:%s", uid, perm)
+			if b, err := h.setfacl(ctx, append([]string{"-P", "-m", spec}, batch...)...); err != nil {
+				return nil, fmt.Errorf("giving access to %s failed: %v: %s", a.Path, err, strings.TrimSpace(string(b)))
+			}
 		}
 		out = append(out, MountSource{ServerID: a.ServerID, Path: a.Path, Source: real, Write: a.Write})
 	}
