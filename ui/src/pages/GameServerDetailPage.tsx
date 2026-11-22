@@ -759,6 +759,12 @@ const SCHEDULE_WHEN = [
   ["custom", "Custom cron line"],
 ] as const;
 
+/** scheduleKeepText describes a backup schedule's retention. */
+const scheduleKeepText = (payload?: string) => {
+  const n = Number((payload ?? "").replace(/^keep=/, ""));
+  return n > 0 ? `, keeps the last ${n}` : ", keeps all";
+};
+
 /** formatWhenLocal is a short local date and time. */
 const formatWhenLocal = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 
@@ -775,6 +781,7 @@ function SchedulesPane({ id }: { id: string }) {
   const [when, setWhen] = useState("nightly");
   const [custom, setCustom] = useState("0 4 * * *");
   const cron = when === "custom" ? custom : when;
+  const [keep, setKeep] = useState("14");
   const [payload, setPayload] = useState("");
   const [error, setError] = useState<string | null>(null);
   const reload = useCallback(
@@ -798,7 +805,13 @@ function SchedulesPane({ id }: { id: string }) {
         onSubmit={(e) => {
           e.preventDefault();
           setError(null);
-          void createGameSchedule(id, { name, action, cron, ...(action === "command" ? { payload } : {}) })
+          void createGameSchedule(id, {
+            name,
+            action,
+            cron,
+            ...(action === "command" ? { payload } : {}),
+            ...(action === "backup" ? { payload: `keep=${Number(keep) || 0}` } : {}),
+          })
             .then(reload)
             .catch((err) => setError(errText(err, "Could not add the schedule")));
         }}
@@ -834,6 +847,13 @@ function SchedulesPane({ id }: { id: string }) {
             <span className="field-hint">Minute, hour, day, month, weekday. Start with TZ=Area/City for another time zone.</span>
           </label>
         ) : null}
+        {action === "backup" ? (
+          <label>
+            Keep the last
+            <input className="field-input" type="number" min={0} max={1000} value={keep} onChange={(e) => setKeep(e.target.value)} />
+            <span className="field-hint">Older scheduled backups are deleted. 0 keeps all. Manual backups are never deleted.</span>
+          </label>
+        ) : null}
         {action === "command" ? (
           <label>
             Command
@@ -854,7 +874,7 @@ function SchedulesPane({ id }: { id: string }) {
               <span className="meta">
                 {" "}
                 · {s.action}
-                {s.payload ? ` "${s.payload}"` : ""} · <code>{s.cron}</code>
+                {s.action === "backup" ? scheduleKeepText(s.payload) : s.payload ? ` "${s.payload}"` : ""} · <code>{s.cron}</code>
                 {s.enabled === false ? " · paused" : ""}
               </span>
               <span className="meta gs-sched-when">

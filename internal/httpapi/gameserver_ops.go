@@ -1189,6 +1189,10 @@ func (s *Server) createGameSchedule(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if sch.Action == "backup" && strings.TrimSpace(sch.Payload) != "" && scheduleKeep(sch.Payload) == 0 && strings.TrimSpace(strings.TrimPrefix(sch.Payload, "keep=")) != "0" {
+		writeErr(w, http.StatusBadRequest, "keep must be a number of backups (0 keeps them all)")
+		return
+	}
 	if err := s.Store.CreateGameSchedule(r.Context(), sch); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return

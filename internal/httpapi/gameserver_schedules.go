@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -168,6 +170,11 @@ func (s *Server) runGameSchedule(row appdb.GameServer, sch appdb.GameSchedule) {
 				return err
 			}
 			note("Schedule "+sch.Name+": backup created", b.Name)
+			if keep := scheduleKeep(sch.Payload); keep > 0 {
+				if n := s.pruneScheduledBackups(ctx, srv.ID, keep); n > 0 {
+					note(fmt.Sprintf("Schedule %s: %d older scheduled backup(s) removed, keeping %d", sch.Name, n, keep), "")
+				}
+			}
 			return nil
 		})
 		if err != nil {
@@ -239,4 +246,49 @@ func gameScheduleNext(sch appdb.GameSchedule, now time.Time) *time.Time {
 		return nil
 	}
 	return &n
+}
+
+// maxScheduleKeep caps keep=N so a typo cannot keep thousands.
+const maxScheduleKeep = 1000
+
+// scheduleKeep reads a backup schedule's retention from its payload:
+// "keep=14" or "14". 0 keeps every backup.
+func scheduleKeep(payload string) int {
+	v := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(payload), "keep="))
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		return 0
+	}
+	if n > maxScheduleKeep {
+		n = maxScheduleKeep
+	}
+	return n
+}
+
+// pruneScheduledBackups removes the server's scheduled backups beyond the
+// newest keep. Manual backups and the safety backups taken before a
+// restore, reinstall or update are never removed here.
+func (s *Server) pruneScheduledBackups(ctx context.Context, serverID string, keep int) int {
+	all, err := s.Store.ListGameBackups(ctx, serverID)
+	if err != nil {
+		return 0
+	}
+	var scheduled []appdb.GameBackup
+	for _, b := range all {
+		if b.Reason == "scheduled" {
+			scheduled = append(scheduled, b)
+		}
+	}
+	sort.Slice(scheduled, func(i, j int) bool { return scheduled[i].CreatedAt.After(scheduled[j].CreatedAt) })
+	removed := 0
+	for _, b := range scheduled[min(keep, len(scheduled)):] {
+		if err := s.gameHost().DeleteBackup(ctx, serverID, b.ID); err != nil {
+			log.Printf("game schedule: removing backup %s: %v", b.ID, err)
+			continue
+		}
+		if err := s.Store.DeleteGameBackup(ctx, serverID, b.ID); err == nil {
+			removed++
+		}
+	}
+	return removed
 }

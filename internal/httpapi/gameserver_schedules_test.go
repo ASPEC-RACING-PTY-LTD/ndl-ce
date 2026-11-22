@@ -87,3 +87,42 @@ func TestGameSchedulesRunOnceAtTheirTime(t *testing.T) {
 		t.Fatalf("schedule list %v", out)
 	}
 }
+
+func TestScheduledBackupsKeepTheNewest(t *testing.T) {
+	s, _, id, call, _ := gmodTestServer(t, nil)
+	mem := s.Store
+	ctx := context.Background()
+	// A manual backup that retention must never touch.
+	if code, _ := call("POST", "/api/v1/game-servers/"+id+"/backups", `{"name":"mine"}`); code != http.StatusAccepted {
+		t.Fatal("manual backup")
+	}
+	s.waitGameJobs()
+	if code, _ := call("POST", "/api/v1/game-servers/"+id+"/schedules", `{"name":"x","action":"backup","cron":"hourly","payload":"keep=abc"}`); code != http.StatusBadRequest {
+		t.Fatalf("bad keep accepted %d", code)
+	}
+	created := time.Date(2026, 11, 23, 0, 0, 0, 0, time.UTC)
+	sch := appdb.GameSchedule{ID: "k1", ServerID: id, Name: "Keep2", Action: "backup", Cron: "TZ=UTC 0 * * * *", Payload: "keep=2", Enabled: true, CreatedAt: created}
+	if err := mem.CreateGameSchedule(ctx, sch); err != nil {
+		t.Fatal(err)
+	}
+	for h := 1; h <= 4; h++ {
+		at := created.Add(time.Duration(h)*time.Hour + time.Minute)
+		s.Now = func() time.Time { return at }
+		s.TickGameSchedules(ctx)
+		s.waitGameJobs()
+	}
+	s.Now = nil
+	all, _ := mem.ListGameBackups(ctx, id)
+	scheduled, manual := 0, 0
+	for _, b := range all {
+		switch b.Reason {
+		case "scheduled":
+			scheduled++
+		case "manual":
+			manual++
+		}
+	}
+	if scheduled != 2 || manual != 1 {
+		t.Fatalf("after 4 runs keeping 2: %d scheduled, %d manual", scheduled, manual)
+	}
+}
