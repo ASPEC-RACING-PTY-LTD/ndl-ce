@@ -756,17 +756,41 @@ func TestStartFailsIfIPv4NeverAppears(t *testing.T) {
 	}
 }
 
-// A container running Docker has bridge addresses after eth0's; the
-// observed address must stay the container's own.
+// A container running Docker also has Docker's bridge addresses, and
+// lxc-info lists them in no fixed order (seen live: 172.17.0.1 first).
+// The observed address must be eth0's.
 func TestLXCInfoKeepsEth0AddressOverDockerBridges(t *testing.T) {
-	e := &Engine{
-		DataDir: t.TempDir(),
-		Run: func(_ context.Context, name string, args ...string) ([]byte, error) {
-			return []byte("State: RUNNING\nPID: 4242\nIP: 10.77.0.219\nIP: fd00::5\nIP: 172.17.0.1\nIP: 172.18.0.1\n"), nil
-		},
+	for _, order := range []string{
+		"IP: 10.77.0.219\nIP: fd00::5\nIP: 172.17.0.1\nIP: 172.18.0.1\n",
+		"IP: 172.17.0.1\nIP: 10.77.0.219\n",
+	} {
+		var calls []string
+		e := &Engine{
+			DataDir: t.TempDir(),
+			Run: func(_ context.Context, name string, args ...string) ([]byte, error) {
+				calls = append(calls, name+" "+strings.Join(args, " "))
+				return []byte("State: RUNNING\nPID: 4242\n" + order), nil
+			},
+			Eth0IPv4: func(pid int) string {
+				calls = append(calls, "netns eth0")
+				if pid != 4242 {
+					return ""
+				}
+				return "10.77.0.219"
+			},
+		}
+		pid, ip, err := e.lxcInfo(context.Background(), "x")
+		if err != nil || pid != 4242 || ip != "10.77.0.219" {
+			t.Fatalf("order %q: pid=%d ip=%q err=%v calls=%v", order, pid, ip, err, calls)
+		}
 	}
-	pid, ip, err := e.lxcInfo(context.Background(), "x")
-	if err != nil || pid != 4242 || ip != "10.77.0.219" {
-		t.Fatalf("pid=%d ip=%q err=%v", pid, ip, err)
+	// One address: no extra command.
+	var calls int
+	e := &Engine{DataDir: t.TempDir(), Run: func(_ context.Context, name string, args ...string) ([]byte, error) {
+		calls++
+		return []byte("PID: 7\nIP: 10.77.0.5\n"), nil
+	}, Eth0IPv4: func(int) string { calls++; return "" }}
+	if _, ip, _ := e.lxcInfo(context.Background(), "x"); ip != "10.77.0.5" || calls != 1 {
+		t.Fatalf("single address: ip=%q calls=%d", ip, calls)
 	}
 }

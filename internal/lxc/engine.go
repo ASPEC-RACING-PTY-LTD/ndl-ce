@@ -21,11 +21,14 @@ type Engine struct {
 	LXCPath      string
 	WorkloadsDir string
 	// UnitDir is where systemd keeps enabled units; empty means /etc/systemd/system.
-	UnitDir      string
-	CacheDir     string
-	ImageBase    string
-	HTTP         HTTPDoer
-	Run          Runner
+	UnitDir   string
+	CacheDir  string
+	ImageBase string
+	HTTP      HTTPDoer
+	Run       Runner
+	// Eth0IPv4 replaces the network-namespace lookup of a container's
+	// eth0 address (tests).
+	Eth0IPv4     func(pid int) string
 	RunStdin     StdinRunner
 	Stream       StreamRunner
 	Now          func() time.Time
@@ -739,6 +742,7 @@ func (e *Engine) lxcInfo(ctx context.Context, id string) (pid int, ipv4 string, 
 	if err != nil {
 		return 0, "", err
 	}
+	var v4 []string
 	for _, line := range strings.Split(string(out), "\n") {
 		line = strings.TrimSpace(line)
 		lower := strings.ToLower(line)
@@ -751,15 +755,34 @@ func (e *Engine) lxcInfo(ctx context.Context, id string) (pid int, ipv4 string, 
 		if strings.HasPrefix(lower, "ip:") {
 			fields := strings.Fields(line)
 			if len(fields) >= 2 {
-				// lxc-info lists every address in the container, eth0's
-				// first. Later ones belong to bridges inside it, such as
-				// Docker's, so the first IPv4 is the container's own.
-				cand := fields[len(fields)-1]
-				if ipv4 == "" && strings.Contains(cand, ".") {
-					ipv4 = cand
+				if cand := fields[len(fields)-1]; strings.Contains(cand, ".") {
+					v4 = append(v4, cand)
 				}
 			}
 		}
 	}
+	if len(v4) > 0 {
+		ipv4 = v4[0]
+	}
+	// lxc-info lists every address in the container in no fixed order,
+	// bridges inside it (Docker's 172.17.0.1) included. With more than
+	// one, ask the container's own network for eth0's.
+	if len(v4) > 1 && pid > 0 {
+		if own := e.eth0IPv4(ctx, pid); own != "" {
+			ipv4 = own
+		}
+	}
 	return pid, ipv4, nil
+}
+
+// eth0IPv4 is the IPv4 address on eth0, NDL's interface, in the network
+// namespace of the process pid (netns_linux.go). Tests set Eth0IPv4.
+func (e *Engine) eth0IPv4(_ context.Context, pid int) string {
+	if e.Eth0IPv4 != nil {
+		return e.Eth0IPv4(pid)
+	}
+	if e.Run != nil || e.RunStdin != nil || e.SkipHostCmds {
+		return ""
+	}
+	return netnsIPv4(pid, "eth0")
 }
