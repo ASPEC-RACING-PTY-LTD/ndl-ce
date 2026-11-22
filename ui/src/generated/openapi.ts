@@ -4701,6 +4701,28 @@ export type StopGameDatabasePath = "/api/v1/game-servers/{id}/database/stop";
 
 export type RemoveGameDatabasePath = "/api/v1/game-servers/{id}/database/remove";
 
+export type QueryGameDatabasePath = "/api/v1/game-servers/{id}/database/query";
+
+export type GetGameDatabaseSchemaPath = "/api/v1/game-servers/{id}/database/schema";
+
+export type GetGameDatabaseTablePath = "/api/v1/game-servers/{id}/database/table";
+
+export type ListGameDatabaseUsersPath = "/api/v1/game-servers/{id}/database/users";
+
+export type DropGameDatabaseUserPath = "/api/v1/game-servers/{id}/database/users/drop";
+
+export type SetGameDatabaseUserPasswordPath = "/api/v1/game-servers/{id}/database/users/password";
+
+export type PutGameDatabaseGrantsPath = "/api/v1/game-servers/{id}/database/grants";
+
+export type ListDatabasesPath = "/api/v1/databases";
+
+export type BulkDatabasesPath = "/api/v1/databases/bulk";
+
+export type GetGameDatabaseResourcesPath = "/api/v1/game-servers/{id}/database/resources";
+
+export type RestartGameDatabasePath = "/api/v1/game-servers/{id}/database/restart";
+
 export type GetGameBackupScopePath = "/api/v1/game-servers/{id}/backup-scope";
 
 export type DeleteGameBackupPath = "/api/v1/game-servers/{id}/backups/{bid}";

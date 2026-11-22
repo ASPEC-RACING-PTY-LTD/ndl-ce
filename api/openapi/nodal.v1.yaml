@@ -5569,6 +5569,301 @@ paths:
                 $ref: "#/components/schemas/GameServerEnvelope"
         "404":
           description: Feature is not enabled or resource is missing
+  /game-servers/{id}/database/query:
+    post:
+      operationId: queryGameDatabase
+      summary: Run SQL in a game server's database
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GameServerRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerEnvelope"
+        "403":
+          description: Forbidden
+        "422":
+          description: The database is not installed or running, or the request failed in MariaDB
+  /game-servers/{id}/database/schema:
+    get:
+      operationId: getGameDatabaseSchema
+      summary: Databases and tables in a game server's MariaDB
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerEnvelope"
+        "403":
+          description: Forbidden
+        "422":
+          description: The database is not installed or running, or the request failed in MariaDB
+  /game-servers/{id}/database/table:
+    get:
+      operationId: getGameDatabaseTable
+      summary: Columns and a page of rows of one table
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerEnvelope"
+        "403":
+          description: Forbidden
+        "422":
+          description: The database is not installed or running, or the request failed in MariaDB
+  /game-servers/{id}/database/users:
+    get:
+      operationId: listGameDatabaseUsers
+      summary: Users and privileges in a game server's MariaDB
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerEnvelope"
+        "403":
+          description: Forbidden
+        "422":
+          description: The database is not installed or running, or the request failed in MariaDB
+    post:
+      operationId: createGameDatabaseUser
+      summary: Create a database user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GameServerRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerEnvelope"
+        "403":
+          description: Forbidden
+        "422":
+          description: The database is not installed or running, or the request failed in MariaDB
+  /game-servers/{id}/database/users/drop:
+    post:
+      operationId: dropGameDatabaseUser
+      summary: Remove a database user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GameServerRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerEnvelope"
+        "403":
+          description: Forbidden
+        "422":
+          description: The database is not installed or running, or the request failed in MariaDB
+  /game-servers/{id}/database/users/password:
+    post:
+      operationId: setGameDatabaseUserPassword
+      summary: Set or generate a database user's password
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GameServerRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerEnvelope"
+        "403":
+          description: Forbidden
+        "422":
+          description: The database is not installed or running, or the request failed in MariaDB
+  /game-servers/{id}/database/grants:
+    put:
+      operationId: putGameDatabaseGrants
+      summary: Set a user's privileges on one database
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GameServerRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerEnvelope"
+        "403":
+          description: Forbidden
+        "422":
+          description: The database is not installed or running, or the request failed in MariaDB
+  /databases:
+    get:
+      operationId: listDatabases
+      summary: Every game server database (global manager)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerEnvelope"
+        "403":
+          description: Forbidden
+        "422":
+          description: The database is not installed or running, or the request failed in MariaDB
+  /databases/bulk:
+    post:
+      operationId: bulkDatabases
+      summary: Start, stop or run SQL on many databases
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GameServerRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerEnvelope"
+        "403":
+          description: Forbidden
+        "422":
+          description: The database is not installed or running, or the request failed in MariaDB
+  /game-servers/{id}/database/resources:
+    get:
+      operationId: getGameDatabaseResources
+      summary: A game server database's CPU and memory limits and usage
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerEnvelope"
+        "422":
+          description: The change could not be made
+    put:
+      operationId: putGameDatabaseResources
+      summary: Change a game server database's CPU and memory limits, live
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GameServerRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerEnvelope"
+        "422":
+          description: The change could not be made
+  /game-servers/{id}/database/restart:
+    post:
+      operationId: restartGameDatabase
+      summary: Restart a game server's database from its settings, keeping the data
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerEnvelope"
+        "422":
+          description: The change could not be made
   /game-servers/{id}/backup-scope:
     get:
       operationId: getGameBackupScope

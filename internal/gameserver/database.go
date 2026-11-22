@@ -34,20 +34,36 @@ const (
 	dbMemoryMB = 1024
 	// dbDumpEntry is where a backup keeps the database dump.
 	dbDumpEntry = ".ndl-db/dump.sql"
+	// dbSocketDir holds MariaDB's Unix socket, in the database's container
+	// and, read-only, in the game's: the game may connect through the
+	// socket instead of TCP.
+	dbSocketDir = "/run/mysqld"
+	// DBSocketPath is the socket the game connects to.
+	DBSocketPath = dbSocketDir + "/mysqld.sock"
+	dbSocketPath = DBSocketPath
 )
 
 // DBConfig is a server's database and the credentials NDL generated.
 type DBConfig struct {
-	Engine       string     `json:"engine"`
-	Image        string     `json:"image"`
-	Database     string     `json:"database"`
-	User         string     `json:"user"`
-	Password     string     `json:"password"`
-	RootPassword string     `json:"root_password"`
-	Host         string     `json:"host"`
-	Port         int        `json:"port"`
-	MemoryMB     int        `json:"memory_mb"`
-	InstalledAt  *time.Time `json:"installed_at,omitempty"`
+	Engine       string `json:"engine"`
+	Image        string `json:"image"`
+	Database     string `json:"database"`
+	User         string `json:"user"`
+	Password     string `json:"password"`
+	RootPassword string `json:"root_password"`
+	Host         string `json:"host"`
+	Port         int    `json:"port"`
+	MemoryMB     int    `json:"memory_mb"`
+	// CPUs caps the cores it may use; 0 is no cap.
+	CPUs float64 `json:"cpus,omitempty"`
+	// BufferPoolMB is MariaDB's InnoDB cache; 0 sizes it from MemoryMB.
+	BufferPoolMB int `json:"buffer_pool_mb,omitempty"`
+	// FastCommit flushes InnoDB's log once a second instead of at every
+	// commit (innodb_flush_log_at_trx_commit = 2): much faster writes, but
+	// a crash of the whole host can lose the last second of commits. A
+	// crash of MariaDB alone loses nothing.
+	FastCommit  bool       `json:"fast_commit,omitempty"`
+	InstalledAt *time.Time `json:"installed_at,omitempty"`
 }
 
 // DBCall is one database operation: get, configure, install, start,
@@ -58,6 +74,12 @@ type DBCall struct {
 	// DeleteData, on remove, also deletes the data and the credentials.
 	// Without it the database can be installed again as it was.
 	DeleteData bool `json:"delete_data,omitempty"`
+	// SQL and MaxRows are for query; Database there picks the database to
+	// run in (empty: the server's own).
+	SQL     string `json:"sql,omitempty"`
+	MaxRows int    `json:"max_rows,omitempty"`
+	// Resources, for resources, changes the limits; absent, they are read.
+	Resources *DBResources `json:"resources,omitempty"`
 }
 
 // DBReply is the database's settings and state.
@@ -66,6 +88,10 @@ type DBReply struct {
 	// State is none, configured, running, stopped or missing (installed,
 	// but its container is gone).
 	State string `json:"state"`
+	// Query is a query's result.
+	Query *DBQueryResult `json:"query,omitempty"`
+	// Usage is what the database uses now, for resources.
+	Usage *DBUsage `json:"usage,omitempty"`
 }
 
 var dbNameRe = regexp.MustCompile(`^[A-Za-z0-9_]{1,64}$`)
@@ -173,7 +199,16 @@ func (r *Runtime) Database(ctx context.Context, id string, call DBCall) (DBReply
 	case "configure":
 		c, err = r.dbConfigure(id, c, call.Database)
 	case "install":
-		c, err = r.dbInstall(ctx, id, c)
+		c, err = r.dbInstall(ctx, id, c, true)
+	case "restart":
+		// Recreates the container from the settings, keeping the data:
+		// limits and the cache size all take effect.
+		if c == nil || c.InstalledAt == nil {
+			return DBReply{}, errors.New("install the database first")
+		}
+		c, err = r.dbInstall(ctx, id, c, false)
+	case "resources":
+		return r.dbResources(ctx, id, c, call)
 	case "start":
 		if c == nil || c.InstalledAt == nil {
 			return DBReply{}, errors.New("install the database first")
@@ -186,6 +221,12 @@ func (r *Runtime) Database(ctx context.Context, id string, call DBCall) (DBReply
 		_, err = r.dockerOut(ctx, "stop", "-t", "30", dbContainer(id))
 	case "remove":
 		c, err = r.dbRemove(ctx, id, c, call.DeleteData)
+	case "query":
+		q, qerr := r.dbQuery(ctx, id, call)
+		if qerr != nil {
+			return DBReply{}, qerr
+		}
+		return DBReply{Config: c, State: "running", Query: q}, nil
 	default:
 		return DBReply{}, fmt.Errorf("unknown database operation %q", call.Op)
 	}
@@ -252,7 +293,7 @@ func (r *Runtime) dbEnsureNetwork(ctx context.Context, id string) error {
 	return err
 }
 
-func (r *Runtime) dbInstall(ctx context.Context, id string, c *DBConfig) (*DBConfig, error) {
+func (r *Runtime) dbInstall(ctx context.Context, id string, c *DBConfig, pull bool) (*DBConfig, error) {
 	if c == nil {
 		return nil, errors.New("set the database name first")
 	}
@@ -266,8 +307,21 @@ func (r *Runtime) dbInstall(ctx context.Context, id string, c *DBConfig) (*DBCon
 	if err := r.dbEnsureNetwork(ctx, id); err != nil {
 		return nil, err
 	}
-	if _, err := r.dockerOut(ctx, "pull", c.Image); err != nil {
-		return nil, fmt.Errorf("could not download %s: %w", c.Image, err)
+	// A restart keeps the image it has; an install fetches the latest
+	// release of the series.
+	_, haveImage := r.run(ctx, r.dockerBin(), "image", "inspect", c.Image)
+	if pull || haveImage != nil {
+		if _, err := r.dockerOut(ctx, "pull", c.Image); err != nil {
+			return nil, fmt.Errorf("could not download %s: %w", c.Image, err)
+		}
+	}
+	confDir, err := r.dbWriteConf(id, c)
+	if err != nil {
+		return nil, err
+	}
+	sockDir, err := r.dbEnsureSocketDir(id)
+	if err != nil {
+		return nil, err
 	}
 	_, _ = r.run(ctx, r.dockerBin(), "rm", "-f", dbContainer(id))
 	args := []string{
@@ -276,13 +330,20 @@ func (r *Runtime) dbInstall(ctx context.Context, id string, c *DBConfig) (*DBCon
 		"--network", dbNetwork(id), "--network-alias", DBHost,
 		"--security-opt", "no-new-privileges",
 		"--memory", strconv.Itoa(c.MemoryMB) + "m",
+		"--memory-swap", strconv.Itoa(c.MemoryMB) + "m",
 		"--label", "ndl.game-db=" + id,
 		"-v", data + ":/var/lib/mysql",
+		// NDL's settings (the cache size) live here, read on every start.
+		"-v", confDir + ":/etc/mysql/conf.d:ro",
+		"-v", sockDir + ":" + dbSocketDir,
 		// Values come from this process's environment, so they are not
 		// on the command line.
 		"-e", "MARIADB_ROOT_PASSWORD", "-e", "MARIADB_DATABASE", "-e", "MARIADB_USER", "-e", "MARIADB_PASSWORD",
-		c.Image,
 	}
+	if c.CPUs > 0 {
+		args = append(args, "--cpus", strconv.FormatFloat(c.CPUs, 'f', -1, 64))
+	}
+	args = append(args, c.Image)
 	secret := []string{
 		"MARIADB_ROOT_PASSWORD=" + c.RootPassword,
 		"MARIADB_DATABASE=" + c.Database,
@@ -372,6 +433,33 @@ func (r *Runtime) dbRemove(ctx context.Context, id string, c *DBConfig, deleteDa
 	// Keep the data and credentials: installing again brings it back.
 	c.InstalledAt = nil
 	return c, r.saveDBConfig(id, *c)
+}
+
+func (r *Runtime) dbSocketHostDir(id string) string { return filepath.Join(r.dbDir(id), "run") }
+
+// dbEnsureSocketDir makes the folder the socket lives in. Like the
+// image's own /run/mysqld it is open to every user with the sticky bit,
+// so MariaDB (uid 999) can create the socket.
+func (r *Runtime) dbEnsureSocketDir(id string) (string, error) {
+	dir := r.dbSocketHostDir(id)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	return dir, os.Chmod(dir, os.ModeSticky|0o777)
+}
+
+// dbMountsFor is the socket folder a starting game server sees,
+// read-only, when its database was installed with one.
+func (r *Runtime) dbMountsFor(id string) []BindMount {
+	c, err := r.DBConfigFor(id)
+	if err != nil || c == nil || c.InstalledAt == nil {
+		return nil
+	}
+	dir := r.dbSocketHostDir(id)
+	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+		return nil
+	}
+	return []BindMount{{Host: dir, Target: dbSocketDir, ReadOnly: true}}
 }
 
 // dbNetworksFor is the extra network a starting game server joins.
@@ -484,3 +572,7 @@ func DatabaseSupported(t Template) bool {
 	}
 	return false
 }
+
+// RandomPassword is a password of n letters and digits, without the ones
+// easily mistaken for each other.
+func RandomPassword(n int) (string, error) { return randomString(n, passwordAlph) }

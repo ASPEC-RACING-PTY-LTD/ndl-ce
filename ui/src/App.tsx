@@ -59,6 +59,7 @@ import { GpuPage } from "./pages/GpuPage";
 import { OciPage } from "./pages/OciPage";
 import { ClaudeAgentPage } from "./pages/ClaudeAgentPage";
 import { HelixPage } from "./pages/HelixPage";
+import { DatabasesPage } from "./pages/DatabasesPage";
 import { CodeholdPage } from "./pages/CodeholdPage";
 import { DockerHubPage } from "./pages/DockerHubPage";
 import { WorkloadExtensionsPage } from "./pages/WorkloadExtensionsPage";
@@ -343,6 +344,13 @@ function matchPage(path: string) {
   }
   if (path === "/claude-agent") {
     return <ClaudeAgentPage />;
+  }
+  if (path === "/databases") {
+    return (
+      <RequireGrant anyPermission={["databases.manage"]}>
+        <DatabasesPage />
+      </RequireGrant>
+    );
   }
   if (path === "/oci") {
     return <OciPage />;

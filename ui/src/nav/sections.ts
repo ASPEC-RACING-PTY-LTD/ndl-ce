@@ -77,7 +77,7 @@ export const ADMIN_SECTIONS: Section[] = [
     label: "Infrastructure",
     href: "/node",
     icon: "node",
-    description: "This node, storage, networking and the cluster, Docker, CodeHold and the Claude Agent.",
+    description: "This node, storage, networking and the cluster, Docker, CodeHold, the Claude Agent and game server databases.",
     items: [{ kind: "node" }],
     match: (p) =>
       p === "/node" ||
@@ -86,7 +86,8 @@ export const ADMIN_SECTIONS: Section[] = [
       p === "/cloudflare" ||
       p === "/uptime" ||
       p === "/settings/cluster" ||
-      p === "/claude-agent",
+      p === "/claude-agent" ||
+      p === "/databases",
     children: [
       { id: "node", label: "Node", href: "/node", items: [{ kind: "node" }], match: (p) => p === "/node" || p.startsWith("/node/") },
       { id: "storage", label: "Storage", href: "/storage", match: under("/storage") },
@@ -95,6 +96,7 @@ export const ADMIN_SECTIONS: Section[] = [
       { id: "docker", label: "Docker", href: "/docker", capability: "docker", items: [{ kind: "docker" }], match: (p) => under("/docker")(p) || p === "/uptime" },
       { id: "codehold", label: "CodeHold", href: "/codehold", capability: "codehold", match: under("/codehold") },
       { id: "claude-agent", label: "Claude Agent", href: "/claude-agent", capability: "claude_agent" },
+      { id: "databases", label: "Databases", href: "/databases", anyPermission: ["databases.manage"], match: exact("/databases") },
     ],
   },
   {

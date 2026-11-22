@@ -132,6 +132,9 @@ const (
 	// HelixKill engages the Helix kill switch. Admins hold it so anyone
 	// running the appliance can stop Helix; only HelixManage releases it.
 	HelixKill = "helix.kill"
+	// DatabasesManage opens the global database manager: every game
+	// server's MariaDB, with SQL run as its root, and bulk actions.
+	DatabasesManage = "databases.manage"
 	// Approvals: see and decide automation flow versions that hold
 	// protected steps. SuperAdmins have both; they give them to other roles
 	// on the Approvals page only, never in the role editor.
@@ -202,7 +205,7 @@ func (Catalog) PermissionsForRole(role string) []string {
 			GameServerReinstall, GameServerDelete, GameServerAdmin,
 			CloudflareRead, CloudflareManage, SearchManage,
 			DDoSRead, DDoSManage,
-			HelixKill,
+			HelixKill, DatabasesManage,
 		}
 	case IAMManager:
 		return append(Catalog{}.PermissionsForRole(Admin),

@@ -221,6 +221,7 @@ func (h *LocalHost) Start(ctx context.Context, spec RunSpec) (string, error) {
 		}
 	}
 	spec.Networks = h.RT.dbNetworksFor(ctx, spec.ID)
+	spec.Mounts = h.RT.dbMountsFor(spec.ID)
 	return h.RT.Start(ctx, spec)
 }
 

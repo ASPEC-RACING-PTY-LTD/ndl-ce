@@ -191,6 +191,9 @@ type RunSpec struct {
 	// Networks are extra private networks the server joins (its own
 	// database's). Set by the agent itself, never by the caller.
 	Networks []string `json:"-"`
+	// Mounts are extra host folders at absolute paths (its database's
+	// socket folder). Set by the agent itself, never by the caller.
+	Mounts []BindMount `json:"-"`
 }
 
 // ReadOnlyMount is a host folder shown read-only inside a game server.
@@ -243,6 +246,16 @@ func (r *Runtime) Start(ctx context.Context, spec RunSpec) (string, error) {
 			return "", fmt.Errorf("read-only mount %q is not a safe path", m.Rel)
 		}
 		args = append(args, "--mount", "type=bind,src="+m.Host+",dst="+path.Join(workdir, rel)+",readonly")
+	}
+	for _, m := range spec.Mounts {
+		if strings.ContainsAny(m.Host+m.Target, ",\n") || !strings.HasPrefix(m.Target, "/") {
+			return "", fmt.Errorf("mount %q is not a safe path", m.Target)
+		}
+		mount := "type=bind,src=" + m.Host + ",dst=" + m.Target
+		if m.ReadOnly {
+			mount += ",readonly"
+		}
+		args = append(args, "--mount", mount)
 	}
 	if spec.MemoryBytes > 0 {
 		args = append(args, "--memory", strconv.FormatInt(spec.MemoryBytes, 10))
@@ -445,6 +458,13 @@ func envArgs(env map[string]string) (flags, secret []string) {
 		flags = append(flags, "-e", k+"="+v)
 	}
 	return flags, secret
+}
+
+// BindMount is a host folder at an absolute path in a container.
+type BindMount struct {
+	Host     string
+	Target   string
+	ReadOnly bool
 }
 
 // HasReadOnlyMount reports whether the running server has a read-only mount

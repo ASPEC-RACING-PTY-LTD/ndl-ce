@@ -105,6 +105,7 @@ func AllPermissions() []string {
 		DDoSRead,
 		DDoSManage,
 		HelixKill,
+		DatabasesManage,
 		SearchManage,
 		AppearanceManage,
 		PermissionsAssign,

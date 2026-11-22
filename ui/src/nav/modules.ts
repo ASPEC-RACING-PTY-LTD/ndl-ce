@@ -133,6 +133,14 @@ export const NAV_MODULES: NavModule[] = [
     match: (p) => p === "/claude-agent",
     capability: "claude_agent",
   },
+  {
+    id: "databases",
+    href: "/databases",
+    label: "Databases",
+    group: "Infrastructure",
+    match: (p) => p === "/databases",
+    anyPermission: ["databases.manage"],
+  },
   { id: "templates", href: "/templates", label: "Templates", group: "Compute", match: (p) => p === "/templates" },
   { id: "registries", href: "/registries", label: "Registries", group: "Compute", match: (p) => p === "/registries" },
   {

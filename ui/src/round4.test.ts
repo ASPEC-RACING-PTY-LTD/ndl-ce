@@ -41,7 +41,7 @@ describe("navigation model", () => {
     expect(inst).toEqual(["workloads", "vms", "game-servers", "templates", "registries"]);
     // Docker and CodeHold (runners and CLI on one page) live under Infrastructure; Cluster is part of Network.
     const infra = visibleSections(ADMIN_SECTIONS, superadmin, () => true).find((s) => s.id === "infrastructure");
-    expect(infra?.children?.map((c) => c.id)).toEqual(["node", "storage", "network", "docker", "codehold", "claude-agent"]);
+    expect(infra?.children?.map((c) => c.id)).toEqual(["node", "storage", "network", "docker", "codehold", "claude-agent", "databases"]);
     // Settings-like pages and the Audit log live under System.
     const system = visibleSections(ADMIN_SECTIONS, superadmin, () => true).find((s) => s.id === "system");
     expect(system?.children?.map((c) => c.id)).toEqual(expect.arrayContaining(["features", "updates", "appearance", "search", "certificates", "license", "store", "docs", "audit"]));

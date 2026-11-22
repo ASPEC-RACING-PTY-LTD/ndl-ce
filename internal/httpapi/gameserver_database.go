@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,6 +29,9 @@ type gameDBView struct {
 	Image       string         `json:"image,omitempty"`
 	InstalledAt *time.Time     `json:"installed_at,omitempty"`
 	Password    string         `json:"password,omitempty"`
+	// Socket is where the game can connect through a Unix socket instead
+	// of TCP, once the database runs with NDL's socket folder.
+	Socket string `json:"socket,omitempty"`
 	Job         *gameBackupJob `json:"job"`
 }
 
@@ -35,6 +39,9 @@ func (s *Server) gameDBView(row appdb.GameServer, tmpl gameserver.Template, repl
 	v := gameDBView{Supported: gameserver.DatabaseSupported(tmpl), State: reply.State, Job: s.gameJobs.job(row.ID)}
 	if c := reply.Config; c != nil {
 		v.Database, v.User, v.Host, v.Port, v.Image, v.InstalledAt = c.Database, c.User, c.Host, c.Port, c.Image, c.InstalledAt
+		if c.InstalledAt != nil {
+			v.Socket = gameserver.DBSocketPath
+		}
 		if withPassword {
 			v.Password = c.Password
 		}
@@ -230,4 +237,67 @@ func (s *Server) removeGameDatabase(w http.ResponseWriter, r *http.Request) {
 	}
 	s.noteGame(r, p, row.ID, "database.remove", summary, cur.Config.Database)
 	writeJSON(w, http.StatusOK, s.gameDBView(*row, tmpl, reply, false))
+}
+
+// GET /game-servers/{id}/database/resources: the limits and what the
+// database uses now.
+func (s *Server) getGameDatabaseResources(w http.ResponseWriter, r *http.Request) {
+	_, row, _, ok := s.loadGameDB(w, r)
+	if !ok {
+		return
+	}
+	reply, err := s.gameDBCall(r.Context(), row.ID, gameserver.DBCall{Op: "resources"})
+	if err != nil {
+		writeErr(w, http.StatusUnprocessableEntity, gameserver.HumanError(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, gameDBResourcesView(reply))
+}
+
+func gameDBResourcesView(reply gameserver.DBReply) map[string]any {
+	out := map[string]any{"state": reply.State, "usage": reply.Usage}
+	if c := reply.Config; c != nil {
+		out["memory_mb"], out["cpus"], out["buffer_pool_mb"], out["fast_commit"] = c.MemoryMB, c.CPUs, c.BufferPoolMB, c.FastCommit
+	}
+	return out
+}
+
+// PUT /game-servers/{id}/database/resources {memory_mb, cpus,
+// buffer_pool_mb}: applied live when the database runs.
+func (s *Server) putGameDatabaseResources(w http.ResponseWriter, r *http.Request) {
+	p, row, _, ok := s.loadGameDB(w, r)
+	if !ok {
+		return
+	}
+	if j := s.gameJobs.job(row.ID); j != nil && j.Running {
+		writeErr(w, http.StatusConflict, errGameJobBusy.Error())
+		return
+	}
+	var req gameserver.DBResources
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	reply, err := s.gameDBCall(r.Context(), row.ID, gameserver.DBCall{Op: "resources", Resources: &req})
+	if err != nil {
+		writeErr(w, http.StatusUnprocessableEntity, gameserver.HumanError(err.Error()))
+		return
+	}
+	cpus := "no CPU cap"
+	if req.CPUs > 0 {
+		cpus = strconv.FormatFloat(req.CPUs, 'f', -1, 64) + " CPUs"
+	}
+	detail := strconv.Itoa(req.MemoryMB) + " MB, " + cpus
+	if req.FastCommit {
+		detail += ", faster writes"
+	}
+	s.noteGame(r, p, row.ID, "database.resources", "Database limits set", detail)
+	s.audit(r, p.User.ClusterID, p.User.ID, "gameserver.database.resources", "ok", row.ID+" "+detail)
+	writeJSON(w, http.StatusOK, gameDBResourcesView(reply))
+}
+
+// POST /game-servers/{id}/database/restart recreates the database's
+// container from its settings, keeping the data.
+func (s *Server) restartGameDatabase(w http.ResponseWriter, r *http.Request) {
+	s.gameDatabasePower(w, r, "restart")
 }

@@ -64,6 +64,7 @@ import { useQuery } from "../query";
 import { navigate, usePath } from "../router";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { CurseForgeKey } from "../gameservers/CurseForgeKey";
+import { DatabaseManager } from "../gameservers/DatabaseManager";
 import { GameDDoSPane } from "../gameservers/GameDDoSPane";
 import { GameEdgePane } from "../gameservers/GameEdgePane";
 import { GamePlayersPane } from "../gameservers/GamePlayersPane";
@@ -478,6 +479,7 @@ function DatabasePane({ id, serverRunning }: { id: string; serverRunning: boolea
     ? [
         ["Host", db.host],
         ["Port", String(db.port ?? "")],
+        ...(db.socket ? ([["Socket", <code key="sock">{db.socket}</code>]] as [string, ReactNode][]) : []),
         ["Database", db.database],
         ["Username", db.user],
         [
@@ -517,7 +519,7 @@ function DatabasePane({ id, serverRunning }: { id: string; serverRunning: boolea
         </header>
         <p className="muted">
           This server's own database. It runs beside the game on a private network only the two share, so the game reaches it at host{" "}
-          <code>mariadb</code>, port 3306, and nothing else can. Backups of this server include it.
+          <code>mariadb</code>, port 3306, or through the Unix socket below, and nothing else can. Backups of this server include it.
         </p>
         {error ? <ErrorNotice error={error} /> : null}
         {lastJob?.error ? <ErrorNotice error={`Install failed: ${lastJob.error}`} /> : null}
@@ -604,6 +606,7 @@ function DatabasePane({ id, serverRunning }: { id: string; serverRunning: boolea
           </>
         ) : null}
       </article>
+      {installed && state === "running" ? <DatabaseManager id={id} /> : null}
       {db.database ? (
         <article className="gs-widget" id="gs-sec-database-delete">
           <header className="gs-widget-head">

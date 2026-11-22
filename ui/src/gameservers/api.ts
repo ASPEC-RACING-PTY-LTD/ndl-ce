@@ -324,6 +324,7 @@ export type GameDatabase = {
   image?: string;
   installed_at?: string;
   password?: string;
+  socket?: string;
   job?: GameBackupJob | null;
 };
 
@@ -555,4 +556,112 @@ export async function putWorkshopSync(id: string, enabled: boolean): Promise<Wor
 
 export async function checkWorkshopSync(id: string): Promise<WorkshopSync> {
   return readJson(`/game-servers/${id}/workshop-sync/check`, { method: "POST", body: "{}" });
+}
+
+/* ---------------- Database manager ---------------- */
+
+export type DBResultSet = { columns: string[]; rows: (string | null)[][]; row_count: number; truncated?: boolean };
+export type DBStatementResult = { sql: string; sets: DBResultSet[]; affected: number };
+export type DBQueryResult = { statements: DBStatementResult[]; error?: string; error_index: number; elapsed_ms: number };
+export type DBTable = { name: string; engine: string; rows: number; data_bytes: number; index_bytes: number; comment?: string; view?: boolean };
+export type DBSchema = { database: string; server_database: string; databases: string[]; tables: DBTable[] };
+export type DBColumn = { name: string; type: string; nullable: boolean; key?: string; default: string | null; extra?: string };
+export type DBTablePage = { database: string; table: string; columns: DBColumn[]; rows: (string | null)[][]; total: number; offset: number; limit: number };
+export type DBUser = { user: string; host: string; grants: string[]; protected?: boolean; server?: boolean; privileges: Record<string, string[]> };
+export type DBUsers = { users: DBUser[]; privileges: string[]; databases: string[]; server_database: string };
+
+export async function runGameDatabaseQuery(id: string, sql: string, database = "", maxRows = 500): Promise<DBQueryResult> {
+  return readJson(`/game-servers/${id}/database/query`, { method: "POST", body: JSON.stringify({ sql, database, max_rows: maxRows }) });
+}
+
+export async function getGameDatabaseSchema(id: string, database = ""): Promise<DBSchema> {
+  return readJson(`/game-servers/${id}/database/schema?database=${encodeURIComponent(database)}`);
+}
+
+export async function getGameDatabaseTable(
+  id: string,
+  database: string,
+  table: string,
+  offset: number,
+  limit: number,
+  order = "",
+  dir: "asc" | "desc" = "asc",
+): Promise<DBTablePage> {
+  const q = new URLSearchParams({ database, table, offset: String(offset), limit: String(limit), order, dir });
+  return readJson(`/game-servers/${id}/database/table?${q.toString()}`);
+}
+
+export async function getGameDatabaseUsers(id: string): Promise<DBUsers> {
+  return readJson(`/game-servers/${id}/database/users`);
+}
+
+export async function createGameDatabaseUser(
+  id: string,
+  body: { user: string; host: string; password: string; database: string; privileges: string[] },
+): Promise<{ user: string; host: string; password: string }> {
+  return readJson(`/game-servers/${id}/database/users`, { method: "POST", body: JSON.stringify(body) });
+}
+
+export async function dropGameDatabaseUser(id: string, user: string, host: string): Promise<unknown> {
+  return readJson(`/game-servers/${id}/database/users/drop`, { method: "POST", body: JSON.stringify({ user, host }) });
+}
+
+export async function setGameDatabaseUserPassword(id: string, user: string, host: string, password = ""): Promise<{ password: string }> {
+  return readJson(`/game-servers/${id}/database/users/password`, { method: "POST", body: JSON.stringify({ user, host, password }) });
+}
+
+export async function putGameDatabaseGrants(id: string, user: string, host: string, database: string, privileges: string[]): Promise<unknown> {
+  return readJson(`/game-servers/${id}/database/grants`, { method: "PUT", body: JSON.stringify({ user, host, database, privileges }) });
+}
+
+export type GlobalDatabase = {
+  server_id: string;
+  server_name: string;
+  game: string;
+  database: string;
+  user: string;
+  state: GameDatabase["state"];
+  image?: string;
+  installed_at?: string;
+  size_bytes: number;
+  tables: number;
+  memory_mb: number;
+  cpus: number;
+};
+
+export async function listAllDatabases(): Promise<{ items: GlobalDatabase[] }> {
+  return readJson(`/databases`);
+}
+
+export type BulkDBResult = { server_id: string; server_name: string; ok: boolean; error?: string; state?: string; query?: DBQueryResult };
+
+export async function bulkDatabases(serverIds: string[], action: "start" | "stop" | "restart" | "query", sql = ""): Promise<{ results: BulkDBResult[] }> {
+  return readJson(`/databases/bulk`, { method: "POST", body: JSON.stringify({ server_ids: serverIds, action, sql }) });
+}
+
+export type DBUsage = {
+  memory_bytes: number;
+  memory_limit_bytes: number;
+  cpu_percent: number;
+  buffer_pool_bytes: number;
+  effective_buffer_pool_mb: number;
+  flush_log_at_commit: number;
+  restart_needed: boolean;
+  running: boolean;
+};
+export type DBResourcesState = { state: string; memory_mb: number; cpus: number; buffer_pool_mb: number; fast_commit?: boolean; usage?: DBUsage | null };
+
+export async function getGameDatabaseResources(id: string): Promise<DBResourcesState> {
+  return readJson(`/game-servers/${id}/database/resources`);
+}
+
+export async function putGameDatabaseResources(
+  id: string,
+  body: { memory_mb: number; cpus: number; buffer_pool_mb: number; fast_commit: boolean },
+): Promise<DBResourcesState> {
+  return readJson(`/game-servers/${id}/database/resources`, { method: "PUT", body: JSON.stringify(body) });
+}
+
+export async function restartGameDatabase(id: string): Promise<GameDatabase> {
+  return readJson(`/game-servers/${id}/database/restart`, { method: "POST", body: "{}" });
 }

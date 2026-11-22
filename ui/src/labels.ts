@@ -286,6 +286,7 @@ const PERMISSION_LABELS: Record<string, string> = {
   "ddos.manage": "Manage DDoS protection",
   "helix.manage": "Manage the Helix integration",
   "helix.kill": "Stop Helix with the kill switch",
+  "databases.manage": "Manage every game server database",
   "search.manage": "Manage search",
   "search.host_files": "Index host files in search",
   "lab.manage": "Manage the lab",

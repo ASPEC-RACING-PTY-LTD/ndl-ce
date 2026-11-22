@@ -6174,3 +6174,80 @@ thead th[data-autosort="desc"]::after {
   padding: var(--space-2, 0.5rem) 0;
   border-bottom: 1px solid var(--border, rgba(127, 127, 127, 0.25));
 }
+
+/* Database manager (gameservers/DatabaseManager.tsx) */
+.db-manager .gs-widget-head {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.db-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+.db-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.db-inline select {
+  width: auto;
+  min-width: 180px;
+}
+.db-grid {
+  max-height: 520px;
+  overflow: auto;
+}
+.db-grid td {
+  max-width: 320px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.db-null {
+  color: var(--fg-tertiary);
+  font-style: italic;
+}
+.db-sql-input {
+  font-family: var(--mono);
+  min-height: 140px;
+}
+.db-results {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+.db-statement-sql {
+  margin: 0 0 6px;
+  padding: 6px 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  border-radius: 6px;
+  background: var(--bg-elevated);
+}
+.db-panel {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.db-priv-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 4px 12px;
+  margin: 8px 0;
+}
+.db-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+.db-grants {
+  font-size: 12px;
+}

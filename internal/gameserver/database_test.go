@@ -293,3 +293,34 @@ func readEntry(t *testing.T, archive, name string) string {
 		}
 	}
 }
+
+func TestDatabaseResourcesLimitsAndConfig(t *testing.T) {
+	h, f := newDBHost(t)
+	ctx := context.Background()
+	_, _ = h.Database(ctx, "srv1", DBCall{Op: "configure", Database: "jvs"})
+	if _, err := h.Database(ctx, "srv1", DBCall{Op: "install"}); err != nil {
+		t.Fatal(err)
+	}
+	if !f.has("-v " + h.RT.dbConfDir("srv1") + ":/etc/mysql/conf.d:ro") {
+		t.Fatalf("install did not mount the config: %v", f.calls)
+	}
+	for _, bad := range []DBResources{{MemoryMB: 100}, {MemoryMB: 1024, CPUs: -1}, {MemoryMB: 1024, BufferPoolMB: 1000}} {
+		if _, err := h.Database(ctx, "srv1", DBCall{Op: "resources", Resources: &bad}); err == nil {
+			t.Errorf("%+v accepted", bad)
+		}
+	}
+	f.calls = nil
+	if _, err := h.Database(ctx, "srv1", DBCall{Op: "resources", Resources: &DBResources{MemoryMB: 2048, CPUs: 0}}); err != nil {
+		t.Fatal(err)
+	}
+	if !f.has("update --memory 2048m --memory-swap 2048m --cpus ") || f.has("--cpus 0 ") {
+		t.Fatalf("update %v", f.calls)
+	}
+	conf, _ := os.ReadFile(filepath.Join(h.RT.dbConfDir("srv1"), confFileName))
+	if !strings.Contains(string(conf), "innodb_buffer_pool_size = 1024M") {
+		t.Fatalf("conf %q", conf)
+	}
+	if got := bufferPoolFor(&DBConfig{MemoryMB: 300}); got != 128 {
+		t.Fatalf("small pool %d", got)
+	}
+}
