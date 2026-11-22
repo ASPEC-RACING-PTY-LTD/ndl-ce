@@ -152,6 +152,22 @@ func (g GameHost) WorkshopSync(ctx context.Context, id string, call gameserver.S
 	return *res.Sync, nil
 }
 
+func (g GameHost) BackupScope(ctx context.Context, id string) (gameserver.BackupScope, error) {
+	res, err := g.call(ctx, gsBackupScope, id, gameSpec{}, nil)
+	if err != nil || res.Scope == nil {
+		return gameserver.BackupScope{}, err
+	}
+	return *res.Scope, nil
+}
+
+func (g GameHost) SetBackupScope(ctx context.Context, id string, scope gameserver.BackupScope) (gameserver.BackupScope, error) {
+	res, err := g.call(ctx, gsBackupScope, id, gameSpec{Scope: &scope}, nil)
+	if err != nil || res.Scope == nil {
+		return gameserver.BackupScope{}, err
+	}
+	return *res.Scope, nil
+}
+
 func (g GameHost) Logs(ctx context.Context, id string, tail int) (string, error) {
 	res, err := g.call(ctx, gsLogs, id, gameSpec{Tail: tail}, nil)
 	return res.Text, err

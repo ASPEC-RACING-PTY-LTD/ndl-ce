@@ -44,6 +44,7 @@ const (
 	gsDeleteBackup    = "delete-backup"
 	gsReady           = "runtime-ready"
 	gsWorkshopSync    = "workshop-sync"
+	gsBackupScope     = "backup-scope"
 )
 
 // gameSpec carries the typed arguments for every game server action.
@@ -61,21 +62,24 @@ type gameSpec struct {
 	Template  *gameserver.Template `json:"template,omitempty"`
 	Run       *gameserver.RunSpec  `json:"run,omitempty"`
 	Sync      *gameserver.SyncCall `json:"sync,omitempty"`
+	// Scope, when set, replaces the backup scope; absent, it is read.
+	Scope *gameserver.BackupScope `json:"scope,omitempty"`
 }
 
 // gameResult is the JSON result of a game server action.
 type gameResult struct {
-	Dir      string                 `json:"dir,omitempty"`
-	ID       string                 `json:"id,omitempty"`
-	Text     string                 `json:"text,omitempty"`
-	Running  bool                   `json:"running,omitempty"`
-	Phase    string                 `json:"phase,omitempty"`
-	Message  string                 `json:"message,omitempty"`
-	Data     []byte                 `json:"data,omitempty"`
-	Listing  *gameserver.DirListing `json:"listing,omitempty"`
-	Backup   *gameserver.BackupFile `json:"backup,omitempty"`
-	NotFound bool                   `json:"not_found,omitempty"`
-	Sync     *gameserver.SyncReply  `json:"sync,omitempty"`
+	Dir      string                  `json:"dir,omitempty"`
+	ID       string                  `json:"id,omitempty"`
+	Text     string                  `json:"text,omitempty"`
+	Running  bool                    `json:"running,omitempty"`
+	Phase    string                  `json:"phase,omitempty"`
+	Message  string                  `json:"message,omitempty"`
+	Data     []byte                  `json:"data,omitempty"`
+	Listing  *gameserver.DirListing  `json:"listing,omitempty"`
+	Backup   *gameserver.BackupFile  `json:"backup,omitempty"`
+	NotFound bool                    `json:"not_found,omitempty"`
+	Sync     *gameserver.SyncReply   `json:"sync,omitempty"`
+	Scope    *gameserver.BackupScope `json:"scope,omitempty"`
 }
 
 // gameProgress is the latest install phase per server, read by the
@@ -177,6 +181,14 @@ func (h *Handler) execGameServer(ctx context.Context, m *agentv1.GameServer) (*c
 		var reply gameserver.SyncReply
 		reply, err = host.WorkshopSync(ctx, id, *spec.Sync)
 		res.Sync = &reply
+	case gsBackupScope:
+		var scope gameserver.BackupScope
+		if spec.Scope != nil {
+			scope, err = host.SetBackupScope(ctx, id, *spec.Scope)
+		} else {
+			scope, err = host.BackupScope(ctx, id)
+		}
+		res.Scope = &scope
 	case gsLogs:
 		res.Text, err = host.Logs(ctx, id, spec.Tail)
 	case gsListDir:

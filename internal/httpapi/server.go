@@ -169,6 +169,9 @@ type Server struct {
 	// helixState is the Helix integration's runtime (helix.go).
 	helixOnce  sync.Once
 	helixState *helixRuntime
+
+	// gameJobs tracks background game server backups and restores.
+	gameJobs gameBackupJobs
 	// CHKeyPath overrides the key that seals the CodeHold credential, and
 	// CodeholdHTTP the client used to reach CodeHold (tests).
 	CHKeyPath    string
@@ -457,6 +460,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/game-servers/{id}/backups", s.createGameBackup)
 	mux.HandleFunc("POST /api/v1/game-servers/{id}/backups/{bid}/restore", s.restoreGameBackup)
 	mux.HandleFunc("DELETE /api/v1/game-servers/{id}/backups/{bid}", s.deleteGameBackup)
+	mux.HandleFunc("GET /api/v1/game-servers/{id}/backup-scope", s.getGameBackupScope)
+	mux.HandleFunc("PUT /api/v1/game-servers/{id}/backup-scope", s.putGameBackupScope)
 	mux.HandleFunc("GET /api/v1/game-servers/{id}/schedules", s.listGameSchedules)
 	mux.HandleFunc("POST /api/v1/game-servers/{id}/schedules", s.createGameSchedule)
 	mux.HandleFunc("DELETE /api/v1/game-servers/{id}/schedules/{sid}", s.deleteGameSchedule)

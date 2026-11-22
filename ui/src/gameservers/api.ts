@@ -296,7 +296,30 @@ export async function putGameResources(id: string, body: Record<string, number>)
   return readJson(`/game-servers/${id}/resources`, { method: "PUT", body: JSON.stringify(body) });
 }
 
-export async function listGameBackups(id: string): Promise<{ items: { id: string; name: string; reason?: string; bytes: number; created_at: string }[] }> {
+/** The latest background backup or restore for a server. */
+export type GameBackupJob = {
+  op: "backup" | "restore";
+  name: string;
+  running: boolean;
+  started_at: string;
+  finished_at?: string;
+  error?: string;
+};
+
+/** What a server's backups take. No include entries: the whole server folder. */
+export type GameBackupScope = { include: string[]; exclude: string[]; newest: string[] };
+
+export async function getGameBackupScope(id: string): Promise<GameBackupScope> {
+  return readJson(`/game-servers/${id}/backup-scope`);
+}
+
+export async function putGameBackupScope(id: string, scope: GameBackupScope): Promise<GameBackupScope> {
+  return readJson(`/game-servers/${id}/backup-scope`, { method: "PUT", body: JSON.stringify(scope) });
+}
+
+export async function listGameBackups(
+  id: string,
+): Promise<{ items: { id: string; name: string; reason?: string; bytes: number; created_at: string }[]; job?: GameBackupJob | null }> {
   return readJson(`/game-servers/${id}/backups`);
 }
 

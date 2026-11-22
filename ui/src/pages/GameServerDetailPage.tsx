@@ -27,9 +27,13 @@ import {
   getWorkshopSync,
   putWorkshopSync,
   checkWorkshopSync,
+  type GameBackupJob,
+  type GameBackupScope,
   type WorkshopSync,
   installGameContent,
   listGameBackups,
+  getGameBackupScope,
+  putGameBackupScope,
   listGameContent,
   listGameSchedules,
   putGameConfig,
@@ -46,7 +50,7 @@ import {
   updateGameContent,
 } from "../gameservers/api";
 import type { GameContentItem, GameServer } from "../gameservers/types";
-import { formatBytes, formatWhen } from "../format";
+import { formatBytes, formatRelative, formatWhen } from "../format";
 import { useQuery } from "../query";
 import { navigate, usePath } from "../router";
 import { ErrorNotice } from "../components/ErrorNotice";
@@ -216,6 +220,7 @@ function BackupsAndSchedules({ server, access }: { server: GameServer; access: G
   return (
     <div className="gs-split">
       {hasCap(server, "backups") && access.can("gameserver.backup") ? <BackupsPane id={server.id} /> : null}
+      {hasCap(server, "backups") && access.can("gameserver.backup") ? <BackupScopePane id={server.id} /> : null}
       {hasCap(server, "schedules") && access.can("gameserver.schedule") ? <SchedulesPane id={server.id} /> : null}
     </div>
   );
@@ -223,31 +228,64 @@ function BackupsAndSchedules({ server, access }: { server: GameServer; access: G
 
 function BackupsPane({ id }: { id: string }) {
   const [items, setItems] = useState<{ id: string; name: string; reason?: string; bytes: number; created_at: string }[]>([]);
+  const [job, setJob] = useState<GameBackupJob | null>(null);
+  const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const reload = useCallback(
     () =>
       listGameBackups(id)
-        .then((r) => setItems(r.items ?? []))
+        .then((r) => {
+          setItems(r.items ?? []);
+          setJob(r.job ?? null);
+        })
         .catch((err) => setError(errText(err, "Could not load backups"))),
     [id],
   );
   useEffect(() => {
     void reload();
   }, [reload]);
+  // A backup of a large server takes many minutes and runs in the
+  // background; check on it until it finishes.
+  const running = Boolean(job?.running);
+  useEffect(() => {
+    if (!running) {
+      return;
+    }
+    const t = window.setInterval(() => void reload(), 3000);
+    return () => window.clearInterval(t);
+  }, [running, reload]);
+  const busy = running || starting;
   const act = (fn: () => Promise<unknown>) => {
     setError(null);
+    setStarting(true);
     void fn()
       .then(reload)
-      .catch((err) => setError(errText(err, "Action failed")));
+      .catch((err) => setError(errText(err, "Action failed")))
+      .finally(() => setStarting(false));
   };
+  const jobVerb = job?.op === "restore" ? "Restoring" : "Backing up";
   return (
     <article className="gs-widget" id="gs-sec-backups">
       <header className="gs-widget-head">
         <h2>Backups</h2>
-        <button type="button" className="btn btn-sm btn-primary" onClick={() => act(() => createGameBackup(id, "Manual"))}>
-          Create backup
+        <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={() => act(() => createGameBackup(id, "Manual"))}>
+          {running ? `${jobVerb}…` : starting ? "Starting…" : "Create backup"}
         </button>
       </header>
+      {job?.running ? (
+        <p className="muted" role="status">
+          {jobVerb} {job.op === "restore" ? job.name : "the server"}, started {formatRelative(job.started_at)}. A large server can take 15 minutes or
+          more. You can leave this page.
+        </p>
+      ) : null}
+      {job && !job.running && job.error ? (
+        <ErrorNotice error={`${job.op === "restore" ? "Restore" : "Backup"} failed: ${job.error}`} />
+      ) : null}
+      {job && !job.running && !job.error && job.op === "restore" ? (
+        <p className="muted" role="status">
+          Restored {job.name} {formatRelative(job.finished_at)}. Start the server when you are ready.
+        </p>
+      ) : null}
       {error ? <ErrorNotice error={error} /> : null}
       {items.length === 0 ? <p className="muted">No backups yet.</p> : null}
       <ul className="gs-list">
@@ -264,6 +302,7 @@ function BackupsPane({ id }: { id: string }) {
               <button
                 type="button"
                 className="btn btn-sm btn-ghost"
+                disabled={busy}
                 onClick={() => {
                   if (confirmAction(`Restore ${b.name}? The server's files are replaced.`)) {
                     act(() => restoreGameBackup(id, b.id));
@@ -272,13 +311,116 @@ function BackupsPane({ id }: { id: string }) {
               >
                 Restore
               </button>
-              <button type="button" className="btn btn-sm btn-ghost" onClick={() => act(() => deleteGameBackup(id, b.id))}>
+              <button type="button" className="btn btn-sm btn-ghost" disabled={busy} onClick={() => act(() => deleteGameBackup(id, b.id))}>
                 Delete
               </button>
             </span>
           </li>
         ))}
       </ul>
+    </article>
+  );
+}
+
+const scopeLines = (text: string) =>
+  text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+function BackupScopePane({ id }: { id: string }) {
+  const [scope, setScope] = useState<GameBackupScope | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [include, setInclude] = useState("");
+  const [exclude, setExclude] = useState("");
+  const [newest, setNewest] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    getGameBackupScope(id)
+      .then(setScope)
+      .catch((err) => setError(errText(err, "Could not load what backups take")));
+  }, [id]);
+  const edit = () => {
+    setInclude((scope?.include ?? []).join("\n"));
+    setExclude((scope?.exclude ?? []).join("\n"));
+    setNewest((scope?.newest ?? []).join("\n"));
+    setError(null);
+    setEditing(true);
+  };
+  const save = () => {
+    setSaving(true);
+    setError(null);
+    putGameBackupScope(id, { include: scopeLines(include), exclude: scopeLines(exclude), newest: scopeLines(newest) })
+      .then((next) => {
+        setScope(next);
+        setEditing(false);
+      })
+      .catch((err) => setError(errText(err, "Could not save")))
+      .finally(() => setSaving(false));
+  };
+  const scoped = (scope?.include ?? []).length > 0;
+  return (
+    <article className="gs-widget" id="gs-sec-backup-scope">
+      <header className="gs-widget-head">
+        <h2>What gets backed up</h2>
+        {!editing ? (
+          <button type="button" className="btn btn-sm btn-ghost" onClick={edit} disabled={!scope}>
+            Change
+          </button>
+        ) : null}
+      </header>
+      {error ? <ErrorNotice error={error} /> : null}
+      {!editing && scope ? (
+        scoped ? (
+          <dl className="kv-grid">
+            <dt>Takes</dt>
+            <dd>{scope.include.join(", ")}</dd>
+            {scope.exclude.length ? (
+              <>
+                <dt>Leaves out</dt>
+                <dd>{scope.exclude.join(", ")}</dd>
+              </>
+            ) : null}
+            {scope.newest.length ? (
+              <>
+                <dt>Newest file only</dt>
+                <dd>{scope.newest.join(", ")}</dd>
+              </>
+            ) : null}
+          </dl>
+        ) : (
+          <p className="muted">The whole server folder, including the game install and download caches.</p>
+        )
+      ) : null}
+      {editing ? (
+        <div className="gs-form">
+          <p className="muted">
+            One path per line, relative to the server folder. A folder covers everything inside it, and * matches part of a name. Leave
+            Takes empty to back up the whole server folder. Restoring a backup replaces only what it took.
+          </p>
+          <label>
+            Takes
+            <textarea className="field-input gs-editor is-short" rows={6} value={include} onChange={(e) => setInclude(e.target.value)} spellCheck={false} />
+          </label>
+          <label>
+            Leaves out
+            <textarea className="field-input gs-editor is-short" rows={4} value={exclude} onChange={(e) => setExclude(e.target.value)} spellCheck={false} />
+          </label>
+          <label>
+            Newest file only
+            <textarea className="field-input gs-editor is-short" rows={2} value={newest} onChange={(e) => setNewest(e.target.value)} spellCheck={false} />
+          </label>
+          <div className="btn-row is-flush">
+            <button type="button" className="btn btn-sm btn-primary" onClick={save} disabled={saving}>
+              {saving ? "Saving…" : "Save"}
+            </button>
+            <button type="button" className="btn btn-sm btn-ghost" onClick={() => setEditing(false)} disabled={saving}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
     </article>
   );
 }

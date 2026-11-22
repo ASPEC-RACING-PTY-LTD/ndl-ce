@@ -5328,6 +5328,51 @@ paths:
                 $ref: "#/components/schemas/GameServerEnvelope"
         "404":
           description: Feature is not enabled or resource is missing
+  /game-servers/{id}/backup-scope:
+    get:
+      operationId: getGameBackupScope
+      summary: What a game server's backups take
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameBackupScope"
+        "404":
+          description: Feature is not enabled or resource is missing
+    put:
+      operationId: putGameBackupScope
+      summary: Change what a game server's backups take
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GameBackupScope"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameBackupScope"
+        "400":
+          description: The scope is not valid
+        "404":
+          description: Feature is not enabled or resource is missing
   /game-servers/{id}/backups/{bid}:
     delete:
       operationId: deleteGameBackup
@@ -24529,6 +24574,23 @@ components:
           type: object
           additionalProperties: true
 
+    GameBackupScope:
+      type: object
+      description: Paths relative to the server folder. An empty include list backs up the whole folder.
+      properties:
+        include:
+          type: array
+          items:
+            type: string
+        exclude:
+          type: array
+          items:
+            type: string
+        newest:
+          type: array
+          description: Only the most recently changed file matching each entry is taken.
+          items:
+            type: string
     GameServerEnvelope:
       type: object
       additionalProperties: true

@@ -15,7 +15,7 @@ func TestArchiveDirCopiesExactHeaderSize(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(src, "server.jar"), bytes.Repeat([]byte("j"), 256<<10), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := archiveDir(src, dest); err != nil {
+	if err := archiveDir(context.Background(), src, dest, BackupScope{}); err != nil {
 		t.Fatal(err)
 	}
 	st, err := os.Stat(dest)
@@ -94,5 +94,25 @@ func TestHumanErrorExplainsMissingDocker(t *testing.T) {
 	}
 	if got := HumanError("Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?"); !strings.Contains(got, "not running") {
 		t.Fatal(got)
+	}
+}
+
+func TestBackupCancelledLeavesNoArchive(t *testing.T) {
+	src := t.TempDir()
+	if err := os.WriteFile(filepath.Join(src, "a.txt"), []byte("hello"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(t.TempDir(), "b", "x.tar.gz")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := archiveDir(ctx, src, dest, BackupScope{}); err == nil {
+		t.Fatal("a cancelled archive must fail")
+	}
+	h := &LocalHost{RT: NewRuntime(t.TempDir())}
+	if _, err := h.Backup(ctx, "srv1", "bk1"); err == nil {
+		t.Fatal("a cancelled backup must fail")
+	}
+	if _, err := os.Stat(filepath.Join(h.RT.Root, "game-backups", "srv1", "bk1.tar.gz")); !os.IsNotExist(err) {
+		t.Fatalf("partial archive left behind: %v", err)
 	}
 }

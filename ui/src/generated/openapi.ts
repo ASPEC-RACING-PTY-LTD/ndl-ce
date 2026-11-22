@@ -4245,6 +4245,12 @@ export interface MigrationDiagnosticsBundle {
   health?: Record<string, unknown>;
 }
 
+export interface GameBackupScope {
+  include?: string[];
+  exclude?: string[];
+  newest?: string[];
+}
+
 export interface GameServerEnvelope {
 
 }
@@ -4680,6 +4686,8 @@ export type GameServerResourcesPath = "/api/v1/game-servers/{id}/resources";
 export type ListGameBackupsPath = "/api/v1/game-servers/{id}/backups";
 
 export type RestoreGameBackupPath = "/api/v1/game-servers/{id}/backups/{bid}/restore";
+
+export type GetGameBackupScopePath = "/api/v1/game-servers/{id}/backup-scope";
 
 export type DeleteGameBackupPath = "/api/v1/game-servers/{id}/backups/{bid}";
 

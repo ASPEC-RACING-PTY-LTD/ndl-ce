@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -13,6 +14,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/no-dal/ndl-ce/internal/iojail"
@@ -50,6 +52,10 @@ type Host interface {
 	Backup(ctx context.Context, id, backupID string) (BackupFile, error)
 	RestoreBackup(ctx context.Context, id, backupID string) error
 	DeleteBackup(ctx context.Context, id, backupID string) error
+	// BackupScope and SetBackupScope read and change what the server's
+	// backups take (backup_scope.go). An empty scope is the whole folder.
+	BackupScope(ctx context.Context, id string) (BackupScope, error)
+	SetBackupScope(ctx context.Context, id string, scope BackupScope) (BackupScope, error)
 	// WorkshopSync runs one live Workshop sync operation.
 	WorkshopSync(ctx context.Context, id string, call SyncCall) (SyncReply, error)
 }
@@ -402,7 +408,7 @@ func (h *LocalHost) Extract(_ context.Context, id, destRel string, raw []byte, n
 	return SafeExtract(root, destRel, raw, name)
 }
 
-func (h *LocalHost) Backup(_ context.Context, id, backupID string) (BackupFile, error) {
+func (h *LocalHost) Backup(ctx context.Context, id, backupID string) (BackupFile, error) {
 	root, err := h.jail(id)
 	if err != nil {
 		return BackupFile{}, err
@@ -411,7 +417,14 @@ func (h *LocalHost) Backup(_ context.Context, id, backupID string) (BackupFile, 
 	if err != nil {
 		return BackupFile{}, err
 	}
-	if err := archiveDir(root, path); err != nil {
+	scope, err := h.BackupScope(ctx, id)
+	if err != nil {
+		return BackupFile{}, err
+	}
+	if err := archiveDir(ctx, root, path, scope); err != nil {
+		// Never leave a half-written archive: nothing records it, so
+		// nothing would ever delete it.
+		_ = os.Remove(path)
 		return BackupFile{}, err
 	}
 	out := BackupFile{Path: path}
@@ -444,9 +457,16 @@ func (h *LocalHost) DeleteBackup(_ context.Context, id, backupID string) error {
 	return nil
 }
 
-func archiveDir(src, dest string) error {
+func archiveDir(ctx context.Context, src, dest string, scope BackupScope) error {
 	if err := os.MkdirAll(filepath.Dir(dest), 0o750); err != nil {
 		return err
+	}
+	var plan scopePlan
+	if scope.Scoped() {
+		var err error
+		if plan, err = planScope(src, scope); err != nil {
+			return err
+		}
 	}
 	f, err := os.Create(dest)
 	if err != nil {
@@ -454,12 +474,23 @@ func archiveDir(src, dest string) error {
 	}
 	defer f.Close()
 	gz := gzip.NewWriter(f)
-	defer gz.Close()
 	tw := tar.NewWriter(gz)
-	defer tw.Close()
-	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+	if scope.Scoped() {
+		// The manifest goes first so a restore knows what it owns.
+		raw, _ := json.Marshal(backupManifest{Version: 1, Scope: scope})
+		if err := tw.WriteHeader(&tar.Header{Name: backupManifestName, Mode: 0o600, Size: int64(len(raw)), ModTime: time.Now(), Typeflag: tar.TypeReg}); err != nil {
+			return err
+		}
+		if _, err := tw.Write(raw); err != nil {
+			return err
+		}
+	}
+	err = filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
+		}
+		if cerr := ctx.Err(); cerr != nil {
+			return cerr
 		}
 		rel, err := filepath.Rel(src, path)
 		if err != nil || strings.HasPrefix(rel, "..") {
@@ -467,6 +498,20 @@ func archiveDir(src, dest string) error {
 		}
 		if d.Type()&os.ModeSymlink != 0 {
 			return nil
+		}
+		if scope.Scoped() {
+			if rel == "." {
+				return nil
+			}
+			switch plan.decide(filepath.ToSlash(rel), d.IsDir()) {
+			case scopeSkip:
+				if d.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			case scopeDescend:
+				return nil
+			}
 		}
 		info, err := d.Info()
 		if err != nil {
@@ -477,13 +522,28 @@ func archiveDir(src, dest string) error {
 			return err
 		}
 		hdr.Name = filepath.ToSlash(rel)
+		readFrom := path
+		if info.Mode().IsRegular() && isSQLite(path) {
+			// A live database is copied through SQLite (sqlite_snapshot.go).
+			snap := dest + ".sqlite-snapshot"
+			if err := snapshotSQLite(ctx, path, snap); err != nil {
+				return fmt.Errorf("%s: %w", hdr.Name, err)
+			}
+			defer os.Remove(snap)
+			st, err := os.Stat(snap)
+			if err != nil {
+				return err
+			}
+			hdr.Size = st.Size()
+			readFrom = snap
+		}
 		if err := tw.WriteHeader(hdr); err != nil {
 			return err
 		}
 		if !info.Mode().IsRegular() {
 			return nil
 		}
-		in, err := os.Open(path)
+		in, err := os.Open(readFrom)
 		if err != nil {
 			return err
 		}
@@ -500,6 +560,14 @@ func archiveDir(src, dest string) error {
 		}
 		return copyErr
 	})
+	// Close in order and keep the first error: a failed flush (a full
+	// disk) means the archive is truncated and must not be recorded.
+	for _, closeErr := range []error{tw.Close(), gz.Close(), f.Sync()} {
+		if err == nil {
+			err = closeErr
+		}
+	}
+	return err
 }
 
 type zeroReader struct{}
@@ -511,6 +579,10 @@ func (zeroReader) Read(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// restoreArchive puts a backup back. A whole-folder backup replaces
+// the folder. A scoped backup (one that starts with a manifest) replaces
+// only what its scope covers and leaves the rest, such as the game
+// install, untouched.
 func restoreArchive(dest, archivePath string) error {
 	if dest == "" {
 		return fmt.Errorf("data directory is missing")
@@ -526,44 +598,117 @@ func restoreArchive(dest, archivePath string) error {
 	}
 	defer gz.Close()
 	tr := tar.NewReader(gz)
-	entries, _ := os.ReadDir(dest)
-	for _, e := range entries {
-		if e.Name() == ".ndl" {
-			continue
-		}
-		_ = os.RemoveAll(filepath.Join(dest, e.Name()))
+	first, err := tr.Next()
+	if err == io.EOF {
+		return fmt.Errorf("backup is empty")
 	}
+	if err != nil {
+		return err
+	}
+	var manifest *backupManifest
+	if first.Name == backupManifestName {
+		var m backupManifest
+		if err := json.NewDecoder(io.LimitReader(tr, 1<<20)).Decode(&m); err != nil {
+			return fmt.Errorf("backup manifest is damaged: %w", err)
+		}
+		if m.Version != 1 || !m.Scope.Scoped() {
+			return fmt.Errorf("backup manifest is not understood")
+		}
+		manifest = &m
+		first = nil
+	} else {
+		entries, _ := os.ReadDir(dest)
+		for _, e := range entries {
+			if e.Name() == ".ndl" {
+				continue
+			}
+			_ = os.RemoveAll(filepath.Join(dest, e.Name()))
+		}
+	}
+	restored := map[string]bool{}
+	hdr := first
 	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			return nil
+		if hdr == nil {
+			hdr, err = tr.Next()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return err
+			}
 		}
-		if err != nil {
-			return err
-		}
-		rel, err := iojail.CleanRel(hdr.Name)
-		if err != nil || rel == "." {
+		cur := hdr
+		hdr = nil
+		rel, err := iojail.CleanRel(cur.Name)
+		if err != nil || rel == "." || rel == backupManifestName {
 			continue
 		}
 		abs := filepath.Join(dest, filepath.FromSlash(rel))
 		if relOut, rerr := filepath.Rel(dest, abs); rerr != nil || strings.HasPrefix(relOut, "..") {
 			return fmt.Errorf("restore path escapes the jail")
 		}
-		if hdr.FileInfo().IsDir() {
+		restored[filepath.ToSlash(rel)] = true
+		mode := os.FileMode(cur.Mode) & 0o777
+		if cur.FileInfo().IsDir() {
 			_ = os.MkdirAll(abs, 0o750)
+			continue
+		}
+		if cur.Typeflag != tar.TypeReg {
 			continue
 		}
 		if err := os.MkdirAll(filepath.Dir(abs), 0o750); err != nil {
 			return err
 		}
-		out, err := os.OpenFile(abs, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o640)
+		// Never follow a link the game may have left in its place.
+		if st, err := os.Lstat(abs); err == nil && !st.Mode().IsRegular() {
+			if err := os.RemoveAll(abs); err != nil {
+				return err
+			}
+		}
+		if mode == 0 {
+			mode = 0o640
+		}
+		out, err := os.OpenFile(abs, os.O_CREATE|os.O_WRONLY|os.O_TRUNC|syscall.O_NOFOLLOW, mode)
 		if err != nil {
 			return err
 		}
-		_, copyErr := io.Copy(out, io.LimitReader(tr, 128<<20))
-		_ = out.Close()
+		_, copyErr := io.CopyN(out, tr, cur.Size)
+		closeErr := out.Close()
 		if copyErr != nil {
 			return copyErr
 		}
+		if closeErr != nil {
+			return closeErr
+		}
+		_ = os.Chmod(abs, mode)
+		_ = os.Chtimes(abs, cur.ModTime, cur.ModTime)
 	}
+	if manifest == nil {
+		return nil
+	}
+	// Remove files the scope owns that the backup did not have (a file
+	// added after it was taken), so the restored code matches exactly.
+	return filepath.WalkDir(dest, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		rel, rerr := filepath.Rel(dest, p)
+		if rerr != nil || rel == "." {
+			return nil
+		}
+		r := filepath.ToSlash(rel)
+		if d.IsDir() {
+			if anyCovered(manifest.Scope.Exclude, r) {
+				return filepath.SkipDir
+			}
+			if !manifest.Scope.owned(r) && !anyAncestor(manifest.Scope.Include, r) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if manifest.Scope.owned(r) && !restored[r] {
+			_ = os.Remove(p)
+		}
+		return nil
+	})
 }

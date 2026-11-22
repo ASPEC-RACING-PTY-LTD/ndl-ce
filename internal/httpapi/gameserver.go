@@ -669,10 +669,7 @@ func (s *Server) gameJSON(ctx context.Context, row appdb.GameServer, detail bool
 }
 
 func (s *Server) noteGame(r *http.Request, p *principal, serverID, kind, summary, detail string) {
-	_ = s.Store.InsertGameEvent(r.Context(), appdb.GameEvent{
-		ID: uuid.NewString(), ServerID: serverID, ClusterID: p.User.ClusterID, UserID: p.User.ID,
-		Kind: kind, Summary: summary, Detail: detail, CreatedAt: s.now(),
-	})
+	s.noteGameCtx(r.Context(), p, serverID, kind, summary, detail)
 }
 
 func sanitizeGameName(s string) string {

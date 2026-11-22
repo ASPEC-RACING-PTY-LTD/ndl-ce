@@ -279,7 +279,11 @@ func (s *Server) gameServerFleet(w http.ResponseWriter, r *http.Request) {
 			_ = s.gameHost().Stop(r.Context(), row.ID)
 			ferr = s.startGame(r.Context(), s.gameHost(), row)
 		case "backup":
-			_, ferr = s.snapshotBackup(r.Context(), *row, "Fleet backup", "fleet")
+			srv := *row
+			_, ferr = s.startGameJob(row.ID, "backup", "Fleet backup", func(ctx context.Context) error {
+				_, err := s.snapshotBackup(ctx, srv, "Fleet backup", "fleet")
+				return err
+			})
 		default:
 			ferr = fmt.Errorf("unknown fleet action")
 		}
@@ -956,7 +960,10 @@ func (s *Server) listGameBackups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	items, _ := s.Store.ListGameBackups(r.Context(), row.ID)
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+	if items == nil {
+		items = []appdb.GameBackup{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "job": s.gameJobs.job(row.ID)})
 }
 
 func (s *Server) createGameBackup(w http.ResponseWriter, r *http.Request) {
@@ -973,13 +980,22 @@ func (s *Server) createGameBackup(w http.ResponseWriter, r *http.Request) {
 		Reason string `json:"reason"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
-	b, err := s.snapshotBackup(r.Context(), *row, gameserver.FirstNonEmpty(req.Name, "Manual backup"), gameserver.FirstNonEmpty(req.Reason, "manual"))
+	name := gameserver.FirstNonEmpty(req.Name, "Manual backup")
+	reason := gameserver.FirstNonEmpty(req.Reason, "manual")
+	srv := *row
+	job, err := s.startGameJob(row.ID, "backup", name, func(ctx context.Context) error {
+		b, err := s.snapshotBackup(ctx, srv, name, reason)
+		if err != nil {
+			return err
+		}
+		s.noteGameCtx(ctx, p, srv.ID, "backup", "Backup created", b.Name)
+		return nil
+	})
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		writeErr(w, http.StatusConflict, err.Error())
 		return
 	}
-	s.noteGame(r, p, row.ID, "backup", "Backup created", b.Name)
-	writeJSON(w, http.StatusCreated, b)
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": job})
 }
 
 func (s *Server) restoreGameBackup(w http.ResponseWriter, r *http.Request) {
@@ -996,14 +1012,21 @@ func (s *Server) restoreGameBackup(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "backup not found")
 		return
 	}
-	_ = s.gameHost().Stop(r.Context(), row.ID)
-	s.createRollback(r.Context(), *row, "pre-restore")
-	if err := s.gameHost().RestoreBackup(r.Context(), row.ID, b.ID); err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+	srv, bk := *row, *b
+	job, err := s.startGameJob(row.ID, "restore", bk.Name, func(ctx context.Context) error {
+		_ = s.gameHost().Stop(ctx, srv.ID)
+		s.createRollback(ctx, srv, "pre-restore")
+		if err := s.gameHost().RestoreBackup(ctx, srv.ID, bk.ID); err != nil {
+			return err
+		}
+		s.noteGameCtx(ctx, p, srv.ID, "backup.restore", "Backup restored", bk.Name)
+		return nil
+	})
+	if err != nil {
+		writeErr(w, http.StatusConflict, err.Error())
 		return
 	}
-	s.noteGame(r, p, row.ID, "backup.restore", "Backup restored", b.Name)
-	writeJSON(w, http.StatusOK, map[string]any{"restored": true, "id": b.ID})
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "id": bk.ID})
 }
 
 func (s *Server) deleteGameBackup(w http.ResponseWriter, r *http.Request) {
@@ -1025,7 +1048,60 @@ func (s *Server) deleteGameBackup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
 }
 
+func (s *Server) getGameBackupScope(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.requireGameFeature(w, r, rbac.GameServerBackup)
+	if !ok {
+		return
+	}
+	row, ok := s.loadGame(w, r, p, "backup")
+	if !ok {
+		return
+	}
+	scope, err := s.gameHost().BackupScope(r.Context(), row.ID)
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, gameserver.HumanError(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, scope)
+}
+
+func (s *Server) putGameBackupScope(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.requireGameFeature(w, r, rbac.GameServerBackup)
+	if !ok {
+		return
+	}
+	row, ok := s.loadGame(w, r, p, "backup")
+	if !ok {
+		return
+	}
+	var req gameserver.BackupScope
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	clean, err := gameserver.CleanBackupScope(req)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	scope, err := s.gameHost().SetBackupScope(r.Context(), row.ID, clean)
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, gameserver.HumanError(err.Error()))
+		return
+	}
+	detail := "Whole server folder"
+	if scope.Scoped() {
+		detail = strings.Join(scope.Include, ", ")
+	}
+	s.noteGame(r, p, row.ID, "backup.scope", "Backup scope changed", clipGame(detail, 500))
+	writeJSON(w, http.StatusOK, scope)
+}
+
 func (s *Server) snapshotBackup(ctx context.Context, row appdb.GameServer, name, reason string) (*appdb.GameBackup, error) {
+	// A backup that has started always finishes and is recorded, even
+	// when the request that asked for it goes away; otherwise the agent
+	// leaves an archive behind that nothing lists or deletes.
+	ctx = context.WithoutCancel(ctx)
 	id := uuid.NewString()
 	file, err := s.gameHost().Backup(ctx, row.ID, id)
 	if err != nil {

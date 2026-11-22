@@ -143,8 +143,72 @@ func TestGameServerLifecycleWithFakeRuntime(t *testing.T) {
 	res, _ = ts.Client().Do(req)
 	raw, _ = io.ReadAll(res.Body)
 	_ = res.Body.Close()
-	if res.StatusCode != http.StatusCreated {
+	if res.StatusCode != http.StatusAccepted {
 		t.Fatalf("backup %d %s", res.StatusCode, raw)
+	}
+	// The backup runs in the background; the list reports it once done.
+	s.waitGameJobs()
+	listBackups := func() map[string]any {
+		req, _ := http.NewRequest("GET", ts.URL+"/api/v1/game-servers/"+id+"/backups", nil)
+		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+		res, _ := ts.Client().Do(req)
+		raw, _ := io.ReadAll(res.Body)
+		_ = res.Body.Close()
+		var out map[string]any
+		_ = json.Unmarshal(raw, &out)
+		return out
+	}
+	got := listBackups()
+	items, _ := got["items"].([]any)
+	job, _ := got["job"].(map[string]any)
+	if len(items) != 1 || job["running"] != false || job["error"] != nil || job["op"] != "backup" {
+		t.Fatalf("backup list after the job: %v", got)
+	}
+	bid, _ := items[0].(map[string]any)["id"].(string)
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/game-servers/"+id+"/backups/"+bid+"/restore", strings.NewReader(`{}`))
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusAccepted {
+		t.Fatalf("restore %d %s", res.StatusCode, raw)
+	}
+	s.waitGameJobs()
+	got = listBackups()
+	job, _ = got["job"].(map[string]any)
+	if job["op"] != "restore" || job["running"] != false || job["error"] != nil {
+		t.Fatalf("restore job: %v", got)
+	}
+	// The restore took a safety backup first.
+	if items, _ := got["items"].([]any); len(items) != 2 {
+		t.Fatalf("want the backup plus a pre-restore rollback, got %v", got)
+	}
+
+	// The backup scope: bad paths are refused, a good one is kept.
+	putScope := func(body string) (int, map[string]any) {
+		req, _ := http.NewRequest("PUT", ts.URL+"/api/v1/game-servers/"+id+"/backup-scope", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+		res, _ := ts.Client().Do(req)
+		raw, _ := io.ReadAll(res.Body)
+		_ = res.Body.Close()
+		var out map[string]any
+		_ = json.Unmarshal(raw, &out)
+		return res.StatusCode, out
+	}
+	if code, _ := putScope(`{"include":["../../etc"]}`); code != http.StatusBadRequest {
+		t.Fatalf("escaping scope accepted: %d", code)
+	}
+	if code, out := putScope(`{"include":["server.properties"],"exclude":[],"newest":[]}`); code != http.StatusOK || len(out["include"].([]any)) != 1 {
+		t.Fatalf("scope %d %v", code, out)
+	}
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/game-servers/"+id+"/backup-scope", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if !strings.Contains(string(raw), "server.properties") {
+		t.Fatalf("scope read back %s", raw)
 	}
 
 	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/game-servers/"+id+"/stop", strings.NewReader(`{}`))
