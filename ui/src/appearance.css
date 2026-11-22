@@ -1408,6 +1408,9 @@ body {
   gap: var(--space-2);
   padding: var(--space-4);
   margin: 0;
+  /* A grid item may shrink below its content; long values wrap instead
+     of running out of the tile. */
+  min-width: 0;
 }
 
 .admin-stat-head {
@@ -1420,18 +1423,19 @@ body {
 
 .admin-stat-main {
   margin: 0;
-  font-size: 1.75rem;
+  font-size: 1.375rem;
   font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1.1;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
   font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }
 
 .admin-stat-lines {
   display: grid;
   gap: 0.2rem;
   margin: 0;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
 }
 
 .admin-stat-lines > div {
@@ -1441,13 +1445,16 @@ body {
 }
 
 .admin-stat-lines dt {
+  flex: 0 0 auto;
   color: var(--fg-secondary);
 }
 
 .admin-stat-lines dd {
+  min-width: 0;
   margin: 0;
   font-variant-numeric: tabular-nums;
   text-align: right;
+  overflow-wrap: anywhere;
 }
 
 .admin-stat-lines .is-ok dd {

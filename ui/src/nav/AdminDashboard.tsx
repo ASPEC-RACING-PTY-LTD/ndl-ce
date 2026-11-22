@@ -52,6 +52,9 @@ export function recentCount(times: (string | undefined)[], now = Date.now()): nu
   }).length;
 }
 
+/** SHORT_WHEN keeps dates short enough for a tile. */
+const SHORT_WHEN: Intl.DateTimeFormatOptions = { dateStyle: "short", timeStyle: "short" };
+
 /** daysUntil is whole days from now to iso (negative when past). */
 export function daysUntil(iso: string | undefined, now = Date.now()): number | null {
   const at = iso ? Date.parse(iso) : NaN;
@@ -167,8 +170,8 @@ export function AdminHome() {
             const ends = d.rollback?.available ? d.rollback.window_ends_at : undefined;
             return [
               { label: "Status", value: available ? "Update available" : d.last_check ? "Up to date" : "Not checked yet", tone: available ? "warn" : "ok" },
-              { label: "Last check", value: d.last_check?.finished_at ? new Date(d.last_check.finished_at).toLocaleString() : "Never" },
-              { label: "Roll back until", value: ends ? new Date(ends).toLocaleString() : "Not available" },
+              { label: "Last check", value: d.last_check?.finished_at ? new Date(d.last_check.finished_at).toLocaleString(undefined, SHORT_WHEN) : "Never" },
+              { label: "Roll back until", value: ends ? new Date(ends).toLocaleString(undefined, SHORT_WHEN) : "Not available" },
             ];
           }}
         />
@@ -197,7 +200,7 @@ export function AdminHome() {
             return [
               { label: "Runs today", value: recentCount(d.items.map((r) => r.started_at)) },
               { label: "Failed today", value: failed, tone: failed > 0 ? "bad" : "ok" },
-              { label: "Last good backup", value: last ? new Date(last).toLocaleString() : "None yet", tone: last ? undefined : "warn" },
+              { label: "Last good backup", value: last ? new Date(last).toLocaleString(undefined, SHORT_WHEN) : "None yet", tone: last ? undefined : "warn" },
             ];
           }}
         />
@@ -243,7 +246,7 @@ export function AdminHome() {
           icon="key"
           stat={license}
           main={(d) => d.status[0].toUpperCase() + d.status.slice(1)}
-          lines={(d) => [{ label: "Last checked", value: d.last_checked ? new Date(d.last_checked).toLocaleString() : "Never" }]}
+          lines={(d) => [{ label: "Last checked", value: d.last_checked ? new Date(d.last_checked).toLocaleString(undefined, SHORT_WHEN) : "Never" }]}
         />
       </div>
     </section>
