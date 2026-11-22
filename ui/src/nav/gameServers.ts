@@ -18,6 +18,7 @@ export const GS_SECTION_LABELS: Record<string, string> = {
   workshop: "Workshop",
   players: "Players",
   backups: "Backups & Schedules",
+  databases: "MariaDB",
   settings: "Server Settings",
 };
 
@@ -31,7 +32,6 @@ export const GS_MERGED_SECTIONS: Record<string, string> = {
   startup: "settings",
   network: "settings",
   resources: "settings",
-  databases: "settings",
   activity: "settings",
   diagnostics: "settings",
   notes: "settings",

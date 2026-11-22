@@ -257,6 +257,7 @@ func gmodTemplate() Template {
 		InstallBuiltin:  "steamcmd",
 		DefaultPorts:    []Port{{Name: "game", ContainerPort: 27015, Protocol: "udp", Primary: true, Env: "SERVER_PORT"}, {Name: "rcon", ContainerPort: 27015, Protocol: "tcp", Env: "SERVER_PORT"}},
 		Requirements:    []Requirement{gsltOptional("4000")},
+		Builds:          gmodBuilds(),
 		SourceRef:       "https://github.com/GameServerManagers/LinuxGSM/blob/master/lgsm/config-default/config-lgsm/gmodserver/_default.cfg",
 		DefaultMemoryMB: 4096,
 		DefaultDiskMB:   20480,

@@ -152,6 +152,14 @@ func (g GameHost) WorkshopSync(ctx context.Context, id string, call gameserver.S
 	return *res.Sync, nil
 }
 
+func (g GameHost) Database(ctx context.Context, id string, call gameserver.DBCall) (gameserver.DBReply, error) {
+	res, err := g.call(ctx, gsDatabase, id, gameSpec{DB: &call}, nil)
+	if err != nil || res.DB == nil {
+		return gameserver.DBReply{}, err
+	}
+	return *res.DB, nil
+}
+
 func (g GameHost) BackupScope(ctx context.Context, id string) (gameserver.BackupScope, error) {
 	res, err := g.call(ctx, gsBackupScope, id, gameSpec{}, nil)
 	if err != nil || res.Scope == nil {

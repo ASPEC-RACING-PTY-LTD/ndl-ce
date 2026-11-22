@@ -58,6 +58,8 @@ type Host interface {
 	SetBackupScope(ctx context.Context, id string, scope BackupScope) (BackupScope, error)
 	// WorkshopSync runs one live Workshop sync operation.
 	WorkshopSync(ctx context.Context, id string, call SyncCall) (SyncReply, error)
+	// Database runs one operation on the server's own MariaDB.
+	Database(ctx context.Context, id string, call DBCall) (DBReply, error)
 }
 
 // ProgressFunc receives install phase changes with the current log tail.
@@ -148,10 +150,16 @@ func (h *LocalHost) EnsureData(_ context.Context, id string) (string, error) {
 	return h.RT.EnsureData(id)
 }
 
-func (h *LocalHost) RemoveData(_ context.Context, id string) error {
+func (h *LocalHost) RemoveData(ctx context.Context, id string) error {
 	dir, err := h.serverDir(id)
 	if err != nil {
 		return err
+	}
+	// A deleted server takes its database with it.
+	if c, _ := h.RT.DBConfigFor(id); c != nil {
+		if _, err := h.RT.dbRemove(ctx, id, c, true); err != nil {
+			return err
+		}
 	}
 	return os.RemoveAll(dir)
 }
@@ -212,7 +220,13 @@ func (h *LocalHost) Start(ctx context.Context, spec RunSpec) (string, error) {
 			spec.ReadOnly = []ReadOnlyMount{{Host: items, Rel: SyncItemsRel}}
 		}
 	}
+	spec.Networks = h.RT.dbNetworksFor(ctx, spec.ID)
 	return h.RT.Start(ctx, spec)
+}
+
+// Database runs one operation on the server's own MariaDB (database.go).
+func (h *LocalHost) Database(ctx context.Context, id string, call DBCall) (DBReply, error) {
+	return h.RT.Database(ctx, id, call)
 }
 
 func (h *LocalHost) Stop(ctx context.Context, id string) error { return h.RT.Stop(ctx, id) }
@@ -421,7 +435,21 @@ func (h *LocalHost) Backup(ctx context.Context, id, backupID string) (BackupFile
 	if err != nil {
 		return BackupFile{}, err
 	}
-	if err := archiveDir(ctx, root, path, scope); err != nil {
+	// The server's own database goes in as a dump (database.go).
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return BackupFile{}, err
+	}
+	dump := path + ".db.sql"
+	hasDB, err := h.RT.dbDump(ctx, id, dump)
+	if err != nil {
+		return BackupFile{}, err
+	}
+	if !hasDB {
+		dump = ""
+	} else {
+		defer os.Remove(dump)
+	}
+	if err := archiveDir(ctx, root, path, scope, dump); err != nil {
 		// Never leave a half-written archive: nothing records it, so
 		// nothing would ever delete it.
 		_ = os.Remove(path)
@@ -434,7 +462,7 @@ func (h *LocalHost) Backup(ctx context.Context, id, backupID string) (BackupFile
 	return out, nil
 }
 
-func (h *LocalHost) RestoreBackup(_ context.Context, id, backupID string) error {
+func (h *LocalHost) RestoreBackup(ctx context.Context, id, backupID string) error {
 	root, err := h.jail(id)
 	if err != nil {
 		return err
@@ -443,7 +471,13 @@ func (h *LocalHost) RestoreBackup(_ context.Context, id, backupID string) error 
 	if err != nil {
 		return err
 	}
-	return restoreArchive(root, path)
+	dump := path + ".restore.sql"
+	defer os.Remove(dump)
+	return restoreArchive(root, path, &restoreDB{
+		DumpPath: dump,
+		Check:    func() error { return h.RT.dbCanRestore(ctx, id) },
+		Load:     func(p string) error { return h.RT.dbRestore(ctx, id, p) },
+	})
 }
 
 func (h *LocalHost) DeleteBackup(_ context.Context, id, backupID string) error {
@@ -457,7 +491,9 @@ func (h *LocalHost) DeleteBackup(_ context.Context, id, backupID string) error {
 	return nil
 }
 
-func archiveDir(ctx context.Context, src, dest string, scope BackupScope) error {
+// archiveDir writes the backup archive. dbDump, when set, is a database
+// dump to include.
+func archiveDir(ctx context.Context, src, dest string, scope BackupScope, dbDump string) error {
 	if err := os.MkdirAll(filepath.Dir(dest), 0o750); err != nil {
 		return err
 	}
@@ -475,13 +511,20 @@ func archiveDir(ctx context.Context, src, dest string, scope BackupScope) error 
 	defer f.Close()
 	gz := gzip.NewWriter(f)
 	tw := tar.NewWriter(gz)
-	if scope.Scoped() {
-		// The manifest goes first so a restore knows what it owns.
-		raw, _ := json.Marshal(backupManifest{Version: 1, Scope: scope})
+	if scope.Scoped() || dbDump != "" {
+		// The manifest goes first so a restore knows what it owns, then
+		// the database dump, so a restore can check the database is
+		// ready before it touches a file.
+		raw, _ := json.Marshal(backupManifest{Version: 1, Scope: scope, Database: dbDump != ""})
 		if err := tw.WriteHeader(&tar.Header{Name: backupManifestName, Mode: 0o600, Size: int64(len(raw)), ModTime: time.Now(), Typeflag: tar.TypeReg}); err != nil {
 			return err
 		}
 		if _, err := tw.Write(raw); err != nil {
+			return err
+		}
+	}
+	if dbDump != "" {
+		if err := addArchiveFile(tw, dbDump, dbDumpEntry); err != nil {
 			return err
 		}
 	}
@@ -583,7 +626,15 @@ func (zeroReader) Read(p []byte) (int, error) {
 // the folder. A scoped backup (one that starts with a manifest) replaces
 // only what its scope covers and leaves the rest, such as the game
 // install, untouched.
-func restoreArchive(dest, archivePath string) error {
+// restoreDB loads a backup's database dump: Check runs before any file
+// is touched, Load after the files are back.
+type restoreDB struct {
+	DumpPath string
+	Check    func() error
+	Load     func(path string) error
+}
+
+func restoreArchive(dest, archivePath string, db *restoreDB) error {
 	if dest == "" {
 		return fmt.Errorf("data directory is missing")
 	}
@@ -611,12 +662,41 @@ func restoreArchive(dest, archivePath string) error {
 		if err := json.NewDecoder(io.LimitReader(tr, 1<<20)).Decode(&m); err != nil {
 			return fmt.Errorf("backup manifest is damaged: %w", err)
 		}
-		if m.Version != 1 || !m.Scope.Scoped() {
+		if m.Version != 1 {
 			return fmt.Errorf("backup manifest is not understood")
 		}
 		manifest = &m
 		first = nil
-	} else {
+	}
+	loadDB := false
+	if manifest != nil && manifest.Database {
+		// The dump comes right after the manifest. Check the database
+		// can take it before any file changes.
+		hdr, err := tr.Next()
+		if err != nil || hdr.Name != dbDumpEntry {
+			return fmt.Errorf("backup says it has a database dump, but it is missing")
+		}
+		if db == nil {
+			return fmt.Errorf("this backup includes a database, which cannot be restored here")
+		}
+		if err := db.Check(); err != nil {
+			return err
+		}
+		out, err := os.OpenFile(db.DumpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+		if err != nil {
+			return err
+		}
+		_, copyErr := io.CopyN(out, tr, hdr.Size)
+		if cerr := out.Close(); copyErr == nil {
+			copyErr = cerr
+		}
+		if copyErr != nil {
+			return copyErr
+		}
+		loadDB = true
+	}
+	scoped := manifest != nil && manifest.Scope.Scoped()
+	if !scoped {
 		entries, _ := os.ReadDir(dest)
 		for _, e := range entries {
 			if e.Name() == ".ndl" {
@@ -640,7 +720,7 @@ func restoreArchive(dest, archivePath string) error {
 		cur := hdr
 		hdr = nil
 		rel, err := iojail.CleanRel(cur.Name)
-		if err != nil || rel == "." || rel == backupManifestName {
+		if err != nil || rel == "." || rel == backupManifestName || rel == dbDumpEntry {
 			continue
 		}
 		abs := filepath.Join(dest, filepath.FromSlash(rel))
@@ -683,7 +763,12 @@ func restoreArchive(dest, archivePath string) error {
 		_ = os.Chmod(abs, mode)
 		_ = os.Chtimes(abs, cur.ModTime, cur.ModTime)
 	}
-	if manifest == nil {
+	if loadDB {
+		if err := db.Load(db.DumpPath); err != nil {
+			return err
+		}
+	}
+	if !scoped {
 		return nil
 	}
 	// Remove files the scope owns that the backup did not have (a file
@@ -711,4 +796,22 @@ func restoreArchive(dest, archivePath string) error {
 		}
 		return nil
 	})
+}
+
+// addArchiveFile adds one file from disk under name.
+func addArchiveFile(tw *tar.Writer, path, name string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	if err := tw.WriteHeader(&tar.Header{Name: name, Mode: 0o600, Size: st.Size(), ModTime: st.ModTime(), Typeflag: tar.TypeReg}); err != nil {
+		return err
+	}
+	_, err = io.CopyN(tw, f, st.Size())
+	return err
 }

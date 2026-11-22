@@ -4687,6 +4687,20 @@ export type ListGameBackupsPath = "/api/v1/game-servers/{id}/backups";
 
 export type RestoreGameBackupPath = "/api/v1/game-servers/{id}/backups/{bid}/restore";
 
+export type GetGameBuildPath = "/api/v1/game-servers/{id}/build";
+
+export type GetGameDatabasePath = "/api/v1/game-servers/{id}/database";
+
+export type GetGameDatabaseCredentialsPath = "/api/v1/game-servers/{id}/database/credentials";
+
+export type InstallGameDatabasePath = "/api/v1/game-servers/{id}/database/install";
+
+export type StartGameDatabasePath = "/api/v1/game-servers/{id}/database/start";
+
+export type StopGameDatabasePath = "/api/v1/game-servers/{id}/database/stop";
+
+export type RemoveGameDatabasePath = "/api/v1/game-servers/{id}/database/remove";
+
 export type GetGameBackupScopePath = "/api/v1/game-servers/{id}/backup-scope";
 
 export type DeleteGameBackupPath = "/api/v1/game-servers/{id}/backups/{bid}";

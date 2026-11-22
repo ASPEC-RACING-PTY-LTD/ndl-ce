@@ -294,7 +294,12 @@ if [ -n "$BETA" ]; then
     set -- "$@" -betapassword "$STEAM_BETA_PASSWORD"
   fi
 fi
-set -- "$@" validate +quit
+# A build switch passes NDL_STEAM_VALIDATE=0: validate would also reset
+# every stock file the owner has edited.
+if [ "${NDL_STEAM_VALIDATE:-1}" != 0 ]; then
+  set -- "$@" validate
+fi
+set -- "$@" +quit
 ok=0
 for attempt in 1 2 3; do
   echo "steamcmd app_update ${APP} attempt ${attempt}"

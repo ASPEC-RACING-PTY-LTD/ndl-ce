@@ -45,18 +45,21 @@ type Template struct {
 
 	// Catalogue and provisioning metadata. Every field below is optional and
 	// additive so templates stored by older releases still decode unchanged.
-	GameTitle     string        `json:"game_title,omitempty"`
-	Category      string        `json:"category,omitempty"`
-	Engine        string        `json:"engine,omitempty"`
-	Architectures []string      `json:"architectures,omitempty"`
-	Install       *InstallSpec  `json:"install,omitempty"`
-	Dependencies  []string      `json:"dependencies,omitempty"`
-	Requirements  []Requirement `json:"requirements,omitempty"`
-	StopTimeout   int           `json:"stop_timeout,omitempty"`
-	MinMemoryMB   int           `json:"min_memory_mb,omitempty"`
-	DocsURL       string        `json:"docs_url,omitempty"`
-	SourceRef     string        `json:"source_ref,omitempty"`
-	Notes         []string      `json:"notes,omitempty"`
+	GameTitle     string       `json:"game_title,omitempty"`
+	Category      string       `json:"category,omitempty"`
+	Engine        string       `json:"engine,omitempty"`
+	Architectures []string     `json:"architectures,omitempty"`
+	Install       *InstallSpec `json:"install,omitempty"`
+	// Builds lists the builds a server may switch between (builds.go),
+	// the default first.
+	Builds       []BuildOption `json:"builds,omitempty"`
+	Dependencies []string      `json:"dependencies,omitempty"`
+	Requirements []Requirement `json:"requirements,omitempty"`
+	StopTimeout  int           `json:"stop_timeout,omitempty"`
+	MinMemoryMB  int           `json:"min_memory_mb,omitempty"`
+	DocsURL      string        `json:"docs_url,omitempty"`
+	SourceRef    string        `json:"source_ref,omitempty"`
+	Notes        []string      `json:"notes,omitempty"`
 	// Hidden keeps a template resolvable for servers created from it while
 	// removing it from the catalogue (for example a template found to be
 	// unsupported on Linux).

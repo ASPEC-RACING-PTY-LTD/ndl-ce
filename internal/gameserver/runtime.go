@@ -188,6 +188,9 @@ type RunSpec struct {
 	// at paths relative to its working folder. Set only by the agent itself,
 	// never sent over the wire.
 	ReadOnly []ReadOnlyMount `json:"-"`
+	// Networks are extra private networks the server joins (its own
+	// database's). Set by the agent itself, never by the caller.
+	Networks []string `json:"-"`
 }
 
 // ReadOnlyMount is a host folder shown read-only inside a game server.
@@ -278,11 +281,28 @@ func (r *Runtime) Start(ctx context.Context, spec RunSpec) (string, error) {
 	default:
 		args = append(args, image)
 	}
+	if len(spec.Networks) > 0 && netMode != "host" {
+		// Docker cannot join its default network and a private one in
+		// one run, so create the container, connect it, then start it:
+		// the database is reachable from the server's first moment.
+		args[0], args[1] = "create", "-i"
+		args = append(args[:2], args[3:]...)
+	}
 	out, err := r.runWithEnv(ctx, secretEnv, r.dockerBin(), args...)
 	if err != nil {
 		return "", fmt.Errorf("%s", strings.TrimSpace(string(out)+" "+err.Error()))
 	}
 	id := strings.TrimSpace(string(out))
+	if len(spec.Networks) > 0 && netMode != "host" {
+		for _, n := range spec.Networks {
+			if _, err := r.run(ctx, r.dockerBin(), "network", "connect", n, containerName(spec.ID)); err != nil {
+				r.appendLog(spec.ID, "could not join network "+n+": "+err.Error())
+			}
+		}
+		if out, err := r.run(ctx, r.dockerBin(), "start", containerName(spec.ID)); err != nil {
+			return "", fmt.Errorf("%s", strings.TrimSpace(string(out)+" "+err.Error()))
+		}
+	}
 	r.appendLog(spec.ID, "container started "+id)
 	return id, nil
 }

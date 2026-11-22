@@ -270,14 +270,24 @@ func (s *Server) gameServerFleet(w http.ResponseWriter, r *http.Request) {
 		var ferr error
 		switch req.Action {
 		case "start":
-			ferr = s.startGame(r.Context(), s.gameHost(), row)
+			if prep, err := s.startOrPrepare(r.Context(), s.gameHost(), row); prep {
+				results = append(results, map[string]any{"id": id, "ok": err == nil, "status": row.Status})
+				continue
+			} else {
+				ferr = err
+			}
 		case "stop":
 			ferr = s.gameHost().Stop(r.Context(), row.ID)
 			row.Status = gameserver.StatusStopped
 			row.DesiredPower = "stopped"
 		case "restart":
 			_ = s.gameHost().Stop(r.Context(), row.ID)
-			ferr = s.startGame(r.Context(), s.gameHost(), row)
+			if prep, err := s.startOrPrepare(r.Context(), s.gameHost(), row); prep {
+				results = append(results, map[string]any{"id": id, "ok": err == nil, "status": row.Status})
+				continue
+			} else {
+				ferr = err
+			}
 		case "backup":
 			srv := *row
 			_, ferr = s.startGameJob(row.ID, "backup", "Fleet backup", func(ctx context.Context) error {

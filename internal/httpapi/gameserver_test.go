@@ -493,6 +493,10 @@ func TestGameServerStartsWithItsSavedStartupCommand(t *testing.T) {
 	if code, out := call("PUT", "/api/v1/game-servers/"+id+"/startup", `{"startup":"./srcds_run_x64 -game garrysmod -port {{SERVER_PORT}}"}`); code != http.StatusOK {
 		t.Fatalf("save startup %d %v", code, out)
 	}
+	// The 64-bit launcher is in place, so the start needs no download.
+	if err := os.WriteFile(filepath.Join(rt.DataDir(id), "srcds_run_x64"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	mu.Lock()
 	runs = nil
 	mu.Unlock()

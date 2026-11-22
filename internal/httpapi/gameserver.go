@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	goruntime "runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -467,9 +468,10 @@ func (s *Server) powerGame(w http.ResponseWriter, r *http.Request, action string
 			return
 		}
 	}
+	preparing := false
 	switch action {
 	case "start":
-		err = s.startGame(r.Context(), rt, row)
+		preparing, err = s.startOrPrepare(r.Context(), rt, row)
 	case "stop":
 		err = rt.StopGraceful(r.Context(), row.ID, s.gameStopCommand(r.Context(), row), s.gameStopTimeout(r.Context(), row))
 		row.Status = gameserver.StatusStopped
@@ -477,7 +479,7 @@ func (s *Server) powerGame(w http.ResponseWriter, r *http.Request, action string
 		row.ContainerID = ""
 	case "restart":
 		_ = rt.StopGraceful(r.Context(), row.ID, s.gameStopCommand(r.Context(), row), s.gameStopTimeout(r.Context(), row))
-		err = s.startGame(r.Context(), rt, row)
+		preparing, err = s.startOrPrepare(r.Context(), rt, row)
 	case "kill":
 		err = rt.Kill(r.Context(), row.ID)
 		row.Status = gameserver.StatusStopped
@@ -490,6 +492,13 @@ func (s *Server) powerGame(w http.ResponseWriter, r *http.Request, action string
 		row.ErrorHuman = gameserver.HumanError(err.Error())
 		_ = s.Store.UpdateGameServer(r.Context(), *row)
 		writeErr(w, http.StatusBadGateway, row.ErrorHuman)
+		return
+	}
+	if preparing {
+		// The build's files are downloading; the server starts by itself
+		// once they are in place. The row was saved as installing.
+		s.noteGame(r, p, row.ID, "power."+action, "Power "+action+" (downloading the build first)", "")
+		writeJSON(w, http.StatusAccepted, s.gameJSON(r.Context(), *row, true))
 		return
 	}
 	row.ErrorHuman, row.ErrorRaw = "", ""
@@ -542,9 +551,9 @@ func (s *Server) startGame(ctx context.Context, rt gameserver.Host, row *appdb.G
 	}
 	// The server's own startup command, as saved on its Startup tab, wins
 	// over the template's. A server is created with the template's.
-	startCmd := tmpl.Startup
-	if strings.TrimSpace(row.Startup) != "" {
-		startCmd = row.Startup
+	startCmd := gameStartup(*row, tmpl)
+	if err := s.checkGameBuild(ctx, *row, tmpl); err != nil {
+		return err
 	}
 	startup := gameserver.ExpandStartup(startCmd, env, gameserver.MemoryMB(row.MemoryBytes), gameserver.PrimaryPort(ports))
 	cid, err := rt.Start(ctx, gameserver.RunSpec{
@@ -652,6 +661,11 @@ func (s *Server) gameJSON(ctx context.Context, row appdb.GameServer, detail bool
 	_ = json.Unmarshal(row.PortsJSON, &ports)
 	var caps []string
 	_ = json.Unmarshal(row.Capabilities, &caps)
+	// Servers created before a capability existed still get it from
+	// their template: the database page, for one.
+	if tmpl, err := s.resolveTemplate(ctx, row.ClusterID, row.TemplateID); err == nil && gameserver.DatabaseSupported(tmpl) && !slices.Contains(caps, gameserver.CapDatabases) {
+		caps = append(caps, gameserver.CapDatabases)
+	}
 	out := map[string]any{
 		"id": row.ID, "name": row.Name, "status": row.Status, "desired_power": row.DesiredPower,
 		"template_id": row.TemplateID, "template_name": row.TemplateName, "game": row.Game,

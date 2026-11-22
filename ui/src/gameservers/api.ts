@@ -296,9 +296,60 @@ export async function putGameResources(id: string, body: Record<string, number>)
   return readJson(`/game-servers/${id}/resources`, { method: "PUT", body: JSON.stringify(body) });
 }
 
+/** Which build (32-bit or 64-bit) a server runs. */
+export type GameBuildState = {
+  supported: boolean;
+  current: string;
+  running: boolean;
+  custom?: boolean;
+  options: { id: string; label: string; installed: boolean }[];
+};
+
+export async function getGameBuild(id: string): Promise<GameBuildState> {
+  return readJson(`/game-servers/${id}/build`);
+}
+
+export async function putGameBuild(id: string, build: string): Promise<GameBuildState> {
+  return readJson(`/game-servers/${id}/build`, { method: "PUT", body: JSON.stringify({ build }) });
+}
+
+/** A server's own MariaDB. The password comes only from getGameDatabaseCredentials. */
+export type GameDatabase = {
+  supported: boolean;
+  state: "none" | "configured" | "installing" | "running" | "stopped" | "missing";
+  database?: string;
+  user?: string;
+  host?: string;
+  port?: number;
+  image?: string;
+  installed_at?: string;
+  password?: string;
+  job?: GameBackupJob | null;
+};
+
+export async function getGameDatabase(id: string): Promise<GameDatabase> {
+  return readJson(`/game-servers/${id}/database`);
+}
+
+export async function getGameDatabaseCredentials(id: string): Promise<GameDatabase> {
+  return readJson(`/game-servers/${id}/database/credentials`);
+}
+
+export async function putGameDatabase(id: string, database: string): Promise<GameDatabase> {
+  return readJson(`/game-servers/${id}/database`, { method: "PUT", body: JSON.stringify({ database }) });
+}
+
+export async function gameDatabaseAction(id: string, action: "install" | "start" | "stop"): Promise<GameDatabase> {
+  return readJson(`/game-servers/${id}/database/${action}`, { method: "POST", body: "{}" });
+}
+
+export async function removeGameDatabase(id: string, deleteData: boolean, confirm = ""): Promise<GameDatabase> {
+  return readJson(`/game-servers/${id}/database/remove`, { method: "POST", body: JSON.stringify({ delete_data: deleteData, confirm }) });
+}
+
 /** The latest background backup or restore for a server. */
 export type GameBackupJob = {
-  op: "backup" | "restore";
+  op: "backup" | "restore" | "database";
   name: string;
   running: boolean;
   started_at: string;

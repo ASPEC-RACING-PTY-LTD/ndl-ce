@@ -5328,6 +5328,247 @@ paths:
                 $ref: "#/components/schemas/GameServerEnvelope"
         "404":
           description: Feature is not enabled or resource is missing
+  /game-servers/{id}/build:
+    get:
+      operationId: getGameBuild
+      summary: Which build a game server runs (32-bit or 64-bit)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerEnvelope"
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerEnvelope"
+        "404":
+          description: Feature is not enabled or resource is missing
+    put:
+      operationId: putGameBuild
+      summary: Change the build a game server runs
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GameServerRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerEnvelope"
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerEnvelope"
+        "404":
+          description: Feature is not enabled or resource is missing
+  /game-servers/{id}/database:
+    get:
+      operationId: getGameDatabase
+      summary: A game server's own MariaDB
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerEnvelope"
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerEnvelope"
+        "404":
+          description: Feature is not enabled or resource is missing
+    put:
+      operationId: putGameDatabase
+      summary: Set the name of a game server's database
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GameServerRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerEnvelope"
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerEnvelope"
+        "404":
+          description: Feature is not enabled or resource is missing
+  /game-servers/{id}/database/credentials:
+    get:
+      operationId: getGameDatabaseCredentials
+      summary: A game server's database settings with its password
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerEnvelope"
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerEnvelope"
+        "404":
+          description: Feature is not enabled or resource is missing
+  /game-servers/{id}/database/install:
+    post:
+      operationId: installGameDatabase
+      summary: Install a game server's MariaDB
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerEnvelope"
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerEnvelope"
+        "404":
+          description: Feature is not enabled or resource is missing
+  /game-servers/{id}/database/start:
+    post:
+      operationId: startGameDatabase
+      summary: Start a game server's database
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerEnvelope"
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerEnvelope"
+        "404":
+          description: Feature is not enabled or resource is missing
+  /game-servers/{id}/database/stop:
+    post:
+      operationId: stopGameDatabase
+      summary: Stop a game server's database
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerEnvelope"
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerEnvelope"
+        "404":
+          description: Feature is not enabled or resource is missing
+  /game-servers/{id}/database/remove:
+    post:
+      operationId: removeGameDatabase
+      summary: Uninstall a game server's database, optionally deleting its data
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GameServerRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerEnvelope"
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerEnvelope"
+        "404":
+          description: Feature is not enabled or resource is missing
   /game-servers/{id}/backup-scope:
     get:
       operationId: getGameBackupScope

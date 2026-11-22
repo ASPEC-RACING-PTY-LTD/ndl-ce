@@ -68,7 +68,7 @@ func TestSQLiteFilesAreCopiedConsistently(t *testing.T) {
 
 	dest := filepath.Join(t.TempDir(), "b.tar.gz")
 	scope := BackupScope{Include: []string{"garrysmod/sv.db"}}
-	err := archiveDir(context.Background(), root, dest, scope)
+	err := archiveDir(context.Background(), root, dest, scope, "")
 	close(stop)
 	wg.Wait()
 	if err != nil {
@@ -82,7 +82,7 @@ func TestSQLiteFilesAreCopiedConsistently(t *testing.T) {
 	}
 
 	out := t.TempDir()
-	if err := restoreArchive(out, dest); err != nil {
+	if err := restoreArchive(out, dest, nil); err != nil {
 		t.Fatal(err)
 	}
 	restored := filepath.Join(out, "garrysmod", "sv.db")

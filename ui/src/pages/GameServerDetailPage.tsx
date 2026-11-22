@@ -1,5 +1,5 @@
 import { confirmAction } from "../confirm";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ApiError } from "../api/client";
 import { ErrorState, LoadingState } from "../components/EmptyState";
 import { FilesBrowser } from "../components/FilesBrowser";
@@ -28,10 +28,19 @@ import {
   putWorkshopSync,
   checkWorkshopSync,
   type GameBackupJob,
+  type GameBuildState,
+  type GameDatabase,
   type GameBackupScope,
   type WorkshopSync,
   installGameContent,
   listGameBackups,
+  getGameBuild,
+  putGameBuild,
+  getGameDatabase,
+  getGameDatabaseCredentials,
+  putGameDatabase,
+  gameDatabaseAction,
+  removeGameDatabase,
   getGameBackupScope,
   putGameBackupScope,
   listGameContent,
@@ -115,6 +124,7 @@ export function GameServerDetailPage() {
       {tab === "mods" || tab === "plugins" || tab === "workshop" ? <ContentPane id={id} kind={contentKind(server) || tab} /> : null}
       {tab === "players" ? <GamePlayersPane key={id} id={id} /> : null}
       {tab === "backups" ? <BackupsAndSchedules server={server} access={access} /> : null}
+      {tab === "databases" ? <DatabasePane key={id} id={id} serverRunning={server.status === "running"} /> : null}
       {tab === "settings" ? <SettingsPane server={server} anchor={anchor} access={access} /> : null}
     </section>
   );
@@ -263,7 +273,7 @@ function BackupsPane({ id }: { id: string }) {
       .catch((err) => setError(errText(err, "Action failed")))
       .finally(() => setStarting(false));
   };
-  const jobVerb = job?.op === "restore" ? "Restoring" : "Backing up";
+  const jobVerb = job?.op === "restore" ? "Restoring" : job?.op === "database" ? "Installing the database" : "Backing up";
   return (
     <article className="gs-widget" id="gs-sec-backups">
       <header className="gs-widget-head">
@@ -274,12 +284,13 @@ function BackupsPane({ id }: { id: string }) {
       </header>
       {job?.running ? (
         <p className="muted" role="status">
-          {jobVerb} {job.op === "restore" ? job.name : "the server"}, started {formatRelative(job.started_at)}. A large server can take 15 minutes or
-          more. You can leave this page.
+          {jobVerb}
+          {job.op === "restore" ? ` ${job.name}` : job.op === "backup" ? " the server" : ""}, started {formatRelative(job.started_at)}. A large server
+          can take 15 minutes or more. You can leave this page.
         </p>
       ) : null}
       {job && !job.running && job.error ? (
-        <ErrorNotice error={`${job.op === "restore" ? "Restore" : "Backup"} failed: ${job.error}`} />
+        <ErrorNotice error={`${job.op === "restore" ? "Restore" : job.op === "database" ? "Database install" : "Backup"} failed: ${job.error}`} />
       ) : null}
       {job && !job.running && !job.error && job.op === "restore" ? (
         <p className="muted" role="status">
@@ -319,6 +330,313 @@ function BackupsPane({ id }: { id: string }) {
         ))}
       </ul>
     </article>
+  );
+}
+
+/* ---------------- Game build ---------------- */
+
+// GameBuildPane switches a server between its builds (Garry's Mod 32-bit
+// and 64-bit). The server must be stopped; files that are missing download
+// the next time it starts.
+function GameBuildPane({ id }: { id: string }) {
+  const [state, setState] = useState<GameBuildState | null>(null);
+  const [choice, setChoice] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    getGameBuild(id)
+      .then((s) => {
+        setState(s);
+        setChoice(s.current);
+      })
+      .catch((err) => setError(errText(err, "Could not load the build")));
+  }, [id]);
+  if (error && !state) {
+    return <ErrorNotice error={error} />;
+  }
+  if (!state) {
+    return <p className="muted">Loading</p>;
+  }
+  if (!state.supported) {
+    return <p className="muted">This game has one build.</p>;
+  }
+  const picked = state.options.find((o) => o.id === choice);
+  const save = () => {
+    setSaving(true);
+    setError(null);
+    setNote(null);
+    putGameBuild(id, choice)
+      .then((s) => {
+        setState(s);
+        setChoice(s.current);
+        const opt = s.options.find((o) => o.id === s.current);
+        setNote(
+          opt && !opt.installed
+            ? `Saved. The ${opt.label} files download when you next start the server, then it starts by itself. That takes a few minutes.`
+            : "Saved. It takes effect the next time the server starts.",
+        );
+      })
+      .catch((err) => setError(errText(err, "Could not save")))
+      .finally(() => setSaving(false));
+  };
+  return (
+    <div className="gs-form">
+      {state.custom ? (
+        <p className="muted">The startup command starts with its own launcher, so the build is set there.</p>
+      ) : (
+        <>
+          <label>
+            Build
+            <select className="field-input" value={choice} onChange={(e) => setChoice(e.target.value)} disabled={state.running || saving}>
+              {state.options.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.label}
+                  {o.installed ? "" : " (downloads on next start)"}
+                </option>
+              ))}
+            </select>
+            <span className="field-hint">
+              {state.running
+                ? "Stop the server to change its build."
+                : "Your addons, data and config stay as they are. Only the game's own files change."}
+            </span>
+          </label>
+          {error ? <ErrorNotice error={error} /> : null}
+          {note ? (
+            <p className="muted" role="status">
+              {note}
+            </p>
+          ) : null}
+          <div className="btn-row is-flush">
+            <button type="button" className="btn btn-sm btn-primary" onClick={save} disabled={state.running || saving || !picked || choice === state.current}>
+              {saving ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- MariaDB ---------------- */
+
+const DB_STATE_LABEL: Record<GameDatabase["state"], string> = {
+  none: "Not set up",
+  configured: "Ready to install",
+  installing: "Installing",
+  running: "Running",
+  stopped: "Stopped",
+  missing: "Installed, but its container is gone. Install again to bring it back with its data.",
+};
+
+// DatabasePane gives the server its own MariaDB. The owner picks the
+// database name; the user and password are generated and kept here.
+function DatabasePane({ id, serverRunning }: { id: string; serverRunning: boolean }) {
+  const [db, setDb] = useState<GameDatabase | null>(null);
+  const [name, setName] = useState("");
+  const [password, setPassword] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const reload = useCallback(
+    () =>
+      getGameDatabase(id)
+        .then((d) => {
+          setDb(d);
+          setName((cur) => cur || d.database || "");
+        })
+        .catch((err) => setError(errText(err, "Could not load the database"))),
+    [id],
+  );
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+  const installing = Boolean(db?.job?.running && db.job.op === "database");
+  useEffect(() => {
+    if (!installing) {
+      return;
+    }
+    const t = window.setInterval(() => void reload(), 3000);
+    return () => window.clearInterval(t);
+  }, [installing, reload]);
+  const act = (fn: () => Promise<unknown>) => {
+    setBusy(true);
+    setError(null);
+    void fn()
+      .then(reload)
+      .catch((err) => setError(errText(err, "Action failed")))
+      .finally(() => setBusy(false));
+  };
+  if (!db) {
+    return error ? <ErrorNotice error={error} /> : <LoadingState label="Loading the database" />;
+  }
+  const installed = Boolean(db.installed_at);
+  const state = installing ? "installing" : db.state;
+  const lastJob = db.job && !db.job.running && db.job.op === "database" ? db.job : null;
+  const rows: [string, ReactNode][] = db.database
+    ? [
+        ["Host", db.host],
+        ["Port", String(db.port ?? "")],
+        ["Database", db.database],
+        ["Username", db.user],
+        [
+          "Password",
+          password ? (
+            <span className="btn-row is-flush">
+              <code>{password}</code>
+              <button type="button" className="btn btn-sm btn-ghost" onClick={() => void navigator.clipboard?.writeText(password)}>
+                Copy
+              </button>
+              <button type="button" className="btn btn-sm btn-ghost" onClick={() => setPassword(null)}>
+                Hide
+              </button>
+            </span>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost"
+              onClick={() =>
+                getGameDatabaseCredentials(id)
+                  .then((c) => setPassword(c.password ?? ""))
+                  .catch((err) => setError(errText(err, "Could not read the password")))
+              }
+            >
+              Show
+            </button>
+          ),
+        ],
+      ]
+    : [];
+  return (
+    <div className="gs-settings">
+      <article className="gs-widget" id="gs-sec-database">
+        <header className="gs-widget-head">
+          <h2>MariaDB</h2>
+          <span className="meta">{DB_STATE_LABEL[state]}</span>
+        </header>
+        <p className="muted">
+          This server's own database. It runs beside the game on a private network only the two share, so the game reaches it at host{" "}
+          <code>mariadb</code>, port 3306, and nothing else can. Backups of this server include it.
+        </p>
+        {error ? <ErrorNotice error={error} /> : null}
+        {lastJob?.error ? <ErrorNotice error={`Install failed: ${lastJob.error}`} /> : null}
+        {installing ? (
+          <p className="muted" role="status">
+            Installing MariaDB, started {formatRelative(db.job?.started_at)}. The first install downloads it, which takes a minute or two.
+          </p>
+        ) : null}
+        {!installed ? (
+          <div className="gs-form">
+            <label>
+              Database name
+              <input className="field-input" value={name} onChange={(e) => setName(e.target.value)} disabled={busy || installing} spellCheck={false} />
+              <span className="field-hint">Letters, digits and _ only. The username and password are generated for you.</span>
+            </label>
+            <div className="btn-row is-flush">
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={busy || installing || !name.trim() || name.trim() === db.database}
+                onClick={() => act(() => putGameDatabase(id, name.trim()))}
+              >
+                {db.database ? "Rename" : "Save and generate credentials"}
+              </button>
+              {db.database ? (
+                <button type="button" className="btn btn-sm btn-primary" disabled={busy || installing} onClick={() => act(() => gameDatabaseAction(id, "install"))}>
+                  Install
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+        {rows.length ? (
+          <dl className="kv-grid">
+            {rows.map(([k, v]) => (
+              <Fragment key={k}>
+                <dt>{k}</dt>
+                <dd>{v}</dd>
+              </Fragment>
+            ))}
+          </dl>
+        ) : null}
+        {installed ? (
+          <>
+            {state === "running" && !serverRunning ? <p className="muted">The game joins the database's network when it starts.</p> : null}
+            <div className="btn-row is-flush">
+              {state === "stopped" ? (
+                <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={() => act(() => gameDatabaseAction(id, "start"))}>
+                  Start database
+                </button>
+              ) : null}
+              {state === "running" ? (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-ghost"
+                  disabled={busy}
+                  onClick={() => {
+                    if (confirmAction("Stop the database? The game loses it until it starts again, and backups fail while it is stopped.")) {
+                      act(() => gameDatabaseAction(id, "stop"));
+                    }
+                  }}
+                >
+                  Stop database
+                </button>
+              ) : null}
+              {state === "missing" ? (
+                <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={() => act(() => gameDatabaseAction(id, "install"))}>
+                  Install again
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                disabled={busy}
+                onClick={() => {
+                  if (confirmAction("Uninstall the database? Its data and credentials are kept, and installing again brings it back.")) {
+                    act(() => removeGameDatabase(id, false));
+                  }
+                }}
+              >
+                Uninstall
+              </button>
+            </div>
+          </>
+        ) : null}
+      </article>
+      {db.database ? (
+        <article className="gs-widget" id="gs-sec-database-delete">
+          <header className="gs-widget-head">
+            <h2>Delete the database</h2>
+          </header>
+          <p className="muted">
+            Deletes the database, its data and its credentials for good. Backups taken before keep their copy. Type <code>{db.database}</code> to
+            confirm.
+          </p>
+          <div className="gs-form">
+            <input className="field-input" value={confirmDelete} onChange={(e) => setConfirmDelete(e.target.value)} aria-label="Database name to confirm" />
+            <div className="btn-row is-flush">
+              <button
+                type="button"
+                className="btn btn-sm btn-danger"
+                disabled={busy || installing || confirmDelete !== db.database}
+                onClick={() =>
+                  act(() =>
+                    removeGameDatabase(id, true, confirmDelete).then(() => {
+                      setConfirmDelete("");
+                      setName("");
+                      setPassword(null);
+                    }),
+                  )
+                }
+              >
+                Delete database
+              </button>
+            </div>
+          </div>
+        </article>
+      ) : null}
+    </div>
   );
 }
 
@@ -533,19 +851,6 @@ function SettingsPane({ server, anchor, access }: { server: GameServer; anchor: 
   const all: SettingsSection[] = [
     { id: "config", title: "Configuration", render: () => <ConfigurationPane server={server} access={access} /> },
     ...(featureEnabled.ddos ? [{ id: "ddos", title: "DDoS protection", render: () => <GameDDoSPane id={id} /> }] : []),
-    ...(hasCap(server, "databases")
-      ? [
-          {
-            id: "databases",
-            title: "Databases",
-            render: () => (
-              <p className="muted">
-                This template advertises a game database. Edit it from Files or Configuration. No-DAL does not run a separate database manager for this server.
-              </p>
-            ),
-          },
-        ]
-      : []),
     { id: "notes", title: "Notes", render: () => <NotesPane id={id} /> },
     { id: "activity", title: "Activity", render: () => <ActivityPane id={id} /> },
     { id: "diagnostics", title: "Diagnostics", render: () => <DiagnosticsPane id={id} /> },
@@ -613,6 +918,7 @@ function ConfigurationPane({ server, access }: { server: GameServer; access: Gam
   const parts: { key: string; title: string; body: ReactNode }[] = [
     ...(hasCap(server, "config") ? [{ key: "settings", title: "Server settings", body: <ConfigPane id={id} /> }] : []),
     ...(hasCap(server, "startup") ? [{ key: "startup", title: "Startup", body: <StartupPane id={id} /> }] : []),
+    ...(hasCap(server, "startup") && server.game === "gmod" ? [{ key: "build", title: "Game build", body: <GameBuildPane id={id} /> }] : []),
     // A grant on this one server opens its settings only; the rest needs a role.
     ...(access.role && hasCap(server, "resources") ? [{ key: "resources", title: "Resources", body: <ResourcesPane id={id} /> }] : []),
     ...(access.role && hasCap(server, "network") ? [{ key: "network", title: "Networking", body: <NetworkPane id={id} /> }] : []),

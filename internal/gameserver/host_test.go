@@ -15,7 +15,7 @@ func TestArchiveDirCopiesExactHeaderSize(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(src, "server.jar"), bytes.Repeat([]byte("j"), 256<<10), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := archiveDir(context.Background(), src, dest, BackupScope{}); err != nil {
+	if err := archiveDir(context.Background(), src, dest, BackupScope{}, ""); err != nil {
 		t.Fatal(err)
 	}
 	st, err := os.Stat(dest)
@@ -105,7 +105,7 @@ func TestBackupCancelledLeavesNoArchive(t *testing.T) {
 	dest := filepath.Join(t.TempDir(), "b", "x.tar.gz")
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := archiveDir(ctx, src, dest, BackupScope{}); err == nil {
+	if err := archiveDir(ctx, src, dest, BackupScope{}, ""); err == nil {
 		t.Fatal("a cancelled archive must fail")
 	}
 	h := &LocalHost{RT: NewRuntime(t.TempDir())}

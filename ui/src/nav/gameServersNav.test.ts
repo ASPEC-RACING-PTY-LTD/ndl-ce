@@ -19,6 +19,12 @@ describe("Game Servers capability nav", () => {
     expect(groups.find((group) => group.label === "Operate")?.items.find((item) => item.id === "console")?.current).toBe(true);
   });
 
+  it("shows the MariaDB tab for servers that can use a database", () => {
+    const tabs = gameServerTabList({ capabilities: ["backups", "databases"] });
+    expect(tabs.find((t) => t.id === "databases")?.label).toBe("MariaDB");
+    expect(gameServerTabList({ capabilities: ["backups"] }).map((t) => t.id)).not.toContain("databases");
+  });
+
   it("shows only the matching content surface", () => {
     const paper = gameServerTabList({ capabilities: ["plugins", "players"] }).map((item) => item.id);
     expect(paper).toContain("plugins");

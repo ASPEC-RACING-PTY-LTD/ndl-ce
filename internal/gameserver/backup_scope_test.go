@@ -106,7 +106,7 @@ func TestScopedBackupTakesOnlyTheScope(t *testing.T) {
 	writeTree(t, root, map[string]string{"garrysmod/data/thesenate/backups/writing.json": "half"})
 
 	dest := filepath.Join(t.TempDir(), "b.tar.gz")
-	if err := archiveDir(context.Background(), root, dest, jvsScope); err != nil {
+	if err := archiveDir(context.Background(), root, dest, jvsScope, ""); err != nil {
 		t.Fatal(err)
 	}
 	got := strings.Join(archiveNames(t, dest), "\n")
@@ -132,7 +132,7 @@ func TestScopedBackupTakesOnlyTheScope(t *testing.T) {
 		"garrysmod/data/thesenate/backups/x":    "newer rotating copy",
 	})
 	_ = os.Remove(filepath.Join(root, "garrysmod/cfg/server.cfg"))
-	if err := restoreArchive(root, dest); err != nil {
+	if err := restoreArchive(root, dest, nil); err != nil {
 		t.Fatal(err)
 	}
 	read := func(rel string) string {
@@ -177,11 +177,11 @@ func TestRestoreKeepsLargeFilesAndModes(t *testing.T) {
 		t.Fatal(err)
 	}
 	dest := filepath.Join(t.TempDir(), "b.tar.gz")
-	if err := archiveDir(context.Background(), src, dest, BackupScope{}); err != nil {
+	if err := archiveDir(context.Background(), src, dest, BackupScope{}, ""); err != nil {
 		t.Fatal(err)
 	}
 	out := t.TempDir()
-	if err := restoreArchive(out, dest); err != nil {
+	if err := restoreArchive(out, dest, nil); err != nil {
 		t.Fatal(err)
 	}
 	st, err := os.Stat(filepath.Join(out, "sv.db"))

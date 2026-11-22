@@ -45,6 +45,7 @@ const (
 	gsReady           = "runtime-ready"
 	gsWorkshopSync    = "workshop-sync"
 	gsBackupScope     = "backup-scope"
+	gsDatabase        = "database"
 )
 
 // gameSpec carries the typed arguments for every game server action.
@@ -64,6 +65,7 @@ type gameSpec struct {
 	Sync      *gameserver.SyncCall `json:"sync,omitempty"`
 	// Scope, when set, replaces the backup scope; absent, it is read.
 	Scope *gameserver.BackupScope `json:"scope,omitempty"`
+	DB    *gameserver.DBCall      `json:"db,omitempty"`
 }
 
 // gameResult is the JSON result of a game server action.
@@ -80,6 +82,7 @@ type gameResult struct {
 	NotFound bool                    `json:"not_found,omitempty"`
 	Sync     *gameserver.SyncReply   `json:"sync,omitempty"`
 	Scope    *gameserver.BackupScope `json:"scope,omitempty"`
+	DB       *gameserver.DBReply     `json:"db,omitempty"`
 }
 
 // gameProgress is the latest install phase per server, read by the
@@ -181,6 +184,13 @@ func (h *Handler) execGameServer(ctx context.Context, m *agentv1.GameServer) (*c
 		var reply gameserver.SyncReply
 		reply, err = host.WorkshopSync(ctx, id, *spec.Sync)
 		res.Sync = &reply
+	case gsDatabase:
+		if spec.DB == nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("database needs an operation"))
+		}
+		var reply gameserver.DBReply
+		reply, err = host.Database(ctx, id, *spec.DB)
+		res.DB = &reply
 	case gsBackupScope:
 		var scope gameserver.BackupScope
 		if spec.Scope != nil {

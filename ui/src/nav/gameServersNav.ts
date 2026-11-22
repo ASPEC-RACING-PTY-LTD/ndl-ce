@@ -25,9 +25,10 @@ type Def = {
   caps?: string[];
 };
 
-// Seven main tabs. Configuration, startup, resources, networking,
-// databases, activity, diagnostics, notes and access live as sections of
-// Server Settings; schedules sit with backups.
+// The main tabs. Configuration, startup, resources, networking,
+// activity, diagnostics, notes and access live as sections of Server
+// Settings; schedules sit with backups. MariaDB shows for games that can
+// use a database.
 const DEFS: Def[] = [
   { id: "overview", label: "Overview", icon: "dashboard", group: "Operate" },
   { id: "console", label: "Console", icon: "terminal", group: "Operate", caps: ["console"] },
@@ -37,6 +38,7 @@ const DEFS: Def[] = [
   { id: "workshop", label: "Workshop", icon: "workloads", group: "Content", caps: ["workshop"] },
   { id: "players", label: "Players", icon: "account", group: "Content", caps: ["players"] },
   { id: "backups", label: "Backups & Schedules", icon: "snapshots", group: "Protect", caps: ["backups", "schedules"] },
+  { id: "databases", label: "MariaDB", icon: "storage", group: "Protect", caps: ["databases"] },
   { id: "settings", label: "Server Settings", icon: "settings", group: "Configure" },
 ];
 
@@ -53,6 +55,7 @@ export const GAME_TAB_PERMS: Record<string, string[]> = {
   workshop: ["gameserver.content"],
   players: ["gameserver.console"],
   backups: ["gameserver.backup", "gameserver.schedule"],
+  databases: ["gameserver.config"],
   settings: ["gameserver.config"],
 };
 

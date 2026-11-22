@@ -229,6 +229,8 @@ const backupManifestName = ".ndl-backup.json"
 type backupManifest struct {
 	Version int         `json:"version"`
 	Scope   BackupScope `json:"scope"`
+	// Database is set when the archive holds a database dump.
+	Database bool `json:"database,omitempty"`
 }
 
 func (h *LocalHost) backupScopePath(id string) (string, error) {
