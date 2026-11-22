@@ -511,134 +511,136 @@ function DatabasePane({ id, serverRunning }: { id: string; serverRunning: boolea
       ]
     : [];
   return (
-    <div className="gs-settings">
-      <article className="gs-widget" id="gs-sec-database">
-        <header className="gs-widget-head">
-          <h2>MariaDB</h2>
-          <span className="meta">{DB_STATE_LABEL[state]}</span>
-        </header>
-        <p className="muted">
-          This server's own database. It runs beside the game on a private network only the two share, so the game reaches it at host{" "}
-          <code>mariadb</code>, port 3306, or through the Unix socket below, and nothing else can. Backups of this server include it.
-        </p>
-        {error ? <ErrorNotice error={error} /> : null}
-        {lastJob?.error ? <ErrorNotice error={`Install failed: ${lastJob.error}`} /> : null}
-        {installing ? (
-          <p className="muted" role="status">
-            Installing MariaDB, started {formatRelative(db.job?.started_at)}. The first install downloads it, which takes a minute or two.
+    <div className="gs-settings db-page">
+      <div className="db-top">
+        <article className="gs-widget" id="gs-sec-database">
+          <header className="gs-widget-head">
+            <h2>MariaDB</h2>
+            <span className="meta">{DB_STATE_LABEL[state]}</span>
+          </header>
+          <p className="muted">
+            This server's own database. It runs beside the game on a private network only the two share, so the game reaches it at host{" "}
+            <code>mariadb</code>, port 3306, or through the Unix socket below, and nothing else can. Backups of this server include it.
           </p>
-        ) : null}
-        {!installed ? (
-          <div className="gs-form">
-            <label>
-              Database name
-              <input className="field-input" value={name} onChange={(e) => setName(e.target.value)} disabled={busy || installing} spellCheck={false} />
-              <span className="field-hint">Letters, digits and _ only. The username and password are generated for you.</span>
-            </label>
-            <div className="btn-row is-flush">
-              <button
-                type="button"
-                className="btn btn-sm"
-                disabled={busy || installing || !name.trim() || name.trim() === db.database}
-                onClick={() => act(() => putGameDatabase(id, name.trim()))}
-              >
-                {db.database ? "Rename" : "Save and generate credentials"}
-              </button>
-              {db.database ? (
-                <button type="button" className="btn btn-sm btn-primary" disabled={busy || installing} onClick={() => act(() => gameDatabaseAction(id, "install"))}>
-                  Install
+          {error ? <ErrorNotice error={error} /> : null}
+          {lastJob?.error ? <ErrorNotice error={`Install failed: ${lastJob.error}`} /> : null}
+          {installing ? (
+            <p className="muted" role="status">
+              Installing MariaDB, started {formatRelative(db.job?.started_at)}. The first install downloads it, which takes a minute or two.
+            </p>
+          ) : null}
+          {!installed ? (
+            <div className="gs-form">
+              <label>
+                Database name
+                <input className="field-input" value={name} onChange={(e) => setName(e.target.value)} disabled={busy || installing} spellCheck={false} />
+                <span className="field-hint">Letters, digits and _ only. The username and password are generated for you.</span>
+              </label>
+              <div className="btn-row is-flush">
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  disabled={busy || installing || !name.trim() || name.trim() === db.database}
+                  onClick={() => act(() => putGameDatabase(id, name.trim()))}
+                >
+                  {db.database ? "Rename" : "Save and generate credentials"}
                 </button>
-              ) : null}
+                {db.database ? (
+                  <button type="button" className="btn btn-sm btn-primary" disabled={busy || installing} onClick={() => act(() => gameDatabaseAction(id, "install"))}>
+                    Install
+                  </button>
+                ) : null}
+              </div>
             </div>
-          </div>
-        ) : null}
-        {rows.length ? (
-          <dl className="kv-grid">
-            {rows.map(([k, v]) => (
-              <Fragment key={k}>
-                <dt>{k}</dt>
-                <dd>{v}</dd>
-              </Fragment>
-            ))}
-          </dl>
-        ) : null}
-        {installed ? (
-          <>
-            {state === "running" && !serverRunning ? <p className="muted">The game joins the database's network when it starts.</p> : null}
-            <div className="btn-row is-flush">
-              {state === "stopped" ? (
-                <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={() => act(() => gameDatabaseAction(id, "start"))}>
-                  Start database
-                </button>
-              ) : null}
-              {state === "running" ? (
+          ) : null}
+          {rows.length ? (
+            <dl className="db-conn">
+              {rows.map(([k, v]) => (
+                <Fragment key={k}>
+                  <dt>{k}</dt>
+                  <dd>{v}</dd>
+                </Fragment>
+              ))}
+            </dl>
+          ) : null}
+          {installed ? (
+            <>
+              {state === "running" && !serverRunning ? <p className="muted">The game joins the database's network when it starts.</p> : null}
+              <div className="btn-row is-flush">
+                {state === "stopped" ? (
+                  <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={() => act(() => gameDatabaseAction(id, "start"))}>
+                    Start database
+                  </button>
+                ) : null}
+                {state === "running" ? (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-ghost"
+                    disabled={busy}
+                    onClick={() => {
+                      if (confirmAction("Stop the database? The game loses it until it starts again, and backups fail while it is stopped.")) {
+                        act(() => gameDatabaseAction(id, "stop"));
+                      }
+                    }}
+                  >
+                    Stop database
+                  </button>
+                ) : null}
+                {state === "missing" ? (
+                  <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={() => act(() => gameDatabaseAction(id, "install"))}>
+                    Install again
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className="btn btn-sm btn-ghost"
                   disabled={busy}
                   onClick={() => {
-                    if (confirmAction("Stop the database? The game loses it until it starts again, and backups fail while it is stopped.")) {
-                      act(() => gameDatabaseAction(id, "stop"));
+                    if (confirmAction("Uninstall the database? Its data and credentials are kept, and installing again brings it back.")) {
+                      act(() => removeGameDatabase(id, false));
                     }
                   }}
                 >
-                  Stop database
+                  Uninstall
                 </button>
-              ) : null}
-              {state === "missing" ? (
-                <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={() => act(() => gameDatabaseAction(id, "install"))}>
-                  Install again
-                </button>
-              ) : null}
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost"
-                disabled={busy}
-                onClick={() => {
-                  if (confirmAction("Uninstall the database? Its data and credentials are kept, and installing again brings it back.")) {
-                    act(() => removeGameDatabase(id, false));
-                  }
-                }}
-              >
-                Uninstall
-              </button>
-            </div>
-          </>
-        ) : null}
-      </article>
-      {installed && state === "running" ? <DatabaseManager id={id} /> : null}
-      {db.database ? (
-        <article className="gs-widget" id="gs-sec-database-delete">
-          <header className="gs-widget-head">
-            <h2>Delete the database</h2>
-          </header>
-          <p className="muted">
-            Deletes the database, its data and its credentials for good. Backups taken before keep their copy. Type <code>{db.database}</code> to
-            confirm.
-          </p>
-          <div className="gs-form">
-            <input className="field-input" value={confirmDelete} onChange={(e) => setConfirmDelete(e.target.value)} aria-label="Database name to confirm" />
-            <div className="btn-row is-flush">
-              <button
-                type="button"
-                className="btn btn-sm btn-danger"
-                disabled={busy || installing || confirmDelete !== db.database}
-                onClick={() =>
-                  act(() =>
-                    removeGameDatabase(id, true, confirmDelete).then(() => {
-                      setConfirmDelete("");
-                      setName("");
-                      setPassword(null);
-                    }),
-                  )
-                }
-              >
-                Delete database
-              </button>
-            </div>
-          </div>
+              </div>
+            </>
+          ) : null}
         </article>
-      ) : null}
+        {db.database ? (
+          <article className="gs-widget" id="gs-sec-database-delete">
+            <header className="gs-widget-head">
+              <h2>Delete the database</h2>
+            </header>
+            <p className="muted">
+              Deletes the database, its data and its credentials for good. Backups taken before keep their copy. Type <code>{db.database}</code> to
+              confirm.
+            </p>
+            <div className="gs-form">
+              <input className="field-input" value={confirmDelete} onChange={(e) => setConfirmDelete(e.target.value)} aria-label="Database name to confirm" />
+              <div className="btn-row is-flush">
+                <button
+                  type="button"
+                  className="btn btn-sm btn-danger"
+                  disabled={busy || installing || confirmDelete !== db.database}
+                  onClick={() =>
+                    act(() =>
+                      removeGameDatabase(id, true, confirmDelete).then(() => {
+                        setConfirmDelete("");
+                        setName("");
+                        setPassword(null);
+                      }),
+                    )
+                  }
+                >
+                  Delete database
+                </button>
+              </div>
+            </div>
+          </article>
+        ) : null}
+      </div>
+      {installed && state === "running" ? <DatabaseManager id={id} /> : null}
     </div>
   );
 }

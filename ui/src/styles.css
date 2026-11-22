@@ -6251,3 +6251,42 @@ thead th[data-autosort="desc"]::after {
 .db-grants {
   font-size: 12px;
 }
+
+/* MariaDB tab: the database and Delete side by side, the manager below. */
+.db-page {
+  display: grid;
+  gap: var(--space-3);
+}
+.db-top {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: var(--space-3);
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .db-top {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.db-page .gs-widget > p.muted {
+  font-size: 0.8125rem;
+}
+/* Connection details: one label and value per row. */
+.db-conn {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.35rem var(--space-3);
+  margin: var(--space-3) 0;
+  font-size: 0.875rem;
+}
+.db-conn dt {
+  color: var(--fg-secondary);
+}
+.db-conn dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.db-conn code {
+  font-size: 0.8125rem;
+}
