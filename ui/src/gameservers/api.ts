@@ -674,8 +674,9 @@ export type DBUsage = {
 };
 export type DBResourcesState = { state: string; memory_mb: number; cpus: number; buffer_pool_mb: number; fast_commit?: boolean; usage?: DBUsage | null };
 
-export async function getGameDatabaseResources(id: string): Promise<DBResourcesState> {
-  return readJson(`/game-servers/${id}/database/resources`);
+/** With usage false it answers at once, without measuring what the database uses. */
+export async function getGameDatabaseResources(id: string, usage = true): Promise<DBResourcesState> {
+  return readJson(`/game-servers/${id}/database/resources${usage ? "" : "?usage=0"}`);
 }
 
 export async function putGameDatabaseResources(

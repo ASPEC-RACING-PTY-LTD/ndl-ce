@@ -80,6 +80,8 @@ type DBCall struct {
 	MaxRows int    `json:"max_rows,omitempty"`
 	// DryRun tests the SQL and keeps nothing (database_query.go).
 	DryRun bool `json:"dry_run,omitempty"`
+	// Quick, for resources, skips measuring use, which takes a moment.
+	Quick bool `json:"quick,omitempty"`
 	// Resources, for resources, changes the limits; absent, they are read.
 	Resources *DBResources `json:"resources,omitempty"`
 }

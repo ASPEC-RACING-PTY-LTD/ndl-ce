@@ -728,11 +728,26 @@ function ResourcesView({ id }: { id: string }) {
     setPool(s.buffer_pool_mb ? String(s.buffer_pool_mb) : "");
     setFast(Boolean(s.fast_commit));
   };
-  const load = useCallback(() => {
+  const [measuring, setMeasuring] = useState(false);
+  // The limits show at once; what the database uses now follows a moment
+  // later (measuring CPU takes about a quarter of a second).
+  const measure = useCallback(() => {
+    setMeasuring(true);
     getGameDatabaseResources(id)
-      .then(apply)
-      .catch((err) => setError(errText(err, "Could not read the limits")));
+      .then((full) => setState((cur) => (cur ? { ...cur, usage: full.usage } : full)))
+      .catch(() => undefined)
+      .finally(() => setMeasuring(false));
   }, [id]);
+  const load = useCallback(() => {
+    getGameDatabaseResources(id, false)
+      .then((s) => {
+        apply(s);
+        if (s.usage?.running) {
+          measure();
+        }
+      })
+      .catch((err) => setError(errText(err, "Could not read the limits")));
+  }, [id, measure]);
   useEffect(() => load(), [load]);
   if (!state) {
     return error ? <ErrorNotice error={error} /> : <p className="muted">Loading the limits</p>;
@@ -770,7 +785,8 @@ function ResourcesView({ id }: { id: string }) {
         The database runs in its own container, so these limits are its own and separate from the game server's. Changes apply at once while
         it runs.
       </p>
-      {u?.running ? (
+      {u?.running && measuring && !u.memory_limit_bytes ? <p className="muted">Measuring what it uses now…</p> : null}
+      {u?.running && u.memory_limit_bytes ? (
         <dl className="kv-grid">
           <dt>Memory in use</dt>
           <dd>

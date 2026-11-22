@@ -118,7 +118,12 @@ func (r *Runtime) dbResources(ctx context.Context, id string, c *DBConfig, call 
 			return DBReply{}, err
 		}
 	}
-	usage := r.dbUsage(ctx, id, c)
+	var usage DBUsage
+	if call.Quick {
+		usage = r.dbUsageQuick(ctx, id, c)
+	} else {
+		usage = r.dbUsage(ctx, id, c)
+	}
 	return DBReply{Config: c, State: r.dbState(ctx, id, c), Usage: &usage}, nil
 }
 
@@ -220,18 +225,15 @@ func parseDockerSize(s string) int64 {
 
 // dbUsage reads what the database uses now.
 func (r *Runtime) dbUsage(ctx context.Context, id string, c *DBConfig) DBUsage {
-	u := DBUsage{EffectiveBufferPoolMB: bufferPoolFor(c)}
-	if c.InstalledAt == nil {
-		return u
-	}
-	if out, err := r.run(ctx, r.dockerBin(), "inspect", "-f", "{{range .Mounts}}{{.Destination}} {{end}}", dbContainer(id)); err == nil {
-		u.RestartNeeded = !strings.Contains(string(out), "/etc/mysql/conf.d") || !strings.Contains(string(out), dbSocketDir)
-	}
-	if r.dbState(ctx, id, c) != "running" {
+	u := r.dbUsageQuick(ctx, id, c)
+	if !u.Running {
 		return u
 	}
 	u.Running = true
-	if out, err := r.run(ctx, r.dockerBin(), "stats", "--no-stream", "--format", "{{.CPUPerc}}|{{.MemUsage}}", dbContainer(id)); err == nil {
+	if r.cgroupUsage(ctx, id, &u) {
+		// Read straight from the kernel: about 0.25 s instead of the
+		// second docker stats takes to sample CPU.
+	} else if out, err := r.run(ctx, r.dockerBin(), "stats", "--no-stream", "--format", "{{.CPUPerc}}|{{.MemUsage}}", dbContainer(id)); err == nil {
 		parts := strings.Split(strings.TrimSpace(string(out)), "|")
 		if len(parts) == 2 {
 			u.CPUPercent, _ = strconv.ParseFloat(strings.TrimSuffix(strings.TrimSpace(parts[0]), "%"), 64)
@@ -249,4 +251,103 @@ func (r *Runtime) dbUsage(ctx context.Context, id string, c *DBConfig) DBUsage {
 		}
 	}
 	return u
+}
+
+// dbUsageQuick is what needs no sampling: whether it runs, and whether it
+// needs a restart from NDL. It answers in milliseconds.
+func (r *Runtime) dbUsageQuick(ctx context.Context, id string, c *DBConfig) DBUsage {
+	u := DBUsage{EffectiveBufferPoolMB: bufferPoolFor(c)}
+	if c.InstalledAt == nil {
+		return u
+	}
+	out, err := r.run(ctx, r.dockerBin(), "inspect", "-f", "{{.State.Running}}|{{range .Mounts}}{{.Destination}} {{end}}", dbContainer(id))
+	if err != nil {
+		return u
+	}
+	running, mounts, _ := strings.Cut(strings.TrimSpace(string(out)), "|")
+	u.RestartNeeded = !strings.Contains(mounts, "/etc/mysql/conf.d") || !strings.Contains(mounts, dbSocketDir)
+	u.Running = running == "true"
+	return u
+}
+
+// cgroupSample is the window CPU use is measured over.
+const cgroupSample = 250 * time.Millisecond
+
+// cgroupUsage reads memory and CPU use from the container's cgroup (v2),
+// the way docker stats works them out: memory is memory.current less
+// inactive file cache, CPU is time used over a short window, 100% being
+// one core. It reports false when the files cannot be read.
+func (r *Runtime) cgroupUsage(ctx context.Context, id string, u *DBUsage) bool {
+	if r.Run != nil {
+		return false
+	}
+	out, err := r.run(ctx, r.dockerBin(), "inspect", "-f", "{{.State.Pid}}", dbContainer(id))
+	if err != nil {
+		return false
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(out)))
+	if err != nil || pid <= 0 {
+		return false
+	}
+	raw, err := os.ReadFile(fmt.Sprintf("/proc/%d/cgroup", pid))
+	if err != nil {
+		return false
+	}
+	dir := ""
+	for _, line := range strings.Split(string(raw), "\n") {
+		if rest, ok := strings.CutPrefix(line, "0::"); ok {
+			dir = filepath.Join("/sys/fs/cgroup", filepath.Clean("/"+rest))
+		}
+	}
+	if dir == "" {
+		return false
+	}
+	readInt := func(name string) (int64, bool) {
+		b, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			return 0, false
+		}
+		v, err := strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64)
+		return v, err == nil
+	}
+	statField := func(name, field string) (int64, bool) {
+		b, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			return 0, false
+		}
+		for _, line := range strings.Split(string(b), "\n") {
+			if k, v, ok := strings.Cut(line, " "); ok && k == field {
+				n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+				return n, err == nil
+			}
+		}
+		return 0, false
+	}
+	cur, ok := readInt("memory.current")
+	if !ok {
+		return false
+	}
+	inactive, _ := statField("memory.stat", "inactive_file")
+	u.MemoryBytes = cur - inactive
+	if max, ok := readInt("memory.max"); ok {
+		u.MemoryLimit = max
+	}
+	cpu1, ok := statField("cpu.stat", "usage_usec")
+	if !ok {
+		return false
+	}
+	start := time.Now()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-time.After(cgroupSample):
+	}
+	cpu2, ok := statField("cpu.stat", "usage_usec")
+	if !ok {
+		return false
+	}
+	if elapsed := time.Since(start).Microseconds(); elapsed > 0 {
+		u.CPUPercent = float64(cpu2-cpu1) / float64(elapsed) * 100
+	}
+	return true
 }

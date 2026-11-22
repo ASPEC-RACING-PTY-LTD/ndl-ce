@@ -246,7 +246,9 @@ func (s *Server) getGameDatabaseResources(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	reply, err := s.gameDBCall(r.Context(), row.ID, gameserver.DBCall{Op: "resources"})
+	// ?usage=0 answers at once without measuring use (about 0.25 s).
+	quick := r.URL.Query().Get("usage") == "0"
+	reply, err := s.gameDBCall(r.Context(), row.ID, gameserver.DBCall{Op: "resources", Quick: quick})
 	if err != nil {
 		writeErr(w, http.StatusUnprocessableEntity, gameserver.HumanError(err.Error()))
 		return
