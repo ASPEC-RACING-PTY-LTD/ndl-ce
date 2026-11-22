@@ -228,6 +228,7 @@ func Run(cfg Config) error {
 	go srv.RunDDoS(runCtx)
 	go srv.RunEdge(runCtx)
 	go srv.RunUpdateHousekeeping(runCtx)
+	go srv.RunGameSchedules(runCtx)
 	go srv.RunSearchIndexer(runCtx)
 	go srv.RunWorkshopSync(runCtx)
 	go srv.RunHelix(runCtx)

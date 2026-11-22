@@ -387,7 +387,20 @@ export async function deleteGameBackup(id: string, bid: string): Promise<unknown
   return readJson(`/game-servers/${id}/backups/${bid}`, { method: "DELETE" });
 }
 
-export async function listGameSchedules(id: string): Promise<{ items: { id: string; name: string; action: string; cron: string; enabled: boolean }[] }> {
+export type GameSchedule = {
+  id: string;
+  name: string;
+  action: string;
+  cron: string;
+  payload?: string;
+  enabled: boolean;
+  last_run?: string | null;
+  next_run?: string | null;
+  /** Set when the schedule line cannot be read, so it never runs. */
+  error?: string;
+};
+
+export async function listGameSchedules(id: string): Promise<{ items: GameSchedule[] }> {
   return readJson(`/game-servers/${id}/schedules`);
 }
 

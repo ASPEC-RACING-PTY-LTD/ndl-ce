@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/appdb"
@@ -1134,7 +1135,25 @@ func (s *Server) listGameSchedules(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	items, _ := s.Store.ListGameSchedules(r.Context(), row.ID)
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+	now := s.now()
+	out := make([]map[string]any, 0, len(items))
+	for _, sch := range items {
+		var last *time.Time
+		if !sch.LastRun.IsZero() {
+			l := sch.LastRun
+			last = &l
+		}
+		valid := ""
+		if _, err := parseGameSchedule(sch.Cron); err != nil {
+			valid = err.Error()
+		}
+		out = append(out, map[string]any{
+			"id": sch.ID, "server_id": sch.ServerID, "name": sch.Name, "action": sch.Action, "cron": sch.Cron,
+			"payload": sch.Payload, "enabled": sch.Enabled, "created_at": sch.CreatedAt,
+			"last_run": last, "next_run": gameScheduleNext(sch, now), "error": valid,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": out})
 }
 
 func (s *Server) createGameSchedule(w http.ResponseWriter, r *http.Request) {
@@ -1166,6 +1185,10 @@ func (s *Server) createGameSchedule(w http.ResponseWriter, r *http.Request) {
 	if sch.Cron == "" {
 		sch.Cron = "nightly"
 	}
+	if _, err := parseGameSchedule(sch.Cron); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if err := s.Store.CreateGameSchedule(r.Context(), sch); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -1187,15 +1210,6 @@ func (s *Server) deleteGameSchedule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
-}
-
-func (s *Server) TickGameSchedules(ctx context.Context) {
-	if s.Store == nil {
-		return
-	}
-	// Schedules are cluster-scoped via their servers. Memory/Postgres list per server,
-	// so we walk known servers from events is not enough. Operators trigger fleet
-	// actions for immediate work; nightly/hourly crons run when this tick fires.
 }
 
 func (s *Server) listGameContent(w http.ResponseWriter, r *http.Request) {

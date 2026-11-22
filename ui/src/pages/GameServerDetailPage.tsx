@@ -31,6 +31,7 @@ import {
   type GameBuildState,
   type GameDatabase,
   type GameBackupScope,
+  type GameSchedule,
   type WorkshopSync,
   installGameContent,
   listGameBackups,
@@ -749,6 +750,18 @@ function BackupScopePane({ id }: { id: string }) {
   );
 }
 
+const SCHEDULE_WHEN = [
+  ["nightly", "Nightly at 03:00"],
+  ["twice-daily", "Twice a day, 00:00 and 12:00"],
+  ["0 */6 * * *", "Every 6 hours"],
+  ["hourly", "Every hour"],
+  ["weekly", "Weekly, Sunday 03:00"],
+  ["custom", "Custom cron line"],
+] as const;
+
+/** formatWhenLocal is a short local date and time. */
+const formatWhenLocal = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+
 const SCHEDULE_ACTIONS = [
   ["backup", "Back up"],
   ["restart", "Restart"],
@@ -756,10 +769,12 @@ const SCHEDULE_ACTIONS = [
 ] as const;
 
 function SchedulesPane({ id }: { id: string }) {
-  const [items, setItems] = useState<{ id: string; name: string; action: string; cron: string; payload?: string; enabled?: boolean }[]>([]);
+  const [items, setItems] = useState<GameSchedule[]>([]);
   const [name, setName] = useState("Nightly backup");
   const [action, setAction] = useState<string>("backup");
-  const [cron, setCron] = useState("nightly");
+  const [when, setWhen] = useState("nightly");
+  const [custom, setCustom] = useState("0 4 * * *");
+  const cron = when === "custom" ? custom : when;
   const [payload, setPayload] = useState("");
   const [error, setError] = useState<string | null>(null);
   const reload = useCallback(
@@ -804,8 +819,21 @@ function SchedulesPane({ id }: { id: string }) {
         </label>
         <label>
           When
-          <input className="field-input" value={cron} onChange={(e) => setCron(e.target.value)} placeholder="nightly or 0 4 * * *" required />
+          <select className="field-input" value={when} onChange={(e) => setWhen(e.target.value)}>
+            {SCHEDULE_WHEN.map(([v, label]) => (
+              <option key={v} value={v}>
+                {label}
+              </option>
+            ))}
+          </select>
         </label>
+        {when === "custom" ? (
+          <label>
+            Cron line
+            <input className="field-input" value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="0 4 * * *" required spellCheck={false} />
+            <span className="field-hint">Minute, hour, day, month, weekday. Start with TZ=Area/City for another time zone.</span>
+          </label>
+        ) : null}
         {action === "command" ? (
           <label>
             Command
@@ -816,6 +844,7 @@ function SchedulesPane({ id }: { id: string }) {
           Add schedule
         </button>
       </form>
+      <p className="field-hint">Times are in the server host's time zone ({Intl.DateTimeFormat().resolvedOptions().timeZone} in this browser) unless the line names one.</p>
       {items.length === 0 ? <p className="muted">No schedules yet.</p> : null}
       <ul className="gs-list">
         {items.map((s) => (
@@ -827,6 +856,16 @@ function SchedulesPane({ id }: { id: string }) {
                 · {s.action}
                 {s.payload ? ` "${s.payload}"` : ""} · <code>{s.cron}</code>
                 {s.enabled === false ? " · paused" : ""}
+              </span>
+              <span className="meta gs-sched-when">
+                {s.error ? (
+                  <span className="is-bad">Never runs: {s.error}</span>
+                ) : (
+                  <>
+                    {s.next_run ? `Next ${formatWhenLocal(s.next_run)}` : ""}
+                    {s.last_run ? ` · last ${formatWhenLocal(s.last_run)}` : " · not run yet"}
+                  </>
+                )}
               </span>
             </span>
             <button
