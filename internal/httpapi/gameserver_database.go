@@ -20,19 +20,19 @@ import (
 // downloads MariaDB.
 
 type gameDBView struct {
-	Supported   bool           `json:"supported"`
-	State       string         `json:"state"`
-	Database    string         `json:"database,omitempty"`
-	User        string         `json:"user,omitempty"`
-	Host        string         `json:"host,omitempty"`
-	Port        int            `json:"port,omitempty"`
-	Image       string         `json:"image,omitempty"`
-	InstalledAt *time.Time     `json:"installed_at,omitempty"`
-	Password    string         `json:"password,omitempty"`
+	Supported   bool       `json:"supported"`
+	State       string     `json:"state"`
+	Database    string     `json:"database,omitempty"`
+	User        string     `json:"user,omitempty"`
+	Host        string     `json:"host,omitempty"`
+	Port        int        `json:"port,omitempty"`
+	Image       string     `json:"image,omitempty"`
+	InstalledAt *time.Time `json:"installed_at,omitempty"`
+	Password    string     `json:"password,omitempty"`
 	// Socket is where the game can connect through a Unix socket instead
 	// of TCP, once the database runs with NDL's socket folder.
-	Socket string `json:"socket,omitempty"`
-	Job         *gameBackupJob `json:"job"`
+	Socket string         `json:"socket,omitempty"`
+	Job    *gameBackupJob `json:"job"`
 }
 
 func (s *Server) gameDBView(row appdb.GameServer, tmpl gameserver.Template, reply gameserver.DBReply, withPassword bool) gameDBView {

@@ -324,3 +324,20 @@ func TestDatabaseResourcesLimitsAndConfig(t *testing.T) {
 		t.Fatalf("small pool %d", got)
 	}
 }
+
+func TestDryRunClassifiesStatements(t *testing.T) {
+	for stmt, want := range map[string]string{
+		"select 1":                             "SELECT",
+		"  -- note\n/* x */ (SELECT 2)":        "SELECT",
+		"# c\nUpdate p set a=1":                "UPDATE",
+		"CREATE TABLE t (id int)":              "CREATE",
+		"with x as (select 1) select * from x": "WITH",
+	} {
+		if got := firstKeyword(stmt); got != want {
+			t.Errorf("%q = %q, want %q", stmt, got, want)
+		}
+	}
+	if got := sqlQuote("it's\\x"); got != `'it\'s\\x'` {
+		t.Fatalf("quote %s", got)
+	}
+}

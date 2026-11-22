@@ -50,6 +50,10 @@ type DBStatementResult struct {
 	// Affected is ROW_COUNT(): rows changed by INSERT, UPDATE, DELETE and
 	// the like, -1 for a statement that returned rows.
 	Affected int64 `json:"affected"`
+	// Checked, in a dry run, says how the statement was tested:
+	// "rolled_back" (it ran, then everything was undone) or "syntax" (it
+	// was only checked, because MariaDB could not undo it).
+	Checked string `json:"checked,omitempty"`
 }
 
 // DBQueryResult is a run of one or more statements. A failing statement
@@ -58,7 +62,9 @@ type DBQueryResult struct {
 	Statements []DBStatementResult `json:"statements"`
 	Error      string              `json:"error,omitempty"`
 	ErrorIndex int                 `json:"error_index"`
-	ElapsedMS  int64               `json:"elapsed_ms"`
+	// DryRun: nothing was kept (see DBStatementResult.Checked).
+	DryRun    bool  `json:"dry_run,omitempty"`
+	ElapsedMS int64 `json:"elapsed_ms"`
 }
 
 // SplitSQL splits a script into statements at semicolons outside quotes,
@@ -167,18 +173,46 @@ func (r *Runtime) dbQuery(ctx context.Context, id string, call DBCall) (*DBQuery
 	if maxRows > maxQueryRows {
 		maxRows = maxQueryRows
 	}
-	var script strings.Builder
-	fmt.Fprintf(&script, "SET SESSION max_statement_time=%d;\n", queryStatementSeconds)
-	for i, s := range stmts {
-		script.WriteString(s)
-		fmt.Fprintf(&script, ";\nSELECT ROW_COUNT() AS %s, %d AS %s;\n", queryMarker, i, queryMarkerStmt)
-	}
 	ctx, cancel := context.WithTimeout(ctx, queryTimeout)
 	defer cancel()
+	var modes []string
+	if call.DryRun {
+		modes = r.dryRunModes(ctx, id, db, stmts)
+	}
+	var script strings.Builder
+	fmt.Fprintf(&script, "SET SESSION max_statement_time=%d;\n", queryStatementSeconds)
+	if call.DryRun {
+		script.WriteString("START TRANSACTION;\n")
+	}
+	for i, s := range stmts {
+		if call.DryRun && modes[i] == "syntax" {
+			// PREPARE checks a statement without running it.
+			fmt.Fprintf(&script, "PREPARE __ndl_dry FROM %s;\nDEALLOCATE PREPARE __ndl_dry", sqlQuote(s))
+		} else {
+			script.WriteString(s)
+		}
+		fmt.Fprintf(&script, ";\nSELECT ROW_COUNT() AS %s, %d AS %s;\n", queryMarker, i, queryMarkerStmt)
+	}
+	if call.DryRun {
+		// Also undone if the run stops early: the connection closes with
+		// the transaction open.
+		script.WriteString("ROLLBACK;\n")
+	}
 	start := time.Now()
 	stdout, stderr, runErr := r.runQuery(ctx, id, db, script.String())
 	res := &DBQueryResult{Statements: []DBStatementResult{}, ErrorIndex: -1}
 	parseErr := parseQueryXML(stdout, stmts, maxRows, res)
+	if call.DryRun {
+		for i := range res.Statements {
+			if i < len(modes) {
+				res.Statements[i].Checked = modes[i]
+				if modes[i] == "syntax" {
+					res.Statements[i].Affected = 0
+				}
+			}
+		}
+		res.DryRun = true
+	}
 	res.ElapsedMS = time.Since(start).Milliseconds()
 	switch {
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
@@ -363,4 +397,51 @@ func deref(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// dryRunData are statements a dry run may really run, inside a
+// transaction it rolls back. Anything else (CREATE, ALTER, DROP, GRANT
+// and the like commit at once in MariaDB) is only checked.
+var dryRunData = map[string]bool{
+	"SELECT": true, "INSERT": true, "UPDATE": true, "DELETE": true, "REPLACE": true,
+	"WITH": true, "SHOW": true, "DESCRIBE": true, "DESC": true, "EXPLAIN": true, "VALUES": true, "TABLE": true,
+}
+
+var leadingNoise = regexp.MustCompile(`^(?:\s+|--[^\n]*\n?|#[^\n]*\n?|/\*.*?\*/|\()+`)
+
+// firstKeyword is a statement's first word, upper-cased, past comments.
+func firstKeyword(stmt string) string {
+	rest := leadingNoise.ReplaceAllString(stmt, "")
+	end := strings.IndexFunc(rest, func(r rune) bool { return !(r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r == '_') })
+	if end < 0 {
+		end = len(rest)
+	}
+	return strings.ToUpper(rest[:end])
+}
+
+// dryRunModes says how a dry run tests each statement. Data statements
+// run and are rolled back, unless a table that cannot roll back (MyISAM,
+// Aria and the like) exists: then they are only checked too.
+func (r *Runtime) dryRunModes(ctx context.Context, id, db string, stmts []string) []string {
+	canRun := true
+	out, _, err := r.runQuery(ctx, id, db, "SELECT COUNT(*) AS n FROM information_schema.TABLES WHERE TABLE_TYPE = 'BASE TABLE' AND ENGINE <> 'InnoDB' AND TABLE_SCHEMA NOT IN ('mysql','information_schema','performance_schema','sys');\nSELECT ROW_COUNT() AS "+queryMarker+", 0 AS "+queryMarkerStmt+";\n")
+	check := &DBQueryResult{}
+	if err != nil || parseQueryXML(out, []string{""}, 1, check) != nil || len(check.Statements) == 0 || len(check.Statements[0].Sets) == 0 ||
+		len(check.Statements[0].Sets[0].Rows) == 0 || deref(check.Statements[0].Sets[0].Rows[0][0]) != "0" {
+		canRun = false
+	}
+	modes := make([]string, len(stmts))
+	for i, s := range stmts {
+		if canRun && dryRunData[firstKeyword(s)] {
+			modes[i] = "rolled_back"
+		} else {
+			modes[i] = "syntax"
+		}
+	}
+	return modes
+}
+
+// sqlQuote is a SQL string literal.
+func sqlQuote(s string) string {
+	return "'" + strings.NewReplacer(`\`, `\\`, `'`, `\'`, "\x00", `\0`, "\n", `\n`, "\r", `\r`, "\x1a", `\Z`).Replace(s) + "'"
 }

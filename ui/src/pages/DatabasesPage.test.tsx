@@ -59,7 +59,7 @@ describe("DatabasesPage", () => {
     fireEvent.click(screen.getByLabelText("Select JvS"));
     fireEvent.change(screen.getByLabelText(/SQL to run in each selected database/i), { target: { value: "UPDATE t SET x=1" } });
     fireEvent.click(screen.getByRole("button", { name: /run in 1 database$/i }));
-    await waitFor(() => expect(api.bulkDatabases).toHaveBeenCalledWith(["s1"], "query", "UPDATE t SET x=1"));
+    await waitFor(() => expect(api.bulkDatabases).toHaveBeenCalledWith(["s1"], "query", "UPDATE t SET x=1", false));
     expect(await screen.findByText(/4 rows affected/)).toBeVisible();
   });
 
@@ -73,5 +73,36 @@ describe("DatabasesPage", () => {
     // One real NULL (styled) and one text value.
     expect(cells.filter((c) => c.classList.contains("db-null"))).toHaveLength(1);
     expect(cells.filter((c) => !c.classList.contains("db-null"))).toHaveLength(1);
+  });
+});
+
+describe("DatabasesPage dry runs", () => {
+  it("tests bulk SQL without asking, and says nothing was kept", async () => {
+    api.bulkDatabases.mockResolvedValue({
+      results: [
+        {
+          server_id: "s1",
+          server_name: "JvS",
+          ok: true,
+          query: {
+            dry_run: true,
+            statements: [
+              { sql: "UPDATE t SET x=1", sets: [], affected: 4, checked: "rolled_back" },
+              { sql: "DROP TABLE t", sets: [], affected: 0, checked: "syntax" },
+            ],
+            error_index: -1,
+            elapsed_ms: 3,
+          },
+        },
+      ],
+    });
+    render(<DatabasesPage />);
+    fireEvent.click(await screen.findByLabelText("Select JvS"));
+    fireEvent.change(screen.getByLabelText(/SQL to run in each selected database/i), { target: { value: "UPDATE t SET x=1; DROP TABLE t" } });
+    fireEvent.click(screen.getByRole("button", { name: /test \(dry run\)/i }));
+    await waitFor(() => expect(api.bulkDatabases).toHaveBeenCalledWith(["s1"], "query", "UPDATE t SET x=1; DROP TABLE t", true));
+    expect(await screen.findByText("Test run: nothing was kept.")).toBeVisible();
+    expect(screen.getByText("4 rows would be affected.")).toBeVisible();
+    expect(screen.getByText(/Syntax checked only/)).toBeVisible();
   });
 });

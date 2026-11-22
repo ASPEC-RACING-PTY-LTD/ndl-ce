@@ -4723,6 +4723,10 @@ export type GetGameDatabaseResourcesPath = "/api/v1/game-servers/{id}/database/r
 
 export type RestartGameDatabasePath = "/api/v1/game-servers/{id}/database/restart";
 
+export type ListGameDatabaseIndexesPath = "/api/v1/game-servers/{id}/database/indexes";
+
+export type DropGameDatabaseIndexPath = "/api/v1/game-servers/{id}/database/indexes/drop";
+
 export type GetGameBackupScopePath = "/api/v1/game-servers/{id}/backup-scope";
 
 export type DeleteGameBackupPath = "/api/v1/game-servers/{id}/backups/{bid}";

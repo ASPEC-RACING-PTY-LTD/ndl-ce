@@ -5,10 +5,13 @@ import { confirmAction } from "../confirm";
 import { formatBytes } from "../format";
 import { Segmented } from "../ui/Segmented";
 import {
+  createGameDatabaseIndex,
   createGameDatabaseUser,
+  dropGameDatabaseIndex,
   dropGameDatabaseUser,
   getGameDatabaseSchema,
   getGameDatabaseTable,
+  getGameDatabaseIndexes,
   getGameDatabaseResources,
   getGameDatabaseUsers,
   putGameDatabaseResources,
@@ -16,6 +19,7 @@ import {
   putGameDatabaseGrants,
   runGameDatabaseQuery,
   setGameDatabaseUserPassword,
+  type DBIndexes,
   type DBQueryResult,
   type DBResourcesState,
   type DBResultSet,
@@ -29,7 +33,7 @@ import {
 // tables and rows, a SQL console, and users with their privileges. The
 // MariaDB tab and Administration > Databases both show it.
 
-type View = "browse" | "sql" | "users" | "resources";
+type View = "browse" | "sql" | "users" | "resources" | "indexes";
 
 const errText = (err: unknown, fallback: string) => (err instanceof ApiError || err instanceof Error ? err.message : fallback);
 
@@ -40,7 +44,12 @@ export function DatabaseManager({ id }: { id: string }) {
   return (
     <article className="gs-widget db-manager" id="gs-sec-database-manager">
       <header className="gs-widget-head">
-        <h2>Manage</h2>
+        <div className="db-head-title">
+          <h2>Manage</h2>
+          <button type="button" className="btn btn-sm btn-ghost" aria-pressed={view === "indexes"} onClick={() => setView("indexes")}>
+            Indexes
+          </button>
+        </div>
         <Segmented<View>
           ariaLabel="Database manager view"
           value={view}
@@ -67,6 +76,7 @@ export function DatabaseManager({ id }: { id: string }) {
       {view === "sql" ? <SQLView id={id} database={database} sql={sql} onSQL={setSQL} /> : null}
       {view === "users" ? <UsersView id={id} /> : null}
       {view === "resources" ? <ResourcesView id={id} /> : null}
+      {view === "indexes" ? <IndexesView id={id} database={database} onBack={() => setView("browse")} /> : null}
     </article>
   );
 }
@@ -301,13 +311,13 @@ function SQLView({ id, database, sql, onSQL }: { id: string; database: string; s
   const [result, setResult] = useState<DBQueryResult | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const run = () => {
+  const run = (dryRun = false) => {
     if (!sql.trim()) {
       return;
     }
     setRunning(true);
     setError(null);
-    runGameDatabaseQuery(id, sql, database)
+    runGameDatabaseQuery(id, sql, database, 500, dryRun)
       .then(setResult)
       .catch((err) => setError(errText(err, "Could not run the SQL")))
       .finally(() => setRunning(false));
@@ -326,20 +336,27 @@ function SQLView({ id, database, sql, onSQL }: { id: string; database: string; s
           onKeyDown={(e) => {
             if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
               e.preventDefault();
-              run();
+              run(e.shiftKey);
             }
           }}
         />
         <span className="field-hint">
-          Separate statements with ;. They run in order as the database's root user, and the first error stops the run. Ctrl+Enter runs.
+          Separate statements with ;. They run in order as the database's root user, and the first error stops the run. Ctrl+Enter runs, Ctrl+Shift+Enter tests.
           Each run is recorded on the server's activity, with passwords taken out.
         </span>
       </label>
       <div className="btn-row is-flush">
-        <button type="button" className="btn btn-sm btn-primary" onClick={run} disabled={running || !sql.trim()}>
+        <button type="button" className="btn btn-sm" onClick={() => run(true)} disabled={running || !sql.trim()} title="Runs it and undoes everything">
+          Test (dry run)
+        </button>
+        <button type="button" className="btn btn-sm btn-primary" onClick={() => run()} disabled={running || !sql.trim()}>
           {running ? "Running…" : "Run"}
         </button>
       </div>
+      <p className="field-hint">
+        Test runs data statements (SELECT, INSERT, UPDATE, DELETE and the like) for real inside a transaction, shows what they did, then undoes
+        it all. MariaDB cannot undo CREATE, ALTER, DROP, GRANT and similar, so a test only checks their syntax. Nothing is kept either way.
+      </p>
       {error ? <ErrorNotice error={error} /> : null}
       {result ? <QueryResultView result={result} /> : null}
     </div>
@@ -349,16 +366,25 @@ function SQLView({ id, database, sql, onSQL }: { id: string; database: string; s
 export function QueryResultView({ result }: { result: DBQueryResult }) {
   return (
     <div className="db-results">
+      {result.dry_run ? (
+        <div className="banner" role="status">
+          <p>Test run: nothing was kept.</p>
+        </div>
+      ) : null}
       <p className="meta">
-        {result.statements.length} statement{result.statements.length === 1 ? "" : "s"} ran in {result.elapsed_ms} ms
+        {result.statements.length} statement{result.statements.length === 1 ? "" : "s"} {result.dry_run ? "tested" : "ran"} in {result.elapsed_ms} ms
       </p>
       {result.statements.map((st, i) => (
         <section key={i} className="db-statement">
           <pre className="db-statement-sql">{st.sql}</pre>
+          {st.checked === "rolled_back" ? <p className="meta">Ran, then undone.</p> : null}
+          {st.checked === "syntax" ? <p className="meta">Syntax checked only: MariaDB cannot undo this statement, so it was not run.</p> : null}
           {st.sets.length === 0 ? (
-            <p className="muted">
-              {st.affected >= 0 ? `${st.affected} row${st.affected === 1 ? "" : "s"} affected.` : "Done."}
-            </p>
+            st.checked === "syntax" ? null : (
+              <p className="muted">
+                {st.affected >= 0 ? `${st.affected} row${st.affected === 1 ? "" : "s"} ${result.dry_run ? "would be affected" : "affected"}.` : "Done."}
+              </p>
+            )
           ) : (
             st.sets.map((set: DBResultSet, j) => (
               <Fragment key={j}>
@@ -378,6 +404,10 @@ export function QueryResultView({ result }: { result: DBQueryResult }) {
 }
 
 /* ---------------- Users & privileges ---------------- */
+
+// MariaDB's internal accounts stay hidden; root and the users made here
+// show.
+const HIDDEN_DB_USERS = new Set(["healthcheck", "mariadb.sys", "PUBLIC"]);
 
 function UsersView({ id }: { id: string }) {
   const [data, setData] = useState<DBUsers | null>(null);
@@ -450,7 +480,7 @@ function UsersView({ id }: { id: string }) {
             </tr>
           </thead>
           <tbody>
-            {data.users.map((u) => (
+            {data.users.filter((u) => !HIDDEN_DB_USERS.has(u.user)).map((u) => (
               <tr key={`${u.user}@${u.host}`}>
                 <td>
                   <code>{u.user}</code>
@@ -804,6 +834,187 @@ function ResourcesView({ id }: { id: string }) {
           Restart database
         </button>
       </div>
+    </div>
+  );
+}
+
+/* ---------------- Indexes ---------------- */
+
+// IndexesView lists a table's indexes, adds new ones and removes them.
+function IndexesView({ id, database, onBack }: { id: string; database: string; onBack: () => void }) {
+  const [schema, setSchema] = useState<DBSchema | null>(null);
+  const [table, setTable] = useState("");
+  const [data, setData] = useState<DBIndexes | null>(null);
+  const [name, setName] = useState("");
+  const [kind, setKind] = useState<"index" | "unique" | "fulltext">("index");
+  const [cols, setCols] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    getGameDatabaseSchema(id, database)
+      .then((s) => {
+        setSchema(s);
+        setTable((cur) => cur || s.tables.find((t) => !t.view)?.name || "");
+      })
+      .catch((err) => setError(errText(err, "Could not read the tables")));
+  }, [id, database]);
+  const db = schema?.database ?? database;
+  const load = useCallback(() => {
+    if (!table) {
+      setData(null);
+      return;
+    }
+    getGameDatabaseIndexes(id, db, table)
+      .then(setData)
+      .catch((err) => setError(errText(err, "Could not read the indexes")));
+  }, [id, db, table]);
+  useEffect(() => {
+    setCols([]);
+    load();
+  }, [load]);
+  const act = (fn: () => Promise<unknown>, done: string) => {
+    setBusy(true);
+    setError(null);
+    setNote(null);
+    fn()
+      .then(() => {
+        setNote(done);
+        load();
+      })
+      .catch((err) => setError(errText(err, "Action failed")))
+      .finally(() => setBusy(false));
+  };
+  const toggleCol = (c: string) => setCols(cols.includes(c) ? cols.filter((x) => x !== c) : [...cols, c]);
+  return (
+    <div className="db-indexes">
+      <div className="db-toolbar">
+        <button type="button" className="btn btn-sm btn-ghost" onClick={onBack}>
+          ← Back
+        </button>
+        <label className="db-inline">
+          Table
+          <select className="field-input" value={table} onChange={(e) => setTable(e.target.value)}>
+            {(schema?.tables ?? [])
+              .filter((t) => !t.view)
+              .map((t) => (
+                <option key={t.name} value={t.name}>
+                  {t.name}
+                </option>
+              ))}
+          </select>
+        </label>
+        <span className="meta">in {db}</span>
+      </div>
+      {error ? <ErrorNotice error={error} /> : null}
+      {note ? (
+        <p className="muted" role="status">
+          {note}
+        </p>
+      ) : null}
+      {schema && schema.tables.filter((t) => !t.view).length === 0 ? <p className="muted">No tables in {db} yet.</p> : null}
+      {data ? (
+        <>
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Index</th>
+                  <th>Columns</th>
+                  <th>Kind</th>
+                  <th>Distinct values (about)</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {data.indexes.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="muted">
+                      No indexes. Every lookup on this table reads all of it.
+                    </td>
+                  </tr>
+                ) : (
+                  data.indexes.map((ix) => (
+                    <tr key={ix.name}>
+                      <td>
+                        <code>{ix.name}</code>
+                      </td>
+                      <td>{ix.columns.join(", ")}</td>
+                      <td>{ix.primary ? "Primary key" : ix.type === "FULLTEXT" ? "Full text" : ix.unique ? "Unique" : "Index"}</td>
+                      <td>{ix.cardinality}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-ghost"
+                          disabled={busy}
+                          onClick={() => {
+                            const warn = ix.primary
+                              ? `Remove the primary key of ${table}? Rows are then no longer unique by ${ix.columns.join(", ")}, and the game may rely on it.`
+                              : `Remove the index ${ix.name} from ${table}? Lookups it sped up get slower.`;
+                            if (confirmAction(warn)) {
+                              act(() => dropGameDatabaseIndex(id, db, table, ix.name), `Removed ${ix.name}.`);
+                            }
+                          }}
+                        >
+                          Remove
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+          <section className="gs-form db-panel">
+            <h3>New index on {table}</h3>
+            <div className="gs-form-grid">
+              <label>
+                Name
+                <input className="field-input" value={name} placeholder={cols.length ? `idx_${cols.join("_")}` : "idx_name"} onChange={(e) => setName(e.target.value)} spellCheck={false} />
+              </label>
+              <label>
+                Kind
+                <select className="field-input" value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}>
+                  <option value="index">Index (faster lookups)</option>
+                  <option value="unique">Unique (no two rows alike)</option>
+                  <option value="fulltext">Full text (word search in text)</option>
+                </select>
+              </label>
+            </div>
+            <p className="field-hint">Columns, in the order you tick them. Put the column you filter on most first.</p>
+            <div className="db-priv-grid">
+              {data.columns.map((c) => (
+                <label key={c} className="db-check">
+                  <input type="checkbox" checked={cols.includes(c)} onChange={() => toggleCol(c)} />
+                  {c}
+                  {cols.includes(c) ? <span className="meta"> ({cols.indexOf(c) + 1})</span> : null}
+                </label>
+              ))}
+            </div>
+            <div className="btn-row is-flush">
+              <button
+                type="button"
+                className="btn btn-sm btn-primary"
+                disabled={busy || cols.length === 0}
+                onClick={() => {
+                  const indexName = name.trim() || `idx_${cols.join("_")}`.slice(0, 64);
+                  act(
+                    () =>
+                      createGameDatabaseIndex(id, { database: db, table, name: indexName, columns: cols, kind }).then(() => {
+                        setName("");
+                        setCols([]);
+                      }),
+                    `Added ${indexName}.`,
+                  );
+                }}
+              >
+                {busy ? "Working…" : "Add index"}
+              </button>
+            </div>
+            <p className="field-hint">Adding an index to a big table takes a while; MariaDB keeps the table usable while it builds.</p>
+          </section>
+        </>
+      ) : null}
     </div>
   );
 }

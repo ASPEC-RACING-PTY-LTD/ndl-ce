@@ -561,8 +561,8 @@ export async function checkWorkshopSync(id: string): Promise<WorkshopSync> {
 /* ---------------- Database manager ---------------- */
 
 export type DBResultSet = { columns: string[]; rows: (string | null)[][]; row_count: number; truncated?: boolean };
-export type DBStatementResult = { sql: string; sets: DBResultSet[]; affected: number };
-export type DBQueryResult = { statements: DBStatementResult[]; error?: string; error_index: number; elapsed_ms: number };
+export type DBStatementResult = { sql: string; sets: DBResultSet[]; affected: number; checked?: "rolled_back" | "syntax" };
+export type DBQueryResult = { statements: DBStatementResult[]; error?: string; error_index: number; elapsed_ms: number; dry_run?: boolean };
 export type DBTable = { name: string; engine: string; rows: number; data_bytes: number; index_bytes: number; comment?: string; view?: boolean };
 export type DBSchema = { database: string; server_database: string; databases: string[]; tables: DBTable[] };
 export type DBColumn = { name: string; type: string; nullable: boolean; key?: string; default: string | null; extra?: string };
@@ -570,8 +570,26 @@ export type DBTablePage = { database: string; table: string; columns: DBColumn[]
 export type DBUser = { user: string; host: string; grants: string[]; protected?: boolean; server?: boolean; privileges: Record<string, string[]> };
 export type DBUsers = { users: DBUser[]; privileges: string[]; databases: string[]; server_database: string };
 
-export async function runGameDatabaseQuery(id: string, sql: string, database = "", maxRows = 500): Promise<DBQueryResult> {
-  return readJson(`/game-servers/${id}/database/query`, { method: "POST", body: JSON.stringify({ sql, database, max_rows: maxRows }) });
+export async function runGameDatabaseQuery(id: string, sql: string, database = "", maxRows = 500, dryRun = false): Promise<DBQueryResult> {
+  return readJson(`/game-servers/${id}/database/query`, { method: "POST", body: JSON.stringify({ sql, database, max_rows: maxRows, dry_run: dryRun }) });
+}
+
+export type DBIndex = { name: string; columns: string[]; unique: boolean; type: string; primary?: boolean; comment?: string; cardinality: number };
+export type DBIndexes = { database: string; table: string; columns: string[]; indexes: DBIndex[] };
+
+export async function getGameDatabaseIndexes(id: string, database: string, table: string): Promise<DBIndexes> {
+  return readJson(`/game-servers/${id}/database/indexes?${new URLSearchParams({ database, table }).toString()}`);
+}
+
+export async function createGameDatabaseIndex(
+  id: string,
+  body: { database: string; table: string; name: string; columns: string[]; kind: "index" | "unique" | "fulltext" },
+): Promise<{ sql: string }> {
+  return readJson(`/game-servers/${id}/database/indexes`, { method: "POST", body: JSON.stringify(body) });
+}
+
+export async function dropGameDatabaseIndex(id: string, database: string, table: string, name: string): Promise<unknown> {
+  return readJson(`/game-servers/${id}/database/indexes/drop`, { method: "POST", body: JSON.stringify({ database, table, name }) });
 }
 
 export async function getGameDatabaseSchema(id: string, database = ""): Promise<DBSchema> {
@@ -635,8 +653,13 @@ export async function listAllDatabases(): Promise<{ items: GlobalDatabase[] }> {
 
 export type BulkDBResult = { server_id: string; server_name: string; ok: boolean; error?: string; state?: string; query?: DBQueryResult };
 
-export async function bulkDatabases(serverIds: string[], action: "start" | "stop" | "restart" | "query", sql = ""): Promise<{ results: BulkDBResult[] }> {
-  return readJson(`/databases/bulk`, { method: "POST", body: JSON.stringify({ server_ids: serverIds, action, sql }) });
+export async function bulkDatabases(
+  serverIds: string[],
+  action: "start" | "stop" | "restart" | "query",
+  sql = "",
+  dryRun = false,
+): Promise<{ results: BulkDBResult[] }> {
+  return readJson(`/databases/bulk`, { method: "POST", body: JSON.stringify({ server_ids: serverIds, action, sql, dry_run: dryRun }) });
 }
 
 export type DBUsage = {

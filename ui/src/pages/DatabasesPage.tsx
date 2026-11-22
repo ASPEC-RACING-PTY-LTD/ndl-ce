@@ -45,17 +45,17 @@ export function DatabasesPage() {
     }
     setSelected(next);
   };
-  const bulk = (action: "start" | "stop" | "restart" | "query") => {
+  const bulk = (action: "start" | "stop" | "restart" | "query", dryRun = false) => {
     const ids = [...selected];
     const names = (items ?? []).filter((d) => selected.has(d.server_id)).map((d) => d.server_name);
     const verb = { start: "Start", stop: "Stop", restart: "Restart", query: "" }[action];
     const what = action === "query" ? `Run this SQL in ${ids.length} database(s): ${names.join(", ")}?` : `${verb} ${ids.length} database(s): ${names.join(", ")}?`;
-    if (!confirmAction(what)) {
+    if (!dryRun && !confirmAction(what)) {
       return;
     }
     setBusy(true);
     setError(null);
-    bulkDatabases(ids, action, sql)
+    bulkDatabases(ids, action, sql, dryRun)
       .then((r) => {
         setResults(r.results);
         load();
@@ -183,6 +183,9 @@ export function DatabasesPage() {
               <span className="field-hint">Runs in each database in turn, as its root user. A failure in one does not stop the others.</span>
             </label>
             <div className="btn-row is-flush">
+              <button type="button" className="btn btn-sm" disabled={busy || selected.size === 0 || !sql.trim()} onClick={() => bulk("query", true)}>
+                Test (dry run)
+              </button>
               <button type="button" className="btn btn-sm btn-primary" disabled={busy || selected.size === 0 || !sql.trim()} onClick={() => bulk("query")}>
                 {busy ? "Running…" : `Run in ${selected.size} database${selected.size === 1 ? "" : "s"}`}
               </button>

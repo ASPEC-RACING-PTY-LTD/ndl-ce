@@ -594,7 +594,8 @@ function DatabasePane({ id, serverRunning }: { id: string; serverRunning: boolea
                 <button
                   type="button"
                   className="btn btn-sm btn-ghost"
-                  disabled={busy}
+                  disabled={busy || state === "running"}
+                  title={state === "running" ? "Stop the database first" : undefined}
                   onClick={() => {
                     if (confirmAction("Uninstall the database? Its data and credentials are kept, and installing again brings it back.")) {
                       act(() => removeGameDatabase(id, false));

@@ -96,6 +96,7 @@ func (s *Server) bulkDatabases(w http.ResponseWriter, r *http.Request) {
 		ServerIDs []string `json:"server_ids"`
 		Action    string   `json:"action"`
 		SQL       string   `json:"sql"`
+		DryRun    bool     `json:"dry_run"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid JSON")
@@ -130,7 +131,7 @@ func (s *Server) bulkDatabases(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if req.Action == "query" {
-			q, err := s.dbRun(r.Context(), id, "", req.SQL, 200)
+			q, err := s.dbRunMode(r.Context(), id, "", req.SQL, 200, req.DryRun)
 			if err != nil {
 				res.Error = gameserver.HumanError(err.Error())
 			} else {
@@ -138,7 +139,11 @@ func (s *Server) bulkDatabases(w http.ResponseWriter, r *http.Request) {
 				if q.Error != "" {
 					res.Error = q.Error
 				}
-				s.noteDBQuery(r, p, id, "(bulk)", req.SQL, q)
+				if req.DryRun {
+					s.noteGame(r, p, id, "database.query", "SQL tested (bulk, nothing kept)", clipGame(redactSQL(strings.TrimSpace(req.SQL)), 600))
+				} else {
+					s.noteDBQuery(r, p, id, "(bulk)", req.SQL, q)
+				}
 			}
 		} else {
 			reply, err := s.gameDBCall(r.Context(), id, gameserver.DBCall{Op: req.Action})

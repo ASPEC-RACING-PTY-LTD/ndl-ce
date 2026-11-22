@@ -5864,6 +5864,74 @@ paths:
                 $ref: "#/components/schemas/GameServerEnvelope"
         "422":
           description: The change could not be made
+  /game-servers/{id}/database/indexes:
+    get:
+      operationId: listGameDatabaseIndexes
+      summary: A table's indexes
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerEnvelope"
+        "422":
+          description: The request failed in MariaDB
+    post:
+      operationId: createGameDatabaseIndex
+      summary: Add an index to a table
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GameServerRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerEnvelope"
+        "422":
+          description: The request failed in MariaDB
+  /game-servers/{id}/database/indexes/drop:
+    post:
+      operationId: dropGameDatabaseIndex
+      summary: Remove an index from a table
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GameServerRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerEnvelope"
+        "422":
+          description: The request failed in MariaDB
   /game-servers/{id}/backup-scope:
     get:
       operationId: getGameBackupScope
