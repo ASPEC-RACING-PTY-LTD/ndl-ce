@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -432,5 +433,84 @@ func TestGameCatalogueSearchAndRequiredFields(t *testing.T) {
 	_ = res.Body.Close()
 	if res.StatusCode != http.StatusBadGateway || !strings.Contains(string(raw), "Klei") {
 		t.Fatalf("dst start without token %d %s", res.StatusCode, raw)
+	}
+}
+
+func TestGameServerStartsWithItsSavedStartupCommand(t *testing.T) {
+	s, mem, token := testServer(t)
+	rt := gameserver.NewRuntime(t.TempDir())
+	var mu sync.Mutex
+	var runs []string
+	rt.Run = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		mu.Lock()
+		runs = append(runs, joined)
+		mu.Unlock()
+		if strings.Contains(joined, "run") && !strings.Contains(joined, "--rm") {
+			return []byte("cid-test"), nil
+		}
+		if strings.Contains(joined, "inspect") {
+			return []byte("true"), nil
+		}
+		return []byte("ok"), nil
+	}
+	s.Game = rt
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	cluster, _ := mem.GetCluster(context.Background())
+	enableGameServers(t, mem, cluster.ID)
+	call := func(method, path, body string) (int, map[string]any) {
+		req, _ := http.NewRequest(method, ts.URL+path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+		res, err := ts.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, _ := io.ReadAll(res.Body)
+		_ = res.Body.Close()
+		var out map[string]any
+		_ = json.Unmarshal(raw, &out)
+		return res.StatusCode, out
+	}
+	code, created := call("POST", "/api/v1/game-servers", `{"name":"GMod","template_id":"ndl-gmod"}`)
+	if code != http.StatusAccepted {
+		t.Fatalf("create %d %v", code, created)
+	}
+	id, _ := created["id"].(string)
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		row, _ := mem.GetGameServer(context.Background(), cluster.ID, id)
+		if row != nil && row.Status == gameserver.StatusReady {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("install did not finish: %+v", row)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if code, out := call("PUT", "/api/v1/game-servers/"+id+"/startup", `{"startup":"./srcds_run_x64 -game garrysmod -port {{SERVER_PORT}}"}`); code != http.StatusOK {
+		t.Fatalf("save startup %d %v", code, out)
+	}
+	mu.Lock()
+	runs = nil
+	mu.Unlock()
+	if code, out := call("POST", "/api/v1/game-servers/"+id+"/start", `{}`); code != http.StatusOK {
+		t.Fatalf("start %d %v", code, out)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	found := false
+	for _, r := range runs {
+		if strings.Contains(r, "./srcds_run_x64 -game garrysmod -port 27015") {
+			found = true
+		}
+		if strings.Contains(r, "./srcds_run ") {
+			t.Fatalf("started with the template's command: %s", r)
+		}
+	}
+	if !found {
+		t.Fatalf("saved startup command not used; runs: %v", runs)
 	}
 }

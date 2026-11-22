@@ -540,7 +540,13 @@ func (s *Server) startGame(ctx context.Context, rt gameserver.Host, row *appdb.G
 			env["WORKSHOP_COLLECTION"] = id
 		}
 	}
-	startup := gameserver.ExpandStartup(tmpl.Startup, env, gameserver.MemoryMB(row.MemoryBytes), gameserver.PrimaryPort(ports))
+	// The server's own startup command, as saved on its Startup tab, wins
+	// over the template's. A server is created with the template's.
+	startCmd := tmpl.Startup
+	if strings.TrimSpace(row.Startup) != "" {
+		startCmd = row.Startup
+	}
+	startup := gameserver.ExpandStartup(startCmd, env, gameserver.MemoryMB(row.MemoryBytes), gameserver.PrimaryPort(ports))
 	cid, err := rt.Start(ctx, gameserver.RunSpec{
 		ID: row.ID, Image: row.Image, Startup: startup, Env: env, Ports: ports,
 		CPUs: row.CPUs, MemoryBytes: row.MemoryBytes, WorkDir: tmpl.WorkingDir,
