@@ -58,8 +58,8 @@ func CollectHostView(root string) (HostView, error) {
 		view.Ifaces = append(view.Ifaces, iface)
 	}
 	attachLiveAddresses(&view)
-	routeIf, gw := defaultIPv4Route(filepath.Join(root, "proc/net/route"))
-	view.DefaultRouteIf = firstNonEmpty(routeIf, ipv6DefaultIf(filepath.Join(root, "proc/net/ipv6_route")))
+	routeIf, gw := defaultIPv4Route(procNetFile(root, "route"))
+	view.DefaultRouteIf = firstNonEmpty(routeIf, ipv6DefaultIf(procNetFile(root, "ipv6_route")))
 	view.DefaultGateway = gw
 	view.Nameservers = readNameservers(filepath.Join(root, "etc/resolv.conf"))
 	return attachManagement(view), nil
@@ -122,6 +122,26 @@ func attachManagement(view HostView) HostView {
 	return view
 }
 
+// procNetFile is the host's /proc/net/<name>. On the live host it is read
+// through /proc/thread-self: /proc/net follows the namespace of the
+// process's main thread, which shows a container's routes while that thread
+// is switched into the container's namespace, while thread-self is always
+// the reading thread's own namespace.
+func procNetFile(root, name string) string {
+	if root == "" || root == "/" {
+		if p := "/proc/thread-self/net/" + name; fileExists(p) {
+			return p
+		}
+		return "/proc/net/" + name
+	}
+	return filepath.Join(root, "proc/net", name)
+}
+
+func fileExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
+}
+
 func defaultIPv4Route(path string) (iface, gateway string) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -137,7 +157,9 @@ func defaultIPv4Route(path string) (iface, gateway string) {
 		if len(fields) < 3 {
 			continue
 		}
-		if fields[1] == "00000000" {
+		// A default route has destination and mask 0; 0.0.0.0/1 (a VPN's
+		// half of the address space) is not one.
+		if fields[1] == "00000000" && (len(fields) < 8 || fields[7] == "00000000") {
 			return fields[0], procHexIPv4(fields[2])
 		}
 	}

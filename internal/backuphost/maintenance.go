@@ -179,9 +179,21 @@ func (h *Host) scheduleGC(reason string) {
 	idle := len(h.busy) == 0
 	h.mu.Unlock()
 	if idle {
-		go h.runPendingGC()
+		h.startPendingGC()
 	}
 }
+
+// startPendingGC runs a pending collection in the background.
+func (h *Host) startPendingGC() {
+	h.bg.Add(1)
+	go func() {
+		defer h.bg.Done()
+		h.runPendingGC()
+	}()
+}
+
+// Wait returns once background collections started so far have finished.
+func (h *Host) Wait() { h.bg.Wait() }
 
 func (h *Host) runPendingGC() {
 	h.mu.Lock()

@@ -9,13 +9,12 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
-	"golang.org/x/sys/unix"
+	"github.com/no-dal/ndl-ce/internal/netns"
 )
 
 // Cloudflare connectors (cloudflared) that No-dal deploys run as their own
@@ -371,37 +370,10 @@ func (e *Engine) probeOrigin(ctx context.Context, req ConnectorRequest) (Connect
 	return ConnectorResult{Reachable: true, Message: "connected to " + addr}, nil
 }
 
-// inNetNS runs fn on a thread switched into pid's network namespace. If the
-// thread cannot be switched back it is not unlocked, so Go retires it.
+// inNetNS runs fn on a thread switched into pid's network namespace,
+// never the agent's main thread (see package netns).
 func inNetNS(pid int, fn func() error) error {
-	errc := make(chan error, 1)
-	go func() {
-		runtime.LockOSThread()
-		self, err := os.Open("/proc/thread-self/ns/net")
-		if err != nil {
-			errc <- err
-			return
-		}
-		defer self.Close()
-		target, err := os.Open("/proc/" + strconv.Itoa(pid) + "/ns/net")
-		if err != nil {
-			errc <- err
-			return
-		}
-		defer target.Close()
-		if err := unix.Setns(int(target.Fd()), unix.CLONE_NEWNET); err != nil {
-			errc <- fmt.Errorf("enter network namespace: %w", err)
-			return
-		}
-		res := fn()
-		if err := unix.Setns(int(self.Fd()), unix.CLONE_NEWNET); err != nil {
-			errc <- res
-			return
-		}
-		runtime.UnlockOSThread()
-		errc <- res
-	}()
-	return <-errc
+	return netns.Do(pid, fn)
 }
 
 func compactDialErr(err error) string {

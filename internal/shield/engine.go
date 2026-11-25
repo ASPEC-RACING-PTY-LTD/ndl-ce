@@ -98,6 +98,14 @@ func (e *Engine) now() time.Time {
 
 func (e *Engine) path(p string) string {
 	if e.SysRoot == "" || e.SysRoot == "/" {
+		// /proc/net follows the main thread's network namespace, which
+		// another part of the agent may have switched into a container's;
+		// thread-self is always this thread's own (the host's).
+		if rest, ok := strings.CutPrefix(p, "/proc/net/"); ok {
+			if _, err := os.Stat("/proc/thread-self/net/" + rest); err == nil {
+				return "/proc/thread-self/net/" + rest
+			}
+		}
 		return p
 	}
 	return filepath.Join(e.SysRoot, p)

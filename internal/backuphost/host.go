@@ -26,6 +26,10 @@ type Host struct {
 	eng    *backup.Engine
 	docker *docker.Engine
 
+	// bg tracks background garbage collection, so Wait can hold on
+	// until nothing writes into the repository any more.
+	bg sync.WaitGroup
+
 	mu       sync.Mutex
 	settings Settings
 	queues   map[string]*backup.UploadQueue
@@ -674,7 +678,7 @@ func (h *Host) releaseCapture(workloadID string) {
 	runGC := h.gcPending != "" && len(h.busy) == 0
 	h.mu.Unlock()
 	if runGC {
-		go h.runPendingGC()
+		h.startPendingGC()
 	}
 }
 

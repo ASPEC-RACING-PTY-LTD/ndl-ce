@@ -117,6 +117,7 @@ func (e *Engine) DryRun(_ context.Context, spec Spec) (Preview, error) {
 	if err != nil {
 		return Preview{}, err
 	}
+	e.keepManagementGateway(&plan, host)
 	if plan.NAT {
 		if err := e.checkNFT(plan); err != nil {
 			return Preview{}, err
@@ -148,6 +149,7 @@ func (e *Engine) Apply(ctx context.Context, spec Spec) (ApplyResult, error) {
 	if err != nil {
 		return ApplyResult{}, err
 	}
+	e.keepManagementGateway(&plan, host)
 	if plan.Class.RequiresConfirm {
 		if !ValidIfName(spec.ConfirmIfName) || !sameIface(spec.ConfirmIfName, plan.UplinkIfName) {
 			return ApplyResult{}, fmt.Errorf("typed interface confirmation is required: type %s", plan.UplinkIfName)
@@ -381,6 +383,10 @@ func (e *Engine) Observe(_ context.Context, hints []Hint) (Observation, error) {
 					item.Warnings = append(item.Warnings, "bridge MAC does not match uplink "+hint.UplinkIfName)
 				}
 			}
+			if gws := e.persistedGateways(hint.NetworkID); len(gws) > 0 && strings.TrimSpace(host.DefaultRouteIf) == "" {
+				item.Status = StatusWarning
+				item.Warnings = append(item.Warnings, "the host has no default route; "+item.BridgeName+" is set to use gateway "+strings.Join(gws, ", "))
+			}
 			for _, stale := range e.listStaleUplinkClaims(hint.UplinkIfName, hint.NetworkID) {
 				item.Status = StatusWarning
 				item.Warnings = append(item.Warnings, "stale No-dal uplink file "+stale.Path+" also matches "+hint.UplinkIfName)
@@ -508,6 +514,7 @@ func (e *Engine) healLANBridge(hint Hint) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	e.keepManagementGateway(&plan, host)
 	changed := false
 	if !e.persistMatches(plan) {
 		if err := e.writeFiles(plan); err != nil {

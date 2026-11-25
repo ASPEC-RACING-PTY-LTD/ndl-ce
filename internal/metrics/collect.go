@@ -143,6 +143,13 @@ func (c *Collector) procPath(rel string) string {
 	root := c.FSRoot
 	rel = strings.TrimPrefix(rel, "/")
 	if root == "" || root == "/" {
+		// /proc/net follows the main thread's network namespace, which may
+		// be switched into a container's; thread-self is this thread's own.
+		if rest, ok := strings.CutPrefix(rel, "proc/net/"); ok {
+			if _, err := os.Stat("/proc/thread-self/net/" + rest); err == nil {
+				return "/proc/thread-self/net/" + rest
+			}
+		}
 		return "/" + rel
 	}
 	return filepath.Join(root, filepath.FromSlash(rel))

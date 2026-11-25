@@ -19,6 +19,9 @@ func TestRelocateCopiesARepositoryWithBackupsAndFreesTheOldOne(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Background collection writes into the repository after a capture or
+	// move; let it finish before the temporary folders are removed.
+	t.Cleanup(host.Wait)
 	src := t.TempDir()
 	if err := os.WriteFile(filepath.Join(src, "data.bin"), make([]byte, 300<<10), 0o644); err != nil {
 		t.Fatal(err)
@@ -44,6 +47,7 @@ func TestRelocateCopiesARepositoryWithBackupsAndFreesTheOldOne(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(moved.Wait)
 	if moved.Root() != dest || moved.RestorePoints() != 1 {
 		t.Fatalf("the moved repository must hold the backup: %s %d", moved.Root(), moved.RestorePoints())
 	}
