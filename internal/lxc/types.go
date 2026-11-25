@@ -201,6 +201,10 @@ type Observed struct {
 	MigrateReady    bool      `json:"migrate_ready"`
 	MigrateBlockers []string  `json:"migrate_blockers,omitempty"`
 	ObservedAt      time.Time `json:"observed_at"`
+
+	// Autostart is whether the container's unit is enabled, so the host
+	// starts it at boot; nil when it was not checked.
+	Autostart *bool `json:"autostart,omitempty"`
 }
 
 // Observation is the agent's workload snapshot.

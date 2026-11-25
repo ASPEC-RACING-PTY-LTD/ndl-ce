@@ -204,3 +204,11 @@ func rootfsFromConfig(path string) string {
 	}
 	return ""
 }
+
+// unitEnabled reports whether the container's unit is enabled for boot: a
+// link to it sits in a *.wants folder (systemctl enable puts it in
+// nodal-workloads.target.wants).
+func (e *Engine) unitEnabled(id string) bool {
+	links, _ := filepath.Glob(filepath.Join(e.unitDir(), "*.wants", unitName(id)))
+	return len(links) > 0
+}

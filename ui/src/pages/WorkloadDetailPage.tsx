@@ -520,7 +520,14 @@ export function WorkloadDetailPage() {
               </div>
               <div>
                 <dt>Autostart</dt>
-                <dd>{item.autostart ? "yes (host boot only)" : "no"}</dd>
+                <dd>
+                  {item.autostart ? "yes (host boot only)" : "no"}
+                  {(item.warnings ?? [])
+                    .filter((w) => w.includes("start with the host"))
+                    .map((w) => (
+                      <p key={w} className="field-hint">{w}</p>
+                    ))}
+                </dd>
               </div>
               <div>
                 <dt>Pending restart</dt>

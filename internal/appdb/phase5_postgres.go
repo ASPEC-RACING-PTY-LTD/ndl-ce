@@ -163,12 +163,17 @@ UPDATE workloads SET cpus=COALESCE(NULLIF($2::integer,0), cpus),
   desired_power=COALESCE(NULLIF($4,''), desired_power),
   spec_json=COALESCE($5, spec_json),
   applied_json=COALESCE($6, applied_json),
-  autostart=$7,
+  autostart=CASE WHEN $11 THEN $7 ELSE autostart END,
   pending_restart=$8,
   firmware=COALESCE(NULLIF($9,''), firmware),
   name=COALESCE(NULLIF($10,''), name),
   updated_at=now()
-WHERE id=$1`, w.ID, w.CPUs, w.MemoryBytes, w.DesiredPower, spec, applied, w.Autostart, w.PendingRestart, w.Firmware, w.Name)
+WHERE id=$1`, w.ID, w.CPUs, w.MemoryBytes, w.DesiredPower, spec, applied, w.Autostart, w.PendingRestart, w.Firmware, w.Name, w.AutostartSet)
+	return err
+}
+
+func (p *Postgres) SetWorkloadAutostart(ctx context.Context, clusterID, id string, on bool) error {
+	_, err := p.DB.ExecContext(ctx, `UPDATE workloads SET autostart=$3 WHERE cluster_id=$1 AND id=$2 AND autostart<>$3`, clusterID, id, on)
 	return err
 }
 

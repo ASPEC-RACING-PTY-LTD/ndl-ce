@@ -688,6 +688,10 @@ func (e *Engine) observeOne(ctx context.Context, h Hint) Observed {
 		out.ImageVerified = applied.ImageVerified
 		out.MAC = applied.Spec.MAC
 	}
+	if !e.SkipHostCmds || e.UnitDir != "" {
+		on := e.unitEnabled(h.WorkloadID)
+		out.Autostart = &on
+	}
 	if e.SkipHostCmds {
 		return out
 	}

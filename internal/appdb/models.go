@@ -157,6 +157,9 @@ type Store interface {
 	GetWorkloadByIdempotency(ctx context.Context, clusterID, key string) (*Workload, error)
 	UpdateWorkloadObserved(ctx context.Context, w Workload) error
 	UpdateWorkloadSpec(ctx context.Context, w Workload) error
+	// SetWorkloadAutostart records whether the host starts the workload
+	// at boot, as the node reports it.
+	SetWorkloadAutostart(ctx context.Context, clusterID, id string, on bool) error
 	UpdateWorkloadImage(ctx context.Context, clusterID, id, image string, privileged bool) error
 	DeleteWorkloadDisk(ctx context.Context, clusterID, workloadID, volumeID string) error
 

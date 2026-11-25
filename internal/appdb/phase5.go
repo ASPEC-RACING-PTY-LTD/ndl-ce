@@ -43,6 +43,11 @@ type Workload struct {
 	Firmware        string
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+
+	// AutostartSet makes UpdateWorkloadSpec write Autostart. Without it
+	// the stored value is kept, so a partial update (a power change, say)
+	// does not turn boot start off. It is not stored.
+	AutostartSet bool
 }
 
 // WorkloadDisk attaches a volume. VolumeID is the identity of the volume.
@@ -146,6 +151,13 @@ func ReconcileWorkloads(ctx context.Context, st Store, clusterID string, desired
 		}
 		if err := st.UpdateWorkloadObserved(ctx, next); err != nil {
 			return unavailable, recovered, err
+		}
+		// Boot start is what the host has enabled, not what was last saved:
+		// keep the row in step so the UI and later edits see the truth.
+		if ok && w.Kind == lxc.KindSystemContainer && cur.Autostart != nil && *cur.Autostart != w.Autostart {
+			if err := st.SetWorkloadAutostart(ctx, clusterID, w.ID, *cur.Autostart); err != nil {
+				return unavailable, recovered, err
+			}
 		}
 		if ok && cur.IPv4 != "" {
 			nics, nerr := st.ListWorkloadNICs(ctx, clusterID, w.ID)

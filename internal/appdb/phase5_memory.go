@@ -168,7 +168,9 @@ func (m *Memory) UpdateWorkloadSpec(_ context.Context, w Workload) error {
 	if len(w.AppliedJSON) > 0 {
 		cur.AppliedJSON = w.AppliedJSON
 	}
-	cur.Autostart = w.Autostart
+	if w.AutostartSet {
+		cur.Autostart = w.Autostart
+	}
 	cur.PendingRestart = w.PendingRestart
 	if w.Firmware != "" {
 		cur.Firmware = w.Firmware
@@ -278,5 +280,17 @@ func (m *Memory) UpdateWorkloadNIC(_ context.Context, n WorkloadNIC) error {
 		cur.Model = n.Model
 	}
 	m.workloadNICs[n.ID] = cur
+	return nil
+}
+
+func (m *Memory) SetWorkloadAutostart(_ context.Context, clusterID, id string, on bool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cur, ok := m.workloads[id]
+	if !ok || cur.ClusterID != clusterID {
+		return fmt.Errorf("workload not found")
+	}
+	cur.Autostart = on
+	m.workloads[id] = cur
 	return nil
 }

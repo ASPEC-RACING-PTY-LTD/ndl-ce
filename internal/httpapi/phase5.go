@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net/http"
 	"path"
@@ -84,6 +85,10 @@ type createWorkloadRequest struct {
 	CodeholdCLI     *bool  `json:"codehold_cli"`
 	volumeOwnerKind string `json:"-"`
 	volumeJobID     string `json:"-"`
+
+	// autostartGiven is whether the body named autostart at all; a
+	// container created without it starts at boot, as it always has.
+	autostartGiven bool
 }
 
 type patchWorkloadRequest struct {
@@ -188,10 +193,17 @@ func (s *Server) createWorkload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req createWorkloadRequest
-	if err := readJSON(r, &req); err != nil {
+	raw, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	_ = r.Body.Close()
+	if err != nil || json.Unmarshal(raw, &req) != nil {
 		writeErr(w, http.StatusBadRequest, "invalid request")
 		return
 	}
+	var given struct {
+		Autostart *bool `json:"autostart"`
+	}
+	_ = json.Unmarshal(raw, &given)
+	req.autostartGiven = given.Autostart != nil
 	req.Name = strings.TrimSpace(req.Name)
 	req.Kind = normalizeKind(req.Kind)
 	req.ImagePin = strings.TrimSpace(req.ImagePin)
@@ -312,6 +324,15 @@ func (s *Server) createWorkload(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	// The agent enables boot start on create; turn it off when asked.
+	autostart := !req.autostartGiven || req.Autostart
+	if !autostart {
+		off := false
+		if _, aerr := workloads.LifecycleCT(r.Context(), lxc.LifecycleRequest{WorkloadID: ids.WorkloadID, Action: lxc.ActionApplySpec, Autostart: &off}); aerr != nil {
+			autostart = true
+			log.Printf("workload %s: could not turn off start at boot: %v", ids.WorkloadID, aerr)
+		}
+	}
 	if existing, _ := s.Store.GetWorkload(r.Context(), p.User.ClusterID, ids.WorkloadID); existing != nil {
 		s.finishOp(r.Context(), op, "succeeded", mustCreateMsg(ids), 100)
 		writeJSON(w, http.StatusOK, s.workloadJSON(r.Context(), *existing))
@@ -324,7 +345,7 @@ func (s *Server) createWorkload(w http.ResponseWriter, r *http.Request) {
 		ImageVerified: res.ImageVerified, CPUs: req.CPUs, MemoryBytes: req.MemoryBytes,
 		Privileged: req.Privileged, UIDMap: lxc.DefaultUIDMap, GIDMap: lxc.DefaultGIDMap,
 		Devices: json.RawMessage(`[]`), MigrateBlockers: json.RawMessage(`["live migrate of system containers is post-1.0"]`),
-		IdempotencyKey: key,
+		IdempotencyKey: key, Autostart: autostart,
 	}
 	if err := s.Store.CreateWorkload(r.Context(), row); err != nil {
 		if existing, _ := s.Store.GetWorkloadByName(r.Context(), p.User.ClusterID, req.Name); existing != nil {
@@ -852,7 +873,7 @@ func (s *Server) patchWorkload(w http.ResponseWriter, r *http.Request) {
 		next.DesiredPower = req.DesiredPower
 	}
 	if req.Autostart != nil {
-		next.Autostart = *req.Autostart
+		next.Autostart, next.AutostartSet = *req.Autostart, true
 	}
 	diskGrow, diskShrink := false, false
 	if req.DiskBytes > 0 && row.Kind == lxc.KindSystemContainer {
@@ -1314,6 +1335,12 @@ func (s *Server) workloadJSON(ctx context.Context, w appdb.Workload) map[string]
 	if len(w.MigrateBlockers) > 0 {
 		blockers = w.MigrateBlockers
 	}
+	warnings := append([]string{}, w.Warnings...)
+	if w.Kind == lxc.KindSystemContainer {
+		if note := bootStartWarning(w.DesiredPower, w.Autostart); note != "" {
+			warnings = append(warnings, note)
+		}
+	}
 	out := map[string]any{
 		"id": w.ID, "node_id": w.NodeID, "name": w.Name, "kind": w.Kind,
 		"status": w.Status, "reason": w.Reason, "desired_power": w.DesiredPower,
@@ -1321,7 +1348,7 @@ func (s *Server) workloadJSON(ctx context.Context, w appdb.Workload) map[string]
 		"cpus": w.CPUs, "memory_bytes": w.MemoryBytes, "disk_bytes": diskBytes, "privileged": w.Privileged,
 		"uid_map": w.UIDMap, "gid_map": w.GIDMap, "pid": pid, "unit_active": w.UnitActive,
 		"migrate_ready": w.MigrateReady, "migrate_blockers": blockers, "devices": devices,
-		"warnings": w.Warnings, "disks": diskOut, "physical_disks": physOut, "nics": nicOut,
+		"warnings": warnings, "disks": diskOut, "physical_disks": physOut, "nics": nicOut,
 		"autostart": w.Autostart, "pending_restart": w.PendingRestart, "firmware": w.Firmware,
 		"spec": specJSON(w), "applied": appliedJSON(w),
 		"desired_node_id": w.DesiredNodeID, "owner_node_id": w.OwnerNodeID,
@@ -1336,6 +1363,19 @@ func (s *Server) workloadJSON(ctx context.Context, w appdb.Workload) map[string]
 		out["unit"] = oci.UnitName(w.ID)
 	}
 	return out
+}
+
+// bootStartWarning explains a container whose boot start disagrees with
+// its power: one meant to run that a reboot leaves stopped, or one meant
+// to stay stopped that a reboot starts.
+func bootStartWarning(desiredPower string, autostart bool) string {
+	switch {
+	case desiredPower == "running" && !autostart:
+		return "Not set to start with the host: after a reboot it stays stopped until someone starts it."
+	case desiredPower == "stopped" && autostart:
+		return "Set to start with the host: a reboot starts it again although it is stopped."
+	}
+	return ""
 }
 
 func (s *Server) startOpKeyed(ctx context.Context, clusterID, nodeID, kind, stage, key, message string, progress int) appdb.Operation {
