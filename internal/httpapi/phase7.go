@@ -269,7 +269,7 @@ func (s *Server) labQemuProtoStart(w http.ResponseWriter, r *http.Request) {
 			existing = &row
 		}
 	} else {
-		if err := s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{ID: existing.ID, DesiredPower: "running", CPUs: spec.CPUs, MemoryBytes: spec.MemoryBytes}); err != nil {
+		if err := s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{ID: existing.ID, DesiredPower: "running", CPUs: spec.CPUs, MemoryBytes: spec.MemoryBytes, PendingRestartSet: true}); err != nil {
 			s.finishOp(r.Context(), op, "failed", err.Error(), 0)
 			writeErr(w, http.StatusInternalServerError, "could not record VM spec")
 			return
@@ -382,7 +382,7 @@ func (s *Server) labQemuProtoHalt(w http.ResponseWriter, r *http.Request, action
 		return
 	}
 	status := firstNonEmpty(res.Status, qemu.StatusStopped)
-	if err := s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{ID: row.ID, DesiredPower: "stopped"}); err != nil {
+	if err := s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{ID: row.ID, DesiredPower: "stopped", PendingRestartSet: true}); err != nil {
 		s.finishOp(r.Context(), op, "failed", err.Error(), 0)
 		writeErr(w, http.StatusInternalServerError, "could not record VM spec")
 		return

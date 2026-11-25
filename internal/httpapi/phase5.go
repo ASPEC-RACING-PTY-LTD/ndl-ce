@@ -620,11 +620,15 @@ func (s *Server) lifecycleWorkload(action string) http.HandlerFunc {
 			writeErr(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		// A start of a stopped workload, a restart and a stop all load the
+		// saved config next time, so no restart is pending after them.
 		switch action {
 		case "start":
-			_ = s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{ID: row.ID, DesiredPower: "running"})
+			_ = s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{ID: row.ID, DesiredPower: "running", PendingRestartSet: row.Status != lxc.StatusRunning})
+		case "restart":
+			_ = s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{ID: row.ID, PendingRestartSet: true})
 		case "stop", "delete":
-			_ = s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{ID: row.ID, DesiredPower: "stopped"})
+			_ = s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{ID: row.ID, DesiredPower: "stopped", PendingRestartSet: true})
 		case "clone":
 			if err := s.recordClone(r.Context(), p.User.ClusterID, *row, req, res); err != nil {
 				s.finishOp(r.Context(), op, "failed", err.Error(), 0)
@@ -981,7 +985,7 @@ func (s *Server) patchWorkload(w http.ResponseWriter, r *http.Request) {
 			}
 			s.audit(r, p.User.ClusterID, p.User.ID, "workload.tun", "ok", row.ID+" tun="+strconv.FormatBool(*req.TUN))
 		}
-		next.PendingRestart = running && lxc.RequiresRestart(classes)
+		next.PendingRestart, next.PendingRestartSet = running && lxc.RequiresRestart(classes), true
 		if err := s.Store.UpdateWorkloadSpec(r.Context(), next); err != nil {
 			writeErr(w, http.StatusInternalServerError, err.Error())
 			return

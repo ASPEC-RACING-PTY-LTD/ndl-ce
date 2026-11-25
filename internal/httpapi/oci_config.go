@@ -345,7 +345,7 @@ func (s *Server) updateOCIConfig(w http.ResponseWriter, r *http.Request) {
 	})
 	if err := s.Store.UpdateWorkloadSpec(ctx, appdb.Workload{
 		ID: row.ID, CPUs: spec.Resources.CPUs, MemoryBytes: spec.Resources.MemoryBytes,
-		SpecJSON: specJSON, AppliedJSON: applied, Autostart: row.Autostart, PendingRestart: row.PendingRestart,
+		SpecJSON: specJSON, AppliedJSON: applied, Autostart: row.Autostart, PendingRestart: row.PendingRestart, PendingRestartSet: true,
 	}); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return

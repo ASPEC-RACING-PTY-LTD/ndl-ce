@@ -122,3 +122,56 @@ func TestBootStartWarning(t *testing.T) {
 		}
 	}
 }
+
+// pendingAfter runs a power action on a container whose row says a
+// restart is pending and reports the flag afterwards.
+func pendingAfter(t *testing.T, status, action string) bool {
+	t.Helper()
+	s, mem, token := testServer(t)
+	ctx := context.Background()
+	cluster, _ := mem.GetCluster(ctx)
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(ctx, appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Workloads = &fakeWorkloads{}
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/container-root/x",
+		Kind: storage.KindFilesystem, Class: storage.ClassContainerRoot, Format: storage.FormatDirectory,
+	}}}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	id := createTestSystemContainer(t, ts, cookie, poolID, netID, "ct-"+action)
+	_ = mem.UpdateWorkloadObserved(ctx, appdb.Workload{ID: id, Status: status, UnitActive: status == lxc.StatusRunning})
+	_ = mem.UpdateWorkloadSpec(ctx, appdb.Workload{ID: id, PendingRestart: true, PendingRestartSet: true})
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/"+action, nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode >= 300 {
+		t.Fatalf("%s %d %s", action, res.StatusCode, raw)
+	}
+	w, _ := mem.GetWorkload(ctx, cluster.ID, id)
+	return w.PendingRestart
+}
+
+func TestCTPowerActionsSettlePendingRestart(t *testing.T) {
+	cases := []struct {
+		status, action string
+		want           bool
+	}{
+		{lxc.StatusRunning, "start", true}, // already running: nothing reloaded
+		{lxc.StatusStopped, "start", false},
+		{lxc.StatusRunning, "restart", false},
+		{lxc.StatusRunning, "stop", false},
+	}
+	for _, c := range cases {
+		if got := pendingAfter(t, c.status, c.action); got != c.want {
+			t.Fatalf("%s from %s: pending_restart=%v, want %v", c.action, c.status, got, c.want)
+		}
+	}
+}

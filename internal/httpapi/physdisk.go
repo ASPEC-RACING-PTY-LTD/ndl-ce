@@ -188,8 +188,8 @@ func (s *Server) assignPhysicalToWorkload(w http.ResponseWriter, r *http.Request
 	}
 	if err := s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{
 		ID: row.ID, CPUs: spec.CPUs, MemoryBytes: spec.MemoryBytes, DesiredPower: row.DesiredPower,
-		SpecJSON: vmspec.MustJSON(spec), AppliedJSON: row.AppliedJSON, Autostart: spec.Autostart,
-		PendingRestart: false, Firmware: spec.Firmware,
+		SpecJSON: vmspec.MustJSON(spec), AppliedJSON: row.AppliedJSON, Autostart: spec.Autostart, AutostartSet: true,
+		PendingRestart: false, PendingRestartSet: true, Firmware: spec.Firmware,
 	}); err != nil {
 		_ = s.Store.DeletePhysicalDiskAssignment(r.Context(), p.User.ClusterID, disk.DeviceID)
 		writeErr(w, http.StatusInternalServerError, "could not record VM spec")
@@ -261,8 +261,8 @@ func (s *Server) removePhysicalFromWorkload(w http.ResponseWriter, r *http.Reque
 	}
 	if err := s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{
 		ID: row.ID, CPUs: spec.CPUs, MemoryBytes: spec.MemoryBytes, DesiredPower: row.DesiredPower,
-		SpecJSON: vmspec.MustJSON(spec), AppliedJSON: row.AppliedJSON, Autostart: spec.Autostart,
-		PendingRestart: false, Firmware: spec.Firmware,
+		SpecJSON: vmspec.MustJSON(spec), AppliedJSON: row.AppliedJSON, Autostart: spec.Autostart, AutostartSet: true,
+		PendingRestart: false, PendingRestartSet: true, Firmware: spec.Firmware,
 	}); err != nil {
 		writeErr(w, http.StatusInternalServerError, "could not record VM spec")
 		return

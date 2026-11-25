@@ -66,3 +66,31 @@ func TestReconcileMirrorsContainerBootStart(t *testing.T) {
 		t.Fatal("an unchecked observation must not change autostart")
 	}
 }
+
+func pendingOf(t *testing.T, m *Memory, cluster, id string) bool {
+	t.Helper()
+	w, err := m.GetWorkload(context.Background(), cluster, id)
+	if err != nil || w == nil {
+		t.Fatalf("get %s: %v", id, err)
+	}
+	return w.PendingRestart
+}
+
+// A device or spec edit used to clear "restart needed" along with it.
+func TestPartialSpecUpdateKeepsPendingRestart(t *testing.T) {
+	ctx := context.Background()
+	m := NewMemory()
+	_ = m.CreateWorkload(ctx, Workload{ID: "w1", Name: "w1", ClusterID: "c", Kind: "vm", PendingRestart: true})
+	if err := m.UpdateWorkloadSpec(ctx, Workload{ID: "w1", SpecJSON: []byte(`{}`)}); err != nil {
+		t.Fatal(err)
+	}
+	if !pendingOf(t, m, "c", "w1") {
+		t.Fatal("a partial update cleared pending_restart")
+	}
+	if err := m.UpdateWorkloadSpec(ctx, Workload{ID: "w1", PendingRestartSet: true}); err != nil {
+		t.Fatal(err)
+	}
+	if pendingOf(t, m, "c", "w1") {
+		t.Fatal("an explicit update must clear pending_restart")
+	}
+}

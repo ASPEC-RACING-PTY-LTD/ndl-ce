@@ -171,7 +171,9 @@ func (m *Memory) UpdateWorkloadSpec(_ context.Context, w Workload) error {
 	if w.AutostartSet {
 		cur.Autostart = w.Autostart
 	}
-	cur.PendingRestart = w.PendingRestart
+	if w.PendingRestartSet {
+		cur.PendingRestart = w.PendingRestart
+	}
 	if w.Firmware != "" {
 		cur.Firmware = w.Firmware
 	}

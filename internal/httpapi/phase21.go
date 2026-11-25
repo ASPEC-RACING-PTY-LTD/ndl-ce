@@ -334,9 +334,9 @@ func (s *Server) ociLifecycle(w http.ResponseWriter, r *http.Request, p *princip
 	}
 	switch action {
 	case "start", "restart":
-		_ = s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{ID: row.ID, DesiredPower: "running"})
+		_ = s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{ID: row.ID, DesiredPower: "running", PendingRestartSet: action == "restart" || row.Status != oci.StatusRunning})
 	case "stop":
-		_ = s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{ID: row.ID, DesiredPower: "stopped"})
+		_ = s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{ID: row.ID, DesiredPower: "stopped", PendingRestartSet: true})
 	}
 	_ = res
 	s.finishOp(r.Context(), op, "succeeded", action, 100)

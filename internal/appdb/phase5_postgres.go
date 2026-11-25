@@ -164,11 +164,11 @@ UPDATE workloads SET cpus=COALESCE(NULLIF($2::integer,0), cpus),
   spec_json=COALESCE($5, spec_json),
   applied_json=COALESCE($6, applied_json),
   autostart=CASE WHEN $11 THEN $7 ELSE autostart END,
-  pending_restart=$8,
+  pending_restart=CASE WHEN $12 THEN $8 ELSE pending_restart END,
   firmware=COALESCE(NULLIF($9,''), firmware),
   name=COALESCE(NULLIF($10,''), name),
   updated_at=now()
-WHERE id=$1`, w.ID, w.CPUs, w.MemoryBytes, w.DesiredPower, spec, applied, w.Autostart, w.PendingRestart, w.Firmware, w.Name, w.AutostartSet)
+WHERE id=$1`, w.ID, w.CPUs, w.MemoryBytes, w.DesiredPower, spec, applied, w.Autostart, w.PendingRestart, w.Firmware, w.Name, w.AutostartSet, w.PendingRestartSet)
 	return err
 }
 

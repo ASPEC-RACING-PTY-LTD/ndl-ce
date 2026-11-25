@@ -785,7 +785,7 @@ func (s *Server) vmLifecycle(w http.ResponseWriter, r *http.Request, p *principa
 	_ = s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{
 		ID: row.ID, CPUs: row.CPUs, MemoryBytes: row.MemoryBytes, DesiredPower: desired,
 		SpecJSON: row.SpecJSON, AppliedJSON: row.AppliedJSON, Autostart: spec.Autostart, AutostartSet: true,
-		PendingRestart: false, Firmware: row.Firmware,
+		PendingRestart: false, PendingRestartSet: true, Firmware: row.Firmware,
 	})
 	_ = s.Store.UpdateWorkloadObserved(r.Context(), appdb.Workload{
 		ID: row.ID, Status: firstNonEmpty(obs.Status, row.Status), Reason: obs.Reason, UnitActive: obs.UnitActive,
@@ -914,7 +914,7 @@ func (s *Server) patchVM(w http.ResponseWriter, r *http.Request, p *principal, r
 	if err := s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{
 		ID: row.ID, CPUs: next.CPUs, MemoryBytes: next.MemoryBytes, DesiredPower: desired,
 		SpecJSON: vmspec.MustJSON(next), AppliedJSON: row.AppliedJSON, Autostart: next.Autostart, AutostartSet: true,
-		PendingRestart: pending, Firmware: next.Firmware,
+		PendingRestart: pending, PendingRestartSet: true, Firmware: next.Firmware,
 	}); err != nil {
 		writeErr(w, http.StatusInternalServerError, "could not record VM spec")
 		return
@@ -946,7 +946,7 @@ func (s *Server) patchVM(w http.ResponseWriter, r *http.Request, p *principal, r
 		pending = false
 		_ = s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{
 			ID: row.ID, CPUs: next.CPUs, MemoryBytes: next.MemoryBytes, DesiredPower: desired,
-			SpecJSON: vmspec.MustJSON(next), Autostart: next.Autostart, AutostartSet: true, PendingRestart: false, Firmware: next.Firmware,
+			SpecJSON: vmspec.MustJSON(next), Autostart: next.Autostart, AutostartSet: true, PendingRestart: false, PendingRestartSet: true, Firmware: next.Firmware,
 		})
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "vm.update", "ok", row.ID)
@@ -1028,8 +1028,8 @@ func (s *Server) reprepareVM(ctx context.Context, clusterID string, row appdb.Wo
 	applied, _ := json.Marshal(launch)
 	_ = s.Store.UpdateWorkloadSpec(ctx, appdb.Workload{
 		ID: row.ID, CPUs: spec.CPUs, MemoryBytes: spec.MemoryBytes, DesiredPower: row.DesiredPower,
-		SpecJSON: vmspec.MustJSON(spec), AppliedJSON: applied, Autostart: spec.Autostart,
-		PendingRestart: false, Firmware: spec.Firmware,
+		SpecJSON: vmspec.MustJSON(spec), AppliedJSON: applied, Autostart: spec.Autostart, AutostartSet: true,
+		PendingRestart: false, PendingRestartSet: true, Firmware: spec.Firmware,
 	})
 	return launch, nil
 }

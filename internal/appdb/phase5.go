@@ -48,6 +48,9 @@ type Workload struct {
 	// the stored value is kept, so a partial update (a power change, say)
 	// does not turn boot start off. It is not stored.
 	AutostartSet bool
+	// PendingRestartSet makes UpdateWorkloadSpec write PendingRestart;
+	// without it the stored flag is kept. It is not stored.
+	PendingRestartSet bool
 }
 
 // WorkloadDisk attaches a volume. VolumeID is the identity of the volume.
